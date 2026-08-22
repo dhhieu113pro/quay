@@ -135,10 +135,10 @@ npm install
 npm run tauri dev
 ```
 
-`npm run dev` is the Vite WebView only. Tauri needs the C# sidecar first:
+`npm run tauri dev` publishes the C# sidecar the first time (`src-tauri/binaries/quay-host-*.exe`), then starts Vite on port 8080.
 
 ```powershell
-./scripts/prepare-sidecar.ps1
+./scripts/prepare-sidecar.ps1          # or: npm run sidecar
 npm run tauri -- build --bundles nsis,msi
 ```
 

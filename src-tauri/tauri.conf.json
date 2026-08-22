@@ -4,9 +4,9 @@
   "version": "0.1.1",
   "identifier": "dev.quay.wslc",
   "build": {
-    "beforeDevCommand": "npm run dev",
+    "beforeDevCommand": "npm run sidecar && npm run dev",
     "devUrl": "http://localhost:8080",
-    "beforeBuildCommand": "npm run build:desktop",
+    "beforeBuildCommand": "npm run sidecar && npm run build:desktop",
     "frontendDist": "../dist/client"
   },
   "app": {
