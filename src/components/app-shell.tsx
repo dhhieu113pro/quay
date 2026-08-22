@@ -7,7 +7,7 @@ import {
   Layers,
   Minus,
   Square,
-  TerminalSquare,
+  SquareTerminal,
   X,
 } from "lucide-react";
 import { Toaster } from "sonner";
@@ -32,7 +32,7 @@ const NAV: Array<{ id: ViewId; label: string; icon: typeof Box }> = [
   { id: "dashboard", label: "Overview", icon: LayoutGrid },
   { id: "groups", label: "Cubes", icon: Boxes },
   { id: "containers", label: "Containers", icon: Box },
-  { id: "terminal", label: "Terminal", icon: TerminalSquare },
+  { id: "terminal", label: "Terminal", icon: SquareTerminal },
   { id: "images", label: "Images", icon: Layers },
   { id: "session", label: "Session", icon: Cpu },
 ];
