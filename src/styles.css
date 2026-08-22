@@ -1,30 +1,85 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+:root,
+html.dark {
+  --q-bg: #0c0d10;
+  --q-fg: #e8eaee;
+  --q-card: #14161b;
+  --q-card-fg: #e8eaee;
+  --q-popover: #1b1e25;
+  --q-popover-fg: #e8eaee;
+  --q-primary: #d6dbe3;
+  --q-primary-fg: #0c0d10;
+  --q-secondary: #1b1e25;
+  --q-secondary-fg: #e8eaee;
+  --q-muted: #1b1e25;
+  --q-muted-fg: #8b909b;
+  --q-accent: #8aa0b5;
+  --q-accent-fg: #0c0d10;
+  --q-destructive: #c07a7a;
+  --q-destructive-fg: #0c0d10;
+  --q-border: #2a2e36;
+  --q-input: #2a2e36;
+  --q-ring: #8aa0b5;
+  --q-elevated: #1b1e25;
+  --q-subtle: #5c616c;
+  --q-ok: #7d9d8a;
+  --q-warn: #c4a574;
+  color-scheme: dark;
+}
+
+html.light {
+  --q-bg: #f2f3f6;
+  --q-fg: #16181d;
+  --q-card: #ffffff;
+  --q-card-fg: #16181d;
+  --q-popover: #ffffff;
+  --q-popover-fg: #16181d;
+  --q-primary: #1c1f26;
+  --q-primary-fg: #f4f5f7;
+  --q-secondary: #e8eaee;
+  --q-secondary-fg: #16181d;
+  --q-muted: #e8eaee;
+  --q-muted-fg: #5c6370;
+  --q-accent: #3d5a73;
+  --q-accent-fg: #f4f5f7;
+  --q-destructive: #a85b5b;
+  --q-destructive-fg: #ffffff;
+  --q-border: #d5d8df;
+  --q-input: #d5d8df;
+  --q-ring: #3d5a73;
+  --q-elevated: #e6e8ed;
+  --q-subtle: #6b7280;
+  --q-ok: #3e6b52;
+  --q-warn: #8a6328;
+  color-scheme: light;
+}
+
 @theme {
-  --color-background: #0c0d10;
-  --color-foreground: #e8eaee;
-  --color-card: #14161b;
-  --color-card-foreground: #e8eaee;
-  --color-popover: #1b1e25;
-  --color-popover-foreground: #e8eaee;
-  --color-primary: #d6dbe3;
-  --color-primary-foreground: #0c0d10;
-  --color-secondary: #1b1e25;
-  --color-secondary-foreground: #e8eaee;
-  --color-muted: #1b1e25;
-  --color-muted-foreground: #8b909b;
-  --color-accent: #8aa0b5;
-  --color-accent-foreground: #0c0d10;
-  --color-destructive: #c07a7a;
-  --color-destructive-foreground: #0c0d10;
-  --color-border: #2a2e36;
-  --color-input: #2a2e36;
-  --color-ring: #8aa0b5;
-  --color-elevated: #1b1e25;
-  --color-subtle: #5c616c;
-  --color-ok: #7d9d8a;
-  --color-warn: #c4a574;
+  --color-background: var(--q-bg);
+  --color-foreground: var(--q-fg);
+  --color-card: var(--q-card);
+  --color-card-foreground: var(--q-card-fg);
+  --color-popover: var(--q-popover);
+  --color-popover-foreground: var(--q-popover-fg);
+  --color-primary: var(--q-primary);
+  --color-primary-foreground: var(--q-primary-fg);
+  --color-secondary: var(--q-secondary);
+  --color-secondary-foreground: var(--q-secondary-fg);
+  --color-muted: var(--q-muted);
+  --color-muted-foreground: var(--q-muted-fg);
+  --color-accent: var(--q-accent);
+  --color-accent-foreground: var(--q-accent-fg);
+  --color-destructive: var(--q-destructive);
+  --color-destructive-foreground: var(--q-destructive-fg);
+  --color-border: var(--q-border);
+  --color-input: var(--q-input);
+  --color-ring: var(--q-ring);
+  --color-elevated: var(--q-elevated);
+  --color-subtle: var(--q-subtle);
+  --color-ok: var(--q-ok);
+  --color-warn: var(--q-warn);
   --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --radius: 0.75rem;
@@ -64,6 +119,8 @@
 
   body {
     font-family: var(--font-sans);
+    transition: background-color var(--motion-fast) var(--ease-out),
+      color var(--motion-fast) var(--ease-out);
   }
 
   h1,

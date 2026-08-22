@@ -46,14 +46,17 @@ Rust stays a thin bridge (`src-tauri`). Every button in the UI is an `invoke` th
 
 ## Install
 
-Windows x64. WSL **2.9.3+** (`wsl --update --pre-release`) and `wslc.exe` on PATH.
+Windows x64 and ARM64. WSL **2.9.3+** (`wsl --update --pre-release`) and `wslc.exe` on PATH.
 
 **[Download the latest installer](https://github.com/dhhieu113pro/quay/releases/latest)**
 
-| File | Install |
+| File | Machine |
 | --- | --- |
-| `Quay_*_x64-setup.exe` | Double-click. Silent: `Quay_*_x64-setup.exe /S` |
-| `Quay_*_x64_en-US.msi` | Double-click. Silent: `msiexec /i Quay_*.msi /quiet` |
+| `Quay_*_x64-setup.exe` | Intel / AMD. Silent: `/S` |
+| `Quay_*_arm64-setup.exe` | Snapdragon / Copilot+ / ARM64. Silent: `/S` |
+| `Quay_*_*_en-US.msi` | Same arches. Silent: `msiexec /i Quay_*.msi /quiet` |
+
+Close hides to the tray; quit from the tray menu. Appearance follows sunrise and sunset, or lock light / dark from the titlebar.
 
 GitHub Actions cuts those on every `v*` tag. Microsoft Store uses the same NSIS build — Partner Center steps are in [`docs/store.md`](docs/store.md). Listing copy: [`store/listing.md`](store/listing.md).
 
@@ -65,6 +68,7 @@ GitHub Actions cuts those on every `v*` tag. Microsoft Store uses the same NSIS 
 - **Containers** — run with ports, env, bind mounts, `--gpus all`; start / stop / restart / delete; inspect; logs; exec
 - **Volumes** — create and attach
 - **C# host** — live invoke log of the exact `Microsoft.WSL.Containers` calls the sidecar would make
+- **Appearance** — auto light/dark by sunset, or lock either; close hides to the tray
 
 The in-browser lab simulates a running session (nginx, Postgres, Redis, Webtop, a CUDA trainer) so the desktop is usable without Windows. On a real box, `src/lib/wslc/store.ts` is replaced by JSON to `host/`.
 

@@ -10,7 +10,7 @@ Quay is a full-trust Win32 desktop (Tauri + C# sidecar). It talks to WSL, so it 
    `https://github.com/dhhieu113pro/quay/blob/main/docs/privacy.md`
    Support URL:
    `https://github.com/dhhieu113pro/quay/issues`
-4. Cut a GitHub Release (`git tag v0.1.0 && git push --tags`). The **Release** workflow attaches:
+4. Cut a GitHub Release (`git tag v0.1.1 && git push --tags`). The **Release** workflow attaches:
    - `Quay_<version>_x64-setup.exe` (NSIS)
    - `Quay_<version>_x64_en-US.msi`
 5. In Partner Center, point the package at the GitHub Release asset URL, or upload the file from the **Microsoft Store** workflow artifact.

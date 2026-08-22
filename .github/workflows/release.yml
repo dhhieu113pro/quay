@@ -1,6 +1,6 @@
 name: Release
 
-# Tag v0.1.0 (or Run workflow) → Windows NSIS + MSI on GitHub Releases.
+# Tag v* (or Run workflow) → Windows NSIS + MSI for x64 and ARM64.
 on:
   push:
     tags:
@@ -12,7 +12,19 @@ permissions:
 
 jobs:
   windows:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            rust_target: x86_64-pc-windows-msvc
+            sidecar_rid: win-x64
+            name: x64
+          - os: windows-11-arm
+            rust_target: aarch64-pc-windows-msvc
+            sidecar_rid: win-arm64
+            name: arm64
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -23,11 +35,12 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: x86_64-pc-windows-msvc
+          targets: ${{ matrix.rust_target }}
 
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: src-tauri -> target
+          key: ${{ matrix.rust_target }}
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -38,7 +51,7 @@ jobs:
 
       - name: Publish C# sidecar
         shell: pwsh
-        run: ./scripts/prepare-sidecar.ps1
+        run: ./scripts/prepare-sidecar.ps1 -Rid ${{ matrix.sidecar_rid }}
 
       - name: Build and publish
         uses: tauri-apps/tauri-action@v1
@@ -50,16 +63,19 @@ jobs:
           tagName: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v__VERSION__' }}
           releaseName: Quay ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v__VERSION__' }}
           releaseBody: |
-            Windows x64 installer for [Quay](https://github.com/dhhieu113pro/quay).
+            Windows installers for [Quay](https://github.com/dhhieu113pro/quay) — x64 and ARM64 (Snapdragon / Copilot+).
 
             Needs WSL **2.9.3+** (`wsl --update --pre-release`) and `wslc.exe` on PATH.
 
-            | Asset | Install |
+            | Asset | Machine |
             | --- | --- |
-            | `Quay_*_x64-setup.exe` | Double-click. Silent: `Quay_*_x64-setup.exe /S` |
-            | `Quay_*_x64_en-US.msi` | Double-click. Silent: `msiexec /i Quay_*.msi /quiet` |
+            | `Quay_*_x64-setup.exe` | Intel / AMD. Silent: `/S` |
+            | `Quay_*_arm64-setup.exe` | ARM64. Silent: `/S` |
+            | `Quay_*_x64_en-US.msi` / `Quay_*_arm64_en-US.msi` | MSI. Silent: `msiexec /i … /quiet` |
+
+            Close hides to the tray. Quit from the tray menu.
 
             Microsoft Store uses the same NSIS build with silent flag `/S`. See `docs/store.md`.
           releaseDraft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
-          args: --bundles nsis,msi
+          args: --target ${{ matrix.rust_target }} --bundles nsis,msi

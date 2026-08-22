@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { CodeBlock } from "@/components/code-block";
+import { AppearanceToggle } from "@/components/appearance-toggle";
 import { csharpSessionStart } from "@/lib/wslc/csharp";
 import { formatUptime } from "@/lib/utils";
 import { useWslc } from "@/lib/wslc/store";
@@ -155,6 +156,17 @@ export function SessionView() {
             />
             GPU / CDI
           </label>
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-border bg-card p-4">
+        <h2 className="text-sm font-medium">Appearance</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Auto follows sunrise and sunset at this location. Light and dark lock the
+          palette. Closing the window hides Quay in the tray — quit from there.
+        </p>
+        <div className="mt-3">
+          <AppearanceToggle />
         </div>
       </section>
 

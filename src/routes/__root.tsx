@@ -1,4 +1,5 @@
 import { createRootRoute, HeadContent, Outlet, Scripts } from "@tanstack/react-router";
+import { APPEARANCE_BOOT } from "@/lib/appearance";
 import appCss from "../styles.css?url";
 
 const APP_NAME = "Quay";
@@ -34,9 +35,10 @@ export const Route = createRootRoute({
     ],
   }),
   component: () => (
-    <html lang="en" className="antialiased" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning>
       <head>
         <HeadContent />
+        <script dangerouslySetInnerHTML={{ __html: APPEARANCE_BOOT }} />
       </head>
       <body className="bg-background text-foreground">
         <Outlet />

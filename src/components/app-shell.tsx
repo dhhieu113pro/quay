@@ -10,8 +10,11 @@ import {
   X,
 } from "lucide-react";
 import { Toaster } from "sonner";
+import { AppearanceProvider, useAppearance } from "@/components/appearance-provider";
+import { AppearanceToggle } from "@/components/appearance-toggle";
 import { Mark } from "@/components/mark";
 import { RunDialog } from "@/components/run-dialog";
+import { SetupScreen } from "@/components/setup-screen";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ContainersView } from "@/components/views/containers-view";
 import { DashboardView } from "@/components/views/dashboard-view";
@@ -37,17 +40,30 @@ export function AppShell() {
   const tick = useWslc((s) => s.tick);
   const session = useWslc((s) => s.session);
   const containers = useWslc((s) => s.containers);
+  const gate = useWslc((s) => s.gate);
+  const retryProbe = useWslc((s) => s.retryProbe);
   const running = containers.filter((c) => c.status === "running").length;
+  const gated = gate === "checking" || gate === "missing";
 
   useEffect(() => {
+    void retryProbe();
+  }, [retryProbe]);
+
+  useEffect(() => {
+    if (gated) return;
     const id = window.setInterval(tick, 2000);
     return () => window.clearInterval(id);
-  }, [tick]);
+  }, [tick, gated]);
 
   return (
+    <AppearanceProvider>
     <TooltipProvider delayDuration={250}>
       <div className="flex h-dvh flex-col overflow-hidden bg-background text-foreground">
         <Titlebar />
+        {gated ? (
+          <SetupScreen />
+        ) : (
+          <>
         <div className="flex min-h-0 flex-1">
           <nav className="hidden w-52 shrink-0 flex-col border-r border-border bg-card md:flex">
             <p className="px-4 pb-2 pt-4 text-xs uppercase tracking-widest text-subtle">
@@ -91,21 +107,33 @@ export function AppShell() {
         <StatusBar />
         <MobileNav view={view} onChange={setView} />
         <RunDialog />
-        <Toaster
-          theme="dark"
-          position="bottom-right"
-          toastOptions={{
-            className:
-              "!bg-card !text-foreground !border-border !font-sans text-sm",
-          }}
-        />
-      </div>
-    </TooltipProvider>
+          </>
+        )}
+        <ThemedToaster />
+        </div>
+      </TooltipProvider>
+    </AppearanceProvider>
+  );
+}
+
+function ThemedToaster() {
+  const { scheme } = useAppearance();
+  return (
+    <Toaster
+      theme={scheme}
+      position="bottom-right"
+      toastOptions={{
+        className: "!bg-card !text-foreground !border-border !font-sans text-sm",
+      }}
+    />
   );
 }
 
 function Titlebar() {
   const session = useWslc((s) => s.session);
+  const gate = useWslc((s) => s.gate);
+  const gated = gate === "checking" || gate === "missing";
+  const live = session.running && !gated;
   return (
     <header
       data-tauri-drag-region
@@ -122,17 +150,18 @@ function Titlebar() {
         <span
           className={cn(
             "hidden items-center gap-1.5 rounded-full px-2 py-1 text-xs sm:inline-flex",
-            session.running ? "bg-ok/15 text-ok" : "bg-elevated text-muted-foreground",
+            live ? "bg-ok/15 text-ok" : gated ? "bg-warn/15 text-warn" : "bg-elevated text-muted-foreground",
           )}
         >
           <span
             className={cn(
               "size-1.5 rounded-full",
-              session.running ? "bg-ok" : "bg-subtle",
+              live ? "bg-ok" : gated ? "bg-warn" : "bg-subtle",
             )}
           />
-          {session.running ? "session up" : "session down"}
+          {gated ? "wslc missing" : live ? "session up" : "session down"}
         </span>
+        <AppearanceToggle compact />
         <div className="hidden md:flex">
           <CaptionBtn label="Minimize" onClick={() => void windowAction("minimize")}>
             <Minus className="size-3.5" />
@@ -140,9 +169,14 @@ function Titlebar() {
           <CaptionBtn label="Maximize" onClick={() => void windowAction("toggleMaximize")}>
             <Square className="size-3" />
           </CaptionBtn>
-          <CaptionBtn label="Close" danger onClick={() => void windowAction("close")}>
-            <X className="size-3.5" />
-          </CaptionBtn>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <CaptionBtn label="Hide to tray" danger onClick={() => void windowAction("close")}>
+                <X className="size-3.5" />
+              </CaptionBtn>
+            </TooltipTrigger>
+            <TooltipContent>Hide to tray</TooltipContent>
+          </Tooltip>
         </div>
       </div>
     </header>
@@ -164,6 +198,7 @@ function CaptionBtn({
     <button
       type="button"
       aria-label={label}
+      title={label}
       onClick={onClick}
       className={cn(
         "grid h-12 w-11 place-items-center text-muted-foreground hover:bg-elevated hover:text-foreground",

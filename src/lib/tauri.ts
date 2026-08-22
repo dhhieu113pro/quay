@@ -10,3 +10,22 @@ export async function windowAction(kind: "minimize" | "toggleMaximize" | "close"
   else if (kind === "toggleMaximize") await win.toggleMaximize();
   else await win.close();
 }
+
+export type WslcProbe = {
+  wslc: boolean;
+  sidecar: boolean;
+  version: string | null;
+};
+
+export async function probeWslc(): Promise<WslcProbe> {
+  if (!isTauri()) {
+    return { wslc: false, sidecar: false, version: null };
+  }
+  const { invoke } = await import("@tauri-apps/api/core");
+  const raw = await invoke<WslcProbe>("wslc_probe");
+  return {
+    wslc: Boolean(raw?.wslc),
+    sidecar: Boolean(raw?.sidecar),
+    version: raw?.version ?? null,
+  };
+}

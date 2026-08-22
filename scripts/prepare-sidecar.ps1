@@ -1,14 +1,22 @@
 # Publish the C# sidecar next to the Tauri binary.
-# Usage: pwsh -File scripts/prepare-sidecar.ps1
+# Usage:
+#   pwsh -File scripts/prepare-sidecar.ps1
+#   pwsh -File scripts/prepare-sidecar.ps1 -Rid win-arm64
+param(
+    [ValidateSet("win-x64", "win-arm64")]
+    [string]$Rid = "win-x64"
+)
+
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
-$out = Join-Path $root "host/publish"
+$out = Join-Path $root "host/publish/$Rid"
 $bin = Join-Path $root "src-tauri/binaries"
+$triple = if ($Rid -eq "win-arm64") { "aarch64-pc-windows-msvc" } else { "x86_64-pc-windows-msvc" }
 
-Write-Host "Publishing Quay.Host (win-x64, self-contained)"
+Write-Host "Publishing Quay.Host ($Rid, self-contained)"
 dotnet publish (Join-Path $root "host/Quay.Host.csproj") `
   -c Release `
-  -r win-x64 `
+  -r $Rid `
   --self-contained true `
   -p:PublishSingleFile=true `
   -p:IncludeNativeLibrariesForSelfExtract=true `
@@ -18,7 +26,8 @@ dotnet publish (Join-Path $root "host/Quay.Host.csproj") `
 New-Item -ItemType Directory -Force -Path $bin | Out-Null
 $exe = Join-Path $out "quay-host.exe"
 if (-not (Test-Path $exe)) {
-  throw "dotnet publish did not produce quay-host.exe"
+    throw "dotnet publish did not produce quay-host.exe"
 }
-Copy-Item $exe (Join-Path $bin "quay-host-x86_64-pc-windows-msvc.exe") -Force
-Write-Host "Sidecar -> src-tauri/binaries/quay-host-x86_64-pc-windows-msvc.exe"
+$dest = Join-Path $bin "quay-host-$triple.exe"
+Copy-Item $exe $dest -Force
+Write-Host "Sidecar -> $dest"

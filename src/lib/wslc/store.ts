@@ -8,6 +8,7 @@ import {
   csharpStop,
   cliForRun,
 } from "./csharp";
+import { checkHost } from "./probe";
 import {
   catalogImages,
   seedContainers,
@@ -18,6 +19,7 @@ import {
 import type {
   ApiCall,
   Container,
+  HostGate,
   ImageRecord,
   MetricsPoint,
   PullJob,
@@ -104,6 +106,10 @@ function snippetsFor(image: string) {
 
 interface WslcState {
   view: ViewId;
+  gate: HostGate;
+  probeNote: string;
+  wslcOnPath: boolean;
+  sidecarUp: boolean;
   session: SessionInfo;
   containers: Container[];
   images: ImageRecord[];
@@ -135,6 +141,8 @@ interface WslcState {
   createVolume: (name: string) => void;
   deleteVolume: (name: string) => void;
   resetLab: () => void;
+  enterLab: () => void;
+  retryProbe: () => Promise<void>;
 }
 
 function pushCall(
@@ -154,9 +162,35 @@ function emptyMetrics(): MetricsPoint[] {
   }));
 }
 
-function initial(): Pick<
+function idleMetrics(): MetricsPoint[] {
+  const t0 = Date.now() - 60_000;
+  return Array.from({ length: 30 }, (_, i) => ({
+    t: t0 + i * 2000,
+    cpu: 0,
+    mem: 0,
+  }));
+}
+
+function emptySession(missing: string[]): SessionInfo {
+  return {
+    ...clone(seedSession),
+    running: false,
+    startedAt: undefined,
+    missingComponents: missing,
+    gpu: false,
+    gpuName: "",
+    version: "wslc —",
+    wslVersion: "—",
+  };
+}
+
+function labState(): Pick<
   WslcState,
   | "view"
+  | "gate"
+  | "probeNote"
+  | "wslcOnPath"
+  | "sidecarUp"
   | "session"
   | "containers"
   | "images"
@@ -172,6 +206,10 @@ function initial(): Pick<
 > {
   return {
     view: "dashboard",
+    gate: "lab",
+    probeNote: "Sample data — not a live wslc session",
+    wslcOnPath: false,
+    sidecarUp: false,
     session: clone(seedSession),
     containers: clone(seedContainers),
     images: clone(seedImages),
@@ -192,6 +230,28 @@ function initial(): Pick<
     runOpen: false,
     inspectOpen: false,
     metrics: emptyMetrics(),
+    now: Date.now(),
+    catalog: catalogImages,
+  };
+}
+
+function initial(): ReturnType<typeof labState> {
+  return {
+    view: "dashboard",
+    gate: "checking",
+    probeNote: "Looking for wslc.exe…",
+    wslcOnPath: false,
+    sidecarUp: false,
+    session: emptySession(["wslc"]),
+    containers: [],
+    images: [],
+    volumes: [],
+    calls: [],
+    pulls: [],
+    selectedId: null,
+    runOpen: false,
+    inspectOpen: false,
+    metrics: idleMetrics(),
     now: Date.now(),
     catalog: catalogImages,
   };
@@ -669,7 +729,55 @@ export const useWslc = create<WslcState>((set, get) => ({
     }));
   },
 
-  resetLab: () => set({ ...initial() }),
+  resetLab: () => set({ ...labState() }),
+  enterLab: () => set({ ...labState() }),
+  retryProbe: async () => {
+    set({ gate: "checking", probeNote: "Looking for wslc.exe…" });
+    const result = await checkHost();
+    if (result.wslc) {
+      set({
+        view: "dashboard",
+        gate: "ready",
+        probeNote: result.note,
+        wslcOnPath: true,
+        sidecarUp: result.sidecar,
+        session: {
+          ...emptySession([]),
+          running: true,
+          startedAt: Date.now(),
+          version: result.version ?? "wslc",
+          wslVersion: result.version ?? "2.9.3+",
+        },
+        containers: [],
+        images: [],
+        volumes: [],
+        calls: [
+          {
+            id: rid("call-"),
+            at: Date.now(),
+            method: "WslcService.GetMissingComponents",
+            csharp: csharpSessionStart(seedSession),
+            cli: "wslc version",
+            result: result.note,
+            ok: true,
+          },
+        ],
+        pulls: [],
+        selectedId: null,
+        inspectOpen: false,
+        metrics: idleMetrics(),
+        now: Date.now(),
+      });
+      return;
+    }
+    set({
+      gate: "missing",
+      probeNote: result.note,
+      wslcOnPath: false,
+      sidecarUp: result.sidecar,
+      session: emptySession(result.missing),
+    });
+  },
 }));
 
 export function selectedContainer() {

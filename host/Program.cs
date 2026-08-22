@@ -7,7 +7,7 @@ var cpu = args.Length > 2 && uint.TryParse(args[2], out var c) ? c : 4u;
 var memoryMb = args.Length > 3 && uint.TryParse(args[3], out var m) ? m : 4096u;
 
 var host = new QuayHost(name, dataPath, cpu, memoryMb);
-host.Start();
+host.TryStart();
 
 while (await Console.In.ReadLineAsync() is string line)
 {
@@ -18,23 +18,41 @@ while (await Console.In.ReadLineAsync() is string line)
 
 public sealed class QuayHost
 {
-    private readonly Session _session;
+    private readonly string _name;
+    private readonly string _dataPath;
+    private readonly uint _cpu;
+    private readonly uint _memoryMb;
+    private readonly string _missing;
+    private Session? _session;
     private readonly Dictionary<string, Container> _containers = new();
 
     public QuayHost(string name, string dataPath, uint cpu, uint memoryMb)
     {
-        var missing = WslcService.GetMissingComponents();
-        if (missing is { Count: > 0 })
-            throw new InvalidOperationException($"WSL missing: {missing}");
-
-        _session = new Session(new SessionSettings(name, dataPath)
+        _name = name;
+        _dataPath = dataPath;
+        _cpu = cpu;
+        _memoryMb = memoryMb;
+        try
         {
-            CpuCount = cpu,
-            MemorySizeInMB = memoryMb
-        });
+            var missing = WslcService.GetMissingComponents();
+            _missing = missing is { Count: > 0 } ? missing.ToString() ?? "wslc" : "";
+        }
+        catch (Exception ex)
+        {
+            _missing = ex.Message;
+        }
     }
 
-    public void Start() => _session.Start();
+    public void TryStart()
+    {
+        if (!string.IsNullOrEmpty(_missing)) return;
+        _session = new Session(new SessionSettings(_name, _dataPath)
+        {
+            CpuCount = _cpu,
+            MemorySizeInMB = _memoryMb
+        });
+        _session.Start();
+    }
 
     public async Task<string> Invoke(string json)
     {
@@ -44,6 +62,7 @@ public sealed class QuayHost
         {
             return cmd switch
             {
+                "health" => Health(),
                 "pull" => await Pull(doc.RootElement.GetProperty("image").GetString()!),
                 "run" => Run(doc.RootElement),
                 "stop" => Stop(doc.RootElement.GetProperty("id").GetString()!),
@@ -58,9 +77,25 @@ public sealed class QuayHost
         }
     }
 
+    private string Health()
+    {
+        var ok = string.IsNullOrEmpty(_missing) && _session is not null;
+        return JsonSerializer.Serialize(new
+        {
+            ok,
+            wslc = ok,
+            missing = string.IsNullOrEmpty(_missing) ? Array.Empty<string>() : new[] { _missing },
+            error = ok ? null : _missing
+        });
+    }
+
+    private Session RequireSession() =>
+        _session ?? throw new InvalidOperationException(
+            string.IsNullOrEmpty(_missing) ? "session is not started" : $"wslc missing: {_missing}");
+
     private async Task<string> Pull(string image)
     {
-        var pull = _session.PullImageAsync(new PullImageOptions(image));
+        var pull = RequireSession().PullImageAsync(new PullImageOptions(image));
         await pull;
         return """{"ok":true}""";
     }
@@ -72,7 +107,7 @@ public sealed class QuayHost
             Name = spec.GetProperty("name").GetString(),
             InitProcess = new ProcessSettings { OutputMode = ProcessOutputMode.Event }
         };
-        var container = _session.CreateContainer(settings);
+        var container = RequireSession().CreateContainer(settings);
         container.Start();
         var id = container.Id;
         _containers[id] = container;
