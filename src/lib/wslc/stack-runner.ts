@@ -1,46 +1,6 @@
 import { applyStackConfig } from "@/components/stack-config-dialog";
-import { invokeWslcHost, type WslcInvokeResult } from "@/lib/tauri";
-import type {
-  Container,
-  ContainerGroup,
-  ContainerStatus,
-  LogLine,
-  Mount,
-  RunSpec,
-} from "./types";
-
-type SdkLog = {
-  ts?: number;
-  Ts?: number;
-  stream?: string;
-  Stream?: string;
-  text?: string;
-  Text?: string;
-};
-
-type SdkContainer = {
-  id: string;
-  name: string;
-  image: string;
-  status?: string;
-  createdAt?: number;
-  startedAt?: number | null;
-  finishedAt?: number | null;
-  exitCode?: number | null;
-  ports?: string;
-  mounts?: string;
-  env?: string;
-  gpu?: boolean;
-  command?: string[];
-  workdir?: string;
-  bridgeIp?: string | null;
-  logs?: SdkLog[];
-};
-
-type SdkResult = WslcInvokeResult & {
-  container?: SdkContainer;
-  containers?: SdkContainer[];
-};
+import { invokeWslcHost } from "@/lib/tauri";
+import type { Container, ContainerGroup, RunSpec } from "./types";
 
 function nativeName(group: ContainerGroup, spec: RunSpec): string {
   if (group.id === "local-coding" && spec.image.startsWith("ngrok/ngrok")) {
@@ -49,50 +9,92 @@ function nativeName(group: ContainerGroup, spec: RunSpec): string {
   return spec.name;
 }
 
-function normalizeStatus(value?: string): ContainerStatus {
-  const status = (value ?? "").toLowerCase();
-  if (status.includes("running") || status.includes("started")) return "running";
-  if (status.includes("paused")) return "paused";
-  if (status.includes("created")) return "created";
-  if (status.includes("removing")) return "removing";
-  return "exited";
+function splitArgs(value: string): string[] {
+  const result: string[] = [];
+  let current = "";
+  let quote = "";
+  for (let i = 0; i < value.length; i++) {
+    const ch = value[i];
+    if (quote) {
+      if (ch === quote) quote = "";
+      else current += ch;
+    } else if (ch === '"' || ch === "'") {
+      quote = ch;
+    } else if (/\s/.test(ch)) {
+      if (current) {
+        result.push(current);
+        current = "";
+      }
+    } else {
+      current += ch;
+    }
+  }
+  if (current) result.push(current);
+  return result;
 }
 
-function parsePorts(value: string) {
-  return value
+function argsForSpec(group: ContainerGroup, spec: RunSpec, network: string): string[] {
+  const args = ["run"];
+  if (spec.detach) args.push("-d");
+
+  const name = nativeName(group, spec);
+  if (name) args.push("--name", name);
+  if (network) args.push("--network", network);
+  if (spec.gpu) args.push("--gpus", "all");
+  if (spec.workdir) args.push("-w", spec.workdir);
+
+  for (const port of spec.ports.split(",").map((x) => x.trim()).filter(Boolean)) {
+    args.push("-p", port);
+  }
+  for (const env of spec.env.split("\n").map((x) => x.trim()).filter(Boolean)) {
+    args.push("-e", env);
+  }
+  for (const mount of spec.mounts.split("\n").map((x) => x.trim()).filter(Boolean)) {
+    args.push("-v", mount);
+  }
+
+  args.push(spec.image);
+  if (spec.command.trim()) args.push(...splitArgs(spec.command.trim()));
+  return args;
+}
+
+function matchesName(line: string, name: string) {
+  const lower = line.toLowerCase();
+  const target = name.toLowerCase();
+  return lower.includes(target) || lower.includes(target.slice(0, Math.min(16, target.length)));
+}
+
+async function runCli(args: string[]) {
+  const result = await invokeWslcHost({ cmd: "run_cli", args });
+  return {
+    ...result,
+    command: `wslc ${args.join(" ")}`,
+  };
+}
+
+async function listCli(all = true) {
+  const result = await runCli(all ? ["container", "list", "--all"] : ["container", "list"]);
+  if (!result.ok) {
+    throw new Error(`${result.command}\n${result.error || "Could not list WSLC containers"}`);
+  }
+  return result.output ?? "";
+}
+
+function parsePorts(spec: RunSpec) {
+  return spec.ports
     .split(",")
     .map((x) => x.trim())
     .filter(Boolean)
-    .map((item) => {
-      const [host, container] = item.split(":").map(Number);
+    .map((value) => {
+      const [host, container] = value.split(":").map(Number);
       return { host, container, protocol: "tcp" as const };
     })
-    .filter((x) => Number.isFinite(x.host) && Number.isFinite(x.container));
+    .filter((p) => Number.isFinite(p.host) && Number.isFinite(p.container));
 }
 
-function parseMounts(value: string): Mount[] {
-  return value
-    .split("\n")
-    .map((x) => x.trim())
-    .filter(Boolean)
-    .flatMap((item) => {
-      const modeAt = item.lastIndexOf(":");
-      if (modeAt <= 0) return [];
-      const mode = item.slice(modeAt + 1).toLowerCase() === "ro" ? "ro" as const : "rw" as const;
-      const paths = item.slice(0, modeAt);
-      const destinationAt = paths.lastIndexOf(":");
-      if (destinationAt <= 0) return [];
-      return [{
-        source: paths.slice(0, destinationAt),
-        destination: paths.slice(destinationAt + 1),
-        mode,
-      }];
-    });
-}
-
-function parseEnv(value: string) {
+function parseEnv(spec: RunSpec) {
   return Object.fromEntries(
-    value
+    spec.env
       .split("\n")
       .map((x) => x.trim())
       .filter(Boolean)
@@ -103,114 +105,114 @@ function parseEnv(value: string) {
   );
 }
 
-function parseLogs(logs?: SdkLog[]): LogLine[] {
-  return (logs ?? []).map((line) => ({
-    ts: line.ts ?? line.Ts ?? Date.now(),
-    stream: (line.stream ?? line.Stream) === "stderr" ? "stderr" : "stdout",
-    text: line.text ?? line.Text ?? "",
-  }));
-}
-
-function toContainer(group: ContainerGroup, record: SdkContainer): Container {
-  return {
-    id: record.id,
-    name: record.name,
-    image: record.image,
-    status: normalizeStatus(record.status),
-    createdAt: record.createdAt ?? Date.now(),
-    startedAt: record.startedAt ?? undefined,
-    finishedAt: record.finishedAt ?? undefined,
-    ports: parsePorts(record.ports ?? ""),
-    mounts: parseMounts(record.mounts ?? ""),
-    env: parseEnv(record.env ?? ""),
-    gpu: Boolean(record.gpu),
-    cpuPercent: 0,
-    memoryMB: 0,
-    memoryLimitMB: 0,
-    command: record.command ?? [],
-    workdir: record.workdir || "/",
-    user: "",
-    exitCode: record.exitCode ?? undefined,
-    logs: parseLogs(record.logs),
-    groupId: group.id,
-  };
-}
-
-async function sdkPs(): Promise<SdkContainer[]> {
-  const result = await invokeWslcHost({ cmd: "ps" }) as SdkResult;
-  if (!result.ok) throw new Error(result.error || "Could not read Quay SDK containers");
-  return result.containers ?? [];
-}
-
 export async function readNativeGroup(group: ContainerGroup): Promise<Container[]> {
   applyStackConfig(group);
-  const names = new Set(group.specs.map((spec) => nativeName(group, spec)));
-  const records = await sdkPs();
-  return records
-    .filter((record) => names.has(record.name))
-    .map((record) => toContainer(group, record));
+  const output = await listCli(true);
+  const lines = output.split(/\r?\n/).filter(Boolean);
+
+  return group.specs.flatMap((spec) => {
+    const name = nativeName(group, spec);
+    const line = lines.find((x) => matchesName(x, name));
+    if (!line) return [];
+
+    const parts = line.trim().split(/\s+/);
+    const status = /\brunning\b/i.test(line) ? "running" as const : "exited" as const;
+    return [{
+      id: parts[0] ?? name,
+      name,
+      image: spec.image,
+      status,
+      createdAt: Date.now(),
+      startedAt: status === "running" ? Date.now() : undefined,
+      ports: parsePorts(spec),
+      mounts: [],
+      env: parseEnv(spec),
+      gpu: spec.gpu,
+      cpuPercent: 0,
+      memoryMB: 0,
+      memoryLimitMB: 0,
+      command: spec.command.trim() ? splitArgs(spec.command.trim()) : [],
+      workdir: spec.workdir || "/",
+      user: "",
+      logs: [],
+      groupId: group.id,
+    }];
+  });
 }
 
-async function runSpec(group: ContainerGroup, spec: RunSpec) {
-  const name = nativeName(group, spec);
-  const result = await invokeWslcHost({
-    cmd: "run",
-    image: spec.image,
-    name,
-    command: spec.command,
-    ports: spec.ports,
-    env: spec.env,
-    mounts: spec.mounts,
-    gpu: spec.gpu,
-    remove: false,
-    workdir: spec.workdir,
-  }) as SdkResult;
+function ignorableStopError(message: string) {
+  const value = message.toLowerCase();
+  return value.includes("not found") ||
+    value.includes("no such") ||
+    value.includes("not running") ||
+    value.includes("already stopped") ||
+    value.includes("is stopped") ||
+    value.includes("exited");
+}
 
-  if (!result.ok) {
-    throw new Error(result.error || `Could not start ${name} with Microsoft.WSL.Containers`);
+async function stopByName(name: string) {
+  const result = await runCli(["container", "stop", name]);
+  if (!result.ok && !ignorableStopError(result.error ?? "")) {
+    throw new Error(`${result.command}\n${result.error || `Could not stop ${name}`}`);
   }
+}
 
-  const record = result.container;
-  if (!record || normalizeStatus(record.status) !== "running") {
-    throw new Error(`${name} was created by the WSLC SDK but is not running.`);
+async function removeExistingByName(name: string) {
+  try { await stopByName(name); } catch { /* continue to rm */ }
+  const result = await runCli(["container", "rm", name]);
+  if (!result.ok) {
+    throw new Error(`${result.command}\n${result.error || `Could not remove ${name}`}`);
   }
 }
 
 export async function runNativeStack(group: ContainerGroup): Promise<Container[]> {
   applyStackConfig(group);
-  const started: string[] = [];
+  const network = group.id === "local-coding" ? "mcp-net" : `${group.id}-net`;
 
-  try {
-    for (const spec of group.specs) {
-      const name = nativeName(group, spec);
-      await runSpec(group, spec);
-      started.push(name);
+  const networkResult = await invokeWslcHost({ cmd: "ensure_network", name: network });
+  if (!networkResult.ok) {
+    throw new Error(networkResult.error || `Could not create network ${network}`);
+  }
+
+  const staleNames = [...new Set(group.specs.map((spec) => nativeName(group, spec)))].filter(Boolean);
+  const existingOutput = await listCli(true);
+  const existingLines = existingOutput.split(/\r?\n/).filter(Boolean);
+  for (const name of staleNames) {
+    if (existingLines.some((line) => matchesName(line, name))) {
+      await removeExistingByName(name);
     }
-  } catch (error) {
-    for (const name of started.reverse()) {
-      try {
-        await invokeWslcHost({ cmd: "stop", id: name });
-      } catch {
-        // Preserve the original start failure.
-      }
+  }
+
+  for (const spec of group.specs) {
+    const name = nativeName(group, spec);
+    const args = argsForSpec(group, spec, network);
+    const result = await runCli(args);
+    if (!result.ok) {
+      throw new Error(`${result.command}\n${result.error || `Could not start ${name}`}`);
     }
-    throw error;
+
+    const running = await listCli(false);
+    if (!running.split(/\r?\n/).some((line) => matchesName(line, name))) {
+      const all = await listCli(true);
+      const detail = all.split(/\r?\n/).find((line) => matchesName(line, name));
+      throw new Error(detail
+        ? `${result.command}\n${name} was created but is not running: ${detail}`
+        : `${result.command}\n${name} did not appear in WSLC after start`);
+    }
   }
 
   return readNativeGroup(group);
 }
 
 export async function stopNativeStack(group: ContainerGroup): Promise<Container[]> {
-  const existing = await sdkPs();
-  const existingNames = new Set(existing.map((x) => x.name));
-  const names = [...group.specs]
-    .reverse()
-    .map((spec) => nativeName(group, spec));
+  const names = [...group.specs].reverse().map((spec) => nativeName(group, spec));
+  const existingOutput = await listCli(true);
+  const existingLines = existingOutput.split(/\r?\n/).filter(Boolean);
 
   for (const name of [...new Set(names)].filter(Boolean)) {
-    if (!existingNames.has(name)) continue;
-    const result = await invokeWslcHost({ cmd: "stop", id: name });
-    if (!result.ok) throw new Error(result.error || `Could not stop ${name}`);
+    if (existingLines.some((line) => matchesName(line, name))) {
+      await stopByName(name);
+    }
   }
 
   return readNativeGroup(group);
