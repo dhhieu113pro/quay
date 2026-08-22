@@ -55,10 +55,6 @@ jobs:
           workspaces: src-tauri -> target
           key: ci-${{ matrix.rust_target }}
 
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: "9.0.x"
-
       - name: Install frontend
         run: npm ci
 
