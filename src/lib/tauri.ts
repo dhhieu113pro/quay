@@ -15,6 +15,8 @@ export type WslcProbe = {
   wslc: boolean;
   sidecar: boolean;
   version: string | null;
+  sidecarPath?: string | null;
+  sidecarError?: string | null;
 };
 
 export type WslcInvokeResult = {
@@ -39,6 +41,8 @@ export async function probeWslc(): Promise<WslcProbe> {
     wslc: Boolean(raw?.wslc),
     sidecar: Boolean(raw?.sidecar),
     version: raw?.version ?? null,
+    sidecarPath: raw?.sidecarPath ?? null,
+    sidecarError: raw?.sidecarError ?? null,
   };
 }
 
