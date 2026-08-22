@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -14,20 +14,11 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { useWslc } from "@/lib/wslc/store";
 import { cliForRun } from "@/lib/wslc/csharp";
+import { catalogPresets, specFromPreset } from "@/lib/wslc/seed";
 import type { RunSpec } from "@/lib/wslc/types";
+import { cn } from "@/lib/utils";
 
-const empty: RunSpec = {
-  image: "nginx:latest",
-  name: "",
-  command: "",
-  ports: "8080:80",
-  env: "",
-  mounts: "",
-  gpu: false,
-  remove: false,
-  detach: true,
-  workdir: "/",
-};
+const defaultSpec = specFromPreset(catalogPresets[0]!);
 
 export function RunDialog() {
   const open = useWslc((s) => s.runOpen);
@@ -35,14 +26,20 @@ export function RunDialog() {
   const runContainer = useWslc((s) => s.runContainer);
   const catalog = useWslc((s) => s.catalog);
   const images = useWslc((s) => s.images);
-  const [spec, setSpec] = useState<RunSpec>(empty);
+  const [spec, setSpec] = useState<RunSpec>(defaultSpec);
   const local = Array.from(
     new Set([...images.map((i) => `${i.repository}:${i.tag}`), ...catalog]),
   );
 
+  useEffect(() => {
+    if (open) setSpec(defaultSpec);
+  }, [open]);
+
   function patch(p: Partial<RunSpec>) {
     setSpec((s) => ({ ...s, ...p }));
   }
+
+  const selectedPreset = catalogPresets.find((p) => p.image === spec.image);
 
   return (
     <Dialog open={open} onOpenChange={setRunOpen}>
@@ -67,6 +64,30 @@ export function RunDialog() {
           }}
         >
           <div className="grid gap-1.5">
+            <Label>Quick pick</Label>
+            <div className="flex flex-wrap gap-1.5">
+              {catalogPresets.map((p) => (
+                <button
+                  key={p.image}
+                  type="button"
+                  onClick={() => setSpec(specFromPreset(p))}
+                  className={cn(
+                    "h-9 rounded-md border px-3 text-xs",
+                    spec.image === p.image
+                      ? "border-foreground bg-elevated text-foreground"
+                      : "border-border text-muted-foreground hover:bg-elevated/70",
+                  )}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            {selectedPreset ? (
+              <p className="text-xs text-subtle">{selectedPreset.hint}</p>
+            ) : null}
+          </div>
+
+          <div className="grid gap-1.5">
             <Label htmlFor="image">Image</Label>
             <Input
               id="image"
@@ -74,6 +95,7 @@ export function RunDialog() {
               value={spec.image}
               onChange={(e) => patch({ image: e.target.value })}
               required
+              className="font-mono text-xs"
             />
             <datalist id="image-catalog">
               {local.map((i) => (

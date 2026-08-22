@@ -2,6 +2,7 @@ import type {
   Container,
   ImageRecord,
   LogLine,
+  RunSpec,
   SessionInfo,
   VolumeRecord,
 } from "./types";
@@ -34,6 +35,15 @@ export const seedSession: SessionInfo = {
 };
 
 export const seedImages: ImageRecord[] = [
+  {
+    id: "sha256:c0de1c0d1c0d",
+    repository: "ghcr.io/dhhieu113pro/local-coding-mcp",
+    tag: "latest",
+    digest: "sha256:c0de1c0d1c0d4a11",
+    sizeMB: 268,
+    createdAt: now - 4 * hour,
+    containers: 1,
+  },
   {
     id: "sha256:7d3ef2c1a9b4",
     repository: "nginx",
@@ -127,6 +137,41 @@ export const seedVolumes: VolumeRecord[] = [
 ];
 
 export const seedContainers: Container[] = [
+  {
+    id: "a01mcp5000aa",
+    name: "local-coding-mcp",
+    image: "ghcr.io/dhhieu113pro/local-coding-mcp:latest",
+    status: "running",
+    createdAt: now - 1.1 * hour,
+    startedAt: now - 1.1 * hour,
+    ports: [{ host: 5000, container: 5000, protocol: "tcp" }],
+    mounts: [
+      {
+        source: "D:\\wslc\\workspaces",
+        destination: "/workspace",
+        mode: "rw",
+      },
+    ],
+    env: {
+      ASPNETCORE_URLS: "http://0.0.0.0:5000",
+      ASPNETCORE_ENVIRONMENT: "Production",
+      AllowedRoots__0: "/workspace",
+      CommandTimeoutSeconds: "60",
+    },
+    gpu: false,
+    cpuPercent: 3.4,
+    memoryMB: 86,
+    memoryLimitMB: 512,
+    command: ["dotnet", "LocalCodingMcp.dll"],
+    workdir: "/app",
+    user: "root",
+    logs: logs([
+      [1.1 * hour, "stdout", "LocalCodingMcp listening on http://0.0.0.0:5000"],
+      [1.05 * hour, "stdout", "AllowedRoots: /workspace"],
+      [8 * 60 * 1000, "stdout", "GET /health 200"],
+      [90 * 1000, "stdout", "POST /mcp OpenWorkspace /workspace"],
+    ]),
+  },
   {
     id: "a3f19c8d2e71",
     name: "web",
@@ -295,10 +340,83 @@ export const seedContainers: Container[] = [
   },
 ];
 
+export interface CatalogPreset {
+  image: string;
+  name: string;
+  label: string;
+  hint: string;
+  ports: string;
+  env: string;
+  mounts: string;
+  workdir: string;
+  gpu?: boolean;
+}
+
+export const catalogPresets: CatalogPreset[] = [
+  {
+    image: "ghcr.io/dhhieu113pro/local-coding-mcp:latest",
+    name: "local-coding-mcp",
+    label: "local-coding-mcp",
+    hint: "MCP on :5000/mcp — ChatGPT, Grok",
+    ports: "5000:5000",
+    env: [
+      "ASPNETCORE_URLS=http://0.0.0.0:5000",
+      "ASPNETCORE_ENVIRONMENT=Production",
+      "AllowedRoots__0=/workspace",
+      "CommandTimeoutSeconds=60",
+    ].join("\n"),
+    mounts: "D:\\wslc\\workspaces:/workspace:rw",
+    workdir: "/workspace",
+  },
+  {
+    image: "nginx:latest",
+    name: "web",
+    label: "nginx",
+    hint: "HTTP :80",
+    ports: "8080:80",
+    env: "",
+    mounts: "",
+    workdir: "/",
+  },
+  {
+    image: "postgres:16",
+    name: "db",
+    label: "postgres",
+    hint: "5432",
+    ports: "5432:5432",
+    env: "POSTGRES_USER=quay\nPOSTGRES_DB=app\nPOSTGRES_PASSWORD=quay",
+    mounts: "pgdata:/var/lib/postgresql/data:rw",
+    workdir: "/",
+  },
+  {
+    image: "redis:7",
+    name: "cache",
+    label: "redis",
+    hint: "6379",
+    ports: "6379:6379",
+    env: "",
+    mounts: "redisdata:/data:rw",
+    workdir: "/data",
+  },
+];
+
+export function specFromPreset(p: CatalogPreset): RunSpec {
+  return {
+    image: p.image,
+    name: p.name,
+    command: "",
+    ports: p.ports,
+    env: p.env,
+    mounts: p.mounts,
+    gpu: Boolean(p.gpu),
+    remove: false,
+    detach: true,
+    workdir: p.workdir,
+  };
+}
+
 export const catalogImages = [
-  "nginx:latest",
-  "postgres:16",
-  "redis:7",
+  ...catalogPresets.map((p) => p.image),
   "ubuntu:24.04",
   "alpine:latest",
   "python:3.12",

@@ -96,6 +96,16 @@ const LOG_SNIPPETS: Record<string, string[]> = {
   pytorch: ["step loss=0.173", "cuda mem 3.1/16.0 GB", "saving checkpoint"],
   webtop: ["selkies: websocket ping", "kwin: compositor ready"],
   alpine: ["done"],
+  mcp: [
+    "GET /health 200",
+    "POST /mcp OpenWorkspace /workspace",
+    "AllowedRoots: /workspace",
+  ],
+  "local-coding": [
+    "GET /health 200",
+    "POST /mcp OpenWorkspace /workspace",
+    "AllowedRoots: /workspace",
+  ],
   default: ["heartbeat"],
 };
 

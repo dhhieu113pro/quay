@@ -18,7 +18,7 @@ export function ImagesView() {
   const deleteVolume = useWslc((s) => s.deleteVolume);
   const catalog = useWslc((s) => s.catalog);
   const now = useWslc((s) => s.now);
-  const [ref, setRef] = useState("python:3.12");
+  const [ref, setRef] = useState("ghcr.io/dhhieu113pro/local-coding-mcp:latest");
   const [volName, setVolName] = useState("");
 
   return (
