@@ -1,52 +1,66 @@
 # Microsoft Store
 
-Quay is a full-trust Win32 Tauri desktop. It runs the installed WSL container CLI, so it cannot ship as a sandboxed UWP/MSIX without `runFullTrust`. Partner Center’s **EXE or MSI app** listing is the path Tauri documents and the one this repo builds for.
+Quay is a full-trust Win32 Tauri desktop. It runs the installed WSL Containers CLI, so the Partner Center **EXE or MSI app** flow is the intended Store path.
 
-## First listing (once)
+## First listing
 
 1. Open [Partner Center](https://partner.microsoft.com) → **Windows & Xbox** → **New product** → **EXE or MSI app**.
-2. Reserve the name **Quay for WSL** (plain “Quay” is likely taken).
-3. Store listing copy is in [`store/listing.md`](../store/listing.md). Privacy policy URL:
-   `https://github.com/dhhieu113pro/quay/blob/main/docs/privacy.md`
-   Support URL:
-   `https://github.com/dhhieu113pro/quay/issues`
-4. Cut a GitHub Release (`git tag v0.1.1 && git push --tags`). The **Release** workflow attaches:
-   - `Quay_<version>_x64-setup.exe` (NSIS)
-   - `Quay_<version>_x64_en-US.msi`
-5. In Partner Center, point the package at the GitHub Release asset URL, or upload the file from the **Microsoft Store** workflow artifact.
-6. Silent install argument:
+2. Reserve the name **Quay for WSL**.
+3. Copy the current listing text from [`store/listing.md`](../store/listing.md).
+4. Use these URLs:
+   - Privacy: `https://github.com/dhhieu113pro/quay/blob/main/docs/privacy.md`
+   - Support: `https://github.com/dhhieu113pro/quay/issues`
+   - Website: `https://github.com/dhhieu113pro/quay`
+5. Use a GitHub Release whose tag matches the internal Quay version. For the current release, use `v0.1.3`.
+6. The Release workflow produces x64 and ARM64 NSIS/MSI installers. The **Microsoft Store package** workflow can also be run manually to build Store-specific offline-WebView2 installers for both architectures.
+7. In Partner Center, point the package to the appropriate GitHub Release asset URL or upload the installer produced by the Store workflow.
+8. Silent install arguments:
    - NSIS: `/S`
    - MSI: `/quiet`
-7. Notes for certification: requires Windows 10 22H2+ / Windows 11, WSL **2.9.3+** (`wsl --update --pre-release`), and `wslc.exe`. The app is a developer tool that starts a WSL container session on the machine.
+9. Certification notes:
+   - Quay is a developer tool for Microsoft WSL Containers.
+   - It uses the installed `wslc.exe` directly and the default WSLC session.
+   - It does not install another container engine or Windows service.
+   - It requires a WSL build with WSL Containers (`wsl --update --pre-release` when needed).
+   - The app can diagnose missing WSL/WSLC on first launch.
 
-Publisher display name in the installer is **Hieu Dam** so it does not collide with the product name **Quay** (Store rejects that match).
+Publisher display name in the installer is **Hieu Dam** so it does not collide with the product name **Quay**.
 
-## GitHub secrets (later updates)
+## Store package workflow
 
-After the first listing is live, add these repository secrets and tick **Submit to Partner Center** on the **Microsoft Store** workflow:
+The `.github/workflows/store.yml` workflow intentionally **builds packages only**. Partner Center submission remains manual so the repository does not report a successful submission without actually completing the Partner Center API transaction.
 
-| Secret | Where |
-| --- | --- |
-| `STORE_PRODUCT_ID` | Partner Center product / Store ID |
-| `SELLER_ID` | Partner Center → Account settings |
-| `AZURE_AD_TENANT_ID` | Entra ID tenant linked to Partner Center |
-| `AZURE_AD_APPLICATION_CLIENT_ID` | Entra app registration, **Manager** role in Partner Center |
-| `AZURE_AD_APPLICATION_SECRET` | That app’s client secret |
+The workflow:
 
-Optional Authenticode (SmartScreen on GitHub Releases):
+- verifies `package.json`, `tauri.conf.json`, and `Cargo.toml` use the same version;
+- builds x64 on `windows-latest`;
+- builds ARM64 on `windows-11-arm`;
+- uses the Store Tauri overlay with the offline WebView2 installer;
+- uploads separate x64 and ARM64 artifacts.
 
-| Secret | Where |
-| --- | --- |
-| `TAURI_SIGNING_PRIVATE_KEY` | `tauri signer generate` minisign key (updater) |
-| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Key password |
+## Pre-submission test checklist
+
+Test the installer on a clean Windows account/machine before uploading it to Partner Center:
+
+- Install and launch Quay with WSL/WSLC missing: setup screen must explain what is missing.
+- Install/update WSL, press **Check again**, and confirm Quay opens without reinstalling.
+- Pull an image and run/start/stop/remove a standalone container.
+- Open Inspect → Logs and verify logs only refresh while the Logs tab is in use.
+- Start the built-in LocalCoding Cube with no prior `D:\wslc\workspaces` folder; Quay should create it automatically.
+- Confirm LocalCoding MCP can start without an ngrok token and ngrok is shown as optional/needs configuration.
+- Configure an ngrok token and confirm the ngrok member can then start.
+- Verify the Terminal gives a clear message for an image without `/bin/sh`.
+- Close the window and verify Quay remains in the tray; quit from the tray.
+- Uninstall Quay and verify the application is removed normally.
+- Repeat the smoke test for the architecture being submitted (x64 and/or ARM64).
 
 ## Local Store bundle
 
-On a Windows box with Node 22, Rust, and .NET 9:
+On Windows with Node 22 and Rust:
 
 ```powershell
-npm ci
+npm ci --legacy-peer-deps
 npm run tauri -- build --bundles nsis,msi --config src-tauri/tauri.store.conf.json
 ```
 
-The Store overlay (`src-tauri/tauri.store.conf.json`) uses the **offline** WebView2 installer so certification does not depend on a network fetch.
+The Store overlay (`src-tauri/tauri.store.conf.json`) uses the **offline** WebView2 installer so certification does not depend on downloading WebView2 during installation.
