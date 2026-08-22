@@ -7,7 +7,7 @@
 <p align="center">A desktop for <a href="https://learn.microsoft.com/windows/wsl/wsl-container">WSL containers</a> (<code>wslc</code>).</p>
 
 <p align="center">
-  <img src="docs/quay-hero.svg" alt="Quay — run and manage WSL containers, stacks, images, logs, ports and GPU on Windows" width="1100">
+  <img src="docs/quay-hero.svg" alt="Quay — run and manage WSL containers, groups, images, logs, ports and GPU on Windows" width="1100">
 </p>
 
 A **quay** is a dock — the stone edge where ships tie up. Linux containers on Windows are the ships. This app is the berth: list them, pull images, start and stop, exec in, watch logs, hand GPU and ports across, all from a Tauri WebView whose native work is C# on `Microsoft.WSL.Containers`.
@@ -15,7 +15,7 @@ A **quay** is a dock — the stone edge where ships tie up. Linux containers on 
 Microsoft shipped `wslc.exe` (and the alias `container.exe`) in WSL 2.9.3. Same muscle memory as Docker (`run`, `pull`, `ps`, `stop`), but the runtime is a dedicated Hyper-V VM — virtiofs, consomme networking, CDI GPU — not Docker Desktop. Windows apps can drive that VM through a NuGet package. Quay is that API with a UI.
 
 <p align="center">
-  <img src="docs/shots/overview.jpg" alt="Overview — session stats, running containers, live C# invoke log" width="920">
+  <img src="docs/shots/overview.jpg" alt="Overview — session stats and running containers" width="920">
 </p>
 <p align="center">
   <img src="docs/shots/containers.jpg" alt="Container list with start, stop, and inspect" width="450">
@@ -26,9 +26,6 @@ Microsoft shipped `wslc.exe` (and the alias `container.exe`) in WSL 2.9.3. Same 
   <img src="docs/shots/images.jpg" alt="Image catalog with pull" width="450">
   &nbsp;
   <img src="docs/shots/session.jpg" alt="Session vCPU, memory, and data path" width="450">
-</p>
-<p align="center">
-  <img src="docs/shots/host.jpg" alt="C# host — Microsoft.WSL.Containers invoke log and sidecar source" width="920">
 </p>
 
 ```
@@ -45,7 +42,7 @@ Microsoft shipped `wslc.exe` (and the alias `container.exe`) in WSL 2.9.3. Same 
                                                  └──────────────────────────┘
 ```
 
-Rust stays a thin bridge (`src-tauri`). Every button in the UI is an `invoke` that becomes `Session.PullImageAsync`, `CreateContainer`, `Start`, `Stop`, or `CreateProcess`.
+Rust stays a thin bridge (`src-tauri`). Every button in the UI is an `invoke` that becomes a native sidecar operation using `Microsoft.WSL.Containers` or `wslc`.
 
 ## Install
 
@@ -68,17 +65,17 @@ Every push to `main` runs **CI** (typecheck + both Windows installers as artifac
 - **Session** — `WslcService.GetMissingComponents()`, then `SessionSettings` (vCPU, memory, data path) and `Session.Start()` / `Terminate()`
 - **Images** — pull with progress (`ImageProgress`), remove, list
 - **Containers** — run with ports, env, bind mounts, `--gpus all`; start / stop / restart / delete; inspect; logs; exec
+- **Groups** — start and stop related containers together, share a network, and keep group-specific environment/mount configuration
 - **Volumes** — create and attach
-- **C# host** — live invoke log of the exact `Microsoft.WSL.Containers` calls the sidecar would make
 - **Appearance** — auto light/dark by sunset, or lock either; close hides to the tray
 
-The in-browser lab simulates a running session (nginx, Postgres, Redis, Webtop, a CUDA trainer) so the desktop is usable without Windows. On a real box, `src/lib/wslc/store.ts` is replaced by JSON to `host/`.
+The in-browser lab simulates a running session (nginx, Postgres, Redis, Webtop, a CUDA trainer) so the desktop is usable without Windows. On a real box, `src/lib/wslc/store.ts` talks through the Tauri bridge to `host/`.
 
 ## Requirements (Windows)
 
 - WSL **2.9.3+**: `wsl --update --pre-release`
 - `wslc.exe` on PATH (`wslc version`)
-- .NET 9 Windows targeting pack
+- .NET 9 Windows targeting pack (development/build only)
 - NuGet: `Microsoft.WSL.Containers`
 
 ```powershell
@@ -88,6 +85,8 @@ dotnet add host package Microsoft.WSL.Containers
 ```
 
 ## C# sidecar
+
+Quay ships `Quay.Host` as a self-contained sidecar. End users do not build it and do not need the .NET SDK. Development and CI compile the sidecar before Tauri packages the application.
 
 ```bash
 cd host
@@ -130,14 +129,24 @@ var container = session.CreateContainer(new ContainerSettings("nginx:latest")
 container.Start();
 ```
 
-## UI
+## UI / development
 
 ```bash
 npm install
 npm run tauri dev
 ```
 
-`npm run tauri dev` publishes the C# sidecar the first time (`src-tauri/binaries/quay-host-*.exe`), then starts Vite on port 8080.
+`npm run tauri dev` ensures the matching C# sidecar exists (`src-tauri/binaries/quay-host-*.exe`) before starting Vite/Tauri. The sidecar is rebuilt when the C# source/project is newer than the bundled executable.
+
+To force a clean sidecar rebuild after pulling native-host changes:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/ensure-sidecar.ps1 -Force
+```
+
+> **Important:** Quay's UI can compile successfully while an old `quay-host.exe` is still present. A stale sidecar may make new native features appear to do nothing (for example, a Group Start changes UI state but no WSLC container is created). If native behavior does not match the current source, force-rebuild the sidecar and restart Quay. `prepare-sidecar.ps1` now fails immediately when `dotnet publish` fails so a failed build cannot silently copy an older executable.
+
+For release/Store builds, CI must build the sidecar **before** packaging Quay. The installed application contains the self-contained sidecar; it must never attempt to compile C# on the end user's machine.
 
 ```powershell
 ./scripts/prepare-sidecar.ps1          # or: npm run sidecar
@@ -146,7 +155,7 @@ npm run tauri -- build --bundles nsis,msi
 
 | Path | Role |
 | --- | --- |
-| `src/` | React desktop (overview, containers, images, session, C# host) |
+| `src/` | React desktop (overview, containers, groups, images, session) |
 | `host/` | `Quay.Host` — C# sidecar, `quay-host.exe` |
 | `src-tauri/` | Tauri 2 bridge: `wslc_invoke` → sidecar stdin |
 | `.github/workflows/ci.yml` | Every push / PR — typecheck + x64/ARM64 installers as artifacts |
