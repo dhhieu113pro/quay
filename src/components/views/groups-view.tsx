@@ -35,6 +35,7 @@ export function GroupsView() {
   const saveGroup = useWslc((s) => s.saveGroup);
   const deleteGroup = useWslc((s) => s.deleteGroup);
   const startGroup = useWslc((s) => s.startGroup);
+  const startContainer = useWslc((s) => s.startContainer);
   const stopGroup = useWslc((s) => s.stopGroup);
   const [editing, setEditing] = useState<ContainerGroup | null>(null);
 
@@ -70,6 +71,10 @@ export function GroupsView() {
 
       <div className="grid gap-3 lg:grid-cols-2">
         {groups.map((group) => {
+          const memberNames = new Set(group.specs.map((spec) => spec.name));
+          const members = containers.filter((container) =>
+            container.groupId === group.id || memberNames.has(container.name),
+          );
           const count = counts.get(group.id) ?? { total: 0, running: 0 };
           const envCount = group.env.split("\n").map((line) => line.trim()).filter(Boolean).length;
           return (
@@ -111,7 +116,18 @@ export function GroupsView() {
               )}
 
               <div className="mt-4 flex flex-wrap gap-2">
-                <Button size="sm" onClick={() => startGroup(group.id)}>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    if (group.specs.length) {
+                      startGroup(group.id);
+                    } else {
+                      for (const container of members.filter((item) => item.status !== "running")) {
+                        startContainer(container.id);
+                      }
+                    }
+                  }}
+                >
                   <Play className="mr-1.5 size-3.5" /> Start all
                 </Button>
                 <Button size="sm" variant="secondary" onClick={() => stopGroup(group.id)}>
