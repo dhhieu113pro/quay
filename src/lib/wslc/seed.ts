@@ -471,7 +471,7 @@ export const seedGroups: ContainerGroup[] = [
   {
     id: "local-coding",
     name: "local-coding",
-    autoStart: true,
+    autoStart: false,
     specs: mcpStack.map((p) => specFromPreset(p)),
   },
 ];
