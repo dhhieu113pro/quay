@@ -1,7 +1,9 @@
 import { isTauri, probeWslc } from "@/lib/tauri";
 
 export type ProbeResult = {
+  /** Overall runtime readiness: wslc is available and Quay.Host is running. */
   wslc: boolean;
+  wslcOnPath: boolean;
   sidecar: boolean;
   version: string | null;
   sidecarPath: string | null;
@@ -14,6 +16,7 @@ export async function checkHost(): Promise<ProbeResult> {
   if (!isTauri()) {
     return {
       wslc: false,
+      wslcOnPath: false,
       sidecar: false,
       version: null,
       sidecarPath: null,
@@ -25,6 +28,7 @@ export async function checkHost(): Promise<ProbeResult> {
 
   try {
     const probe = await probeWslc();
+    const ready = probe.wslc && probe.sidecar;
     const missing = [
       ...(probe.wslc ? [] : ["wslc"]),
       ...(probe.sidecar ? [] : ["quay-host"]),
@@ -45,7 +49,8 @@ export async function checkHost(): Promise<ProbeResult> {
     }
 
     return {
-      wslc: probe.wslc,
+      wslc: ready,
+      wslcOnPath: probe.wslc,
       sidecar: probe.sidecar,
       version: probe.version,
       sidecarPath: probe.sidecarPath ?? null,
@@ -56,6 +61,7 @@ export async function checkHost(): Promise<ProbeResult> {
   } catch (err) {
     return {
       wslc: false,
+      wslcOnPath: false,
       sidecar: false,
       version: null,
       sidecarPath: null,
