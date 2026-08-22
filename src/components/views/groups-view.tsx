@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Boxes, Network, Pencil, Play, Plus, Square, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { CubeContainerDialog } from "@/components/cube-container-dialog";
 import {
   EnvEditor,
   joinEnvLines,
@@ -22,7 +23,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { defaultGroupNetwork, slugGroupName } from "@/lib/wslc/groups";
 import { useWslc } from "@/lib/wslc/store";
-import type { Container, ContainerGroup } from "@/lib/wslc/types";
+import type { Container, ContainerGroup, RunSpec } from "@/lib/wslc/types";
 
 function emptyCube(): ContainerGroup {
   const id = `cube-${Date.now()}`;
@@ -91,6 +92,7 @@ export function CubesView() {
   const startContainer = useWslc((s) => s.startContainer);
   const stopGroup = useWslc((s) => s.stopGroup);
   const [editing, setEditing] = useState<ContainerGroup | null>(null);
+  const [addingTo, setAddingTo] = useState<ContainerGroup | null>(null);
   const [runOpen, setRunOpen] = useState(false);
 
   const counts = useMemo(() => {
@@ -119,6 +121,17 @@ export function CubesView() {
     toast(`Starting ${cube.name}`);
   };
 
+  const addContainer = (cube: ContainerGroup, spec: RunSpec) => {
+    saveGroup({
+      ...cube,
+      specs: [
+        ...cube.specs.filter((item) => item.name !== spec.name),
+        { ...spec, groupId: cube.id },
+      ],
+    });
+    toast(`Added ${spec.name} to ${cube.name}`);
+  };
+
   return (
     <>
       <div className="mx-auto w-full max-w-6xl p-4 sm:p-6">
@@ -126,7 +139,7 @@ export function CubesView() {
           <div>
             <h1 className="text-xl font-semibold">Cubes</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Bundle related containers with one shared WSLC network and shared environment variables.
+              Define Cube containers here. They share one WSLC network and shared environment variables.
             </p>
           </div>
           <div className="flex flex-wrap justify-end gap-2">
@@ -248,6 +261,9 @@ export function CubesView() {
                     </Button>
                   ) : null}
 
+                  <Button size="sm" variant="outline" onClick={() => setAddingTo(cube)}>
+                    <Plus className="mr-1.5 size-3.5" /> Add Container
+                  </Button>
                   <Button size="sm" variant="ghost" onClick={() => setEditing({ ...cube })}>
                     <Pencil className="mr-1.5 size-3.5" /> Configure
                   </Button>
@@ -282,6 +298,16 @@ export function CubesView() {
       </div>
 
       <RunCubeDialog open={runOpen} onOpenChange={setRunOpen} />
+      <CubeContainerDialog
+        cube={addingTo}
+        open={Boolean(addingTo)}
+        onOpenChange={(open) => { if (!open) setAddingTo(null); }}
+        onSave={(spec) => {
+          if (!addingTo) return;
+          addContainer(addingTo, spec);
+          setAddingTo(null);
+        }}
+      />
     </>
   );
 }
