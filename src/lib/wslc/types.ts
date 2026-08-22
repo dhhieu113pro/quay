@@ -3,6 +3,7 @@ export type HostGate = "checking" | "missing" | "ready" | "lab";
 export type ViewId =
   | "dashboard"
   | "containers"
+  | "terminal"
   | "images"
   | "groups"
   | "volumes"
