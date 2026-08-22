@@ -1,9 +1,7 @@
-//! Native Tauri bridge for Microsoft WSL Containers.
-//! Quay talks directly to the official WSLC flat C API from Rust; there is no
-//! child C# process or stdio IPC. Close hides to tray; Quit actually exits.
+//! Tauri bridge for the WSLC command-line backend.
+//! Quay calls the installed `wslc.exe` directly and uses the default WSLC session.
+//! Close hides to tray; Quit actually exits.
 
-#[cfg(windows)]
-pub mod wslc_native;
 #[cfg(windows)]
 mod wslc_runtime;
 
@@ -15,14 +13,14 @@ use tauri::{AppHandle, Manager, State, WindowEvent};
 
 pub struct Backend {
     #[cfg(windows)]
-    worker: wslc_runtime::NativeWorker,
+    worker: wslc_runtime::CliWorker,
 }
 
 impl Backend {
     fn new() -> Self {
         Self {
             #[cfg(windows)]
-            worker: wslc_runtime::NativeWorker::spawn(),
+            worker: wslc_runtime::CliWorker::spawn(),
         }
     }
 }
@@ -76,7 +74,7 @@ fn wslc_invoke(backend: State<Backend>, payload: Value) -> Result<Value, String>
     {
         let _ = backend;
         let _ = payload;
-        Err("native WSLC is only available on Windows".into())
+        Err("WSLC is only available on Windows".into())
     }
 }
 
@@ -103,49 +101,21 @@ fn run_capture(program: &str, args: &[&str]) -> Option<String> {
 }
 
 #[tauri::command]
-fn wslc_probe(backend: State<Backend>) -> Value {
-    let version =
-        run_capture("wslc", &["version"]).or_else(|| run_capture("container", &["version"]));
-    #[cfg(windows)]
-    let health = backend
-        .worker
-        .invoke(serde_json::json!({"cmd":"health"}))
-        .ok();
-    #[cfg(not(windows))]
-    let health: Option<Value> = None;
-    let native_up = health
-        .as_ref()
-        .and_then(|x| x.get("ok"))
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    let native_error = health.as_ref().and_then(|x| x.get("error")).cloned();
+fn wslc_probe() -> Value {
+    let version = run_capture("wslc", &["version"]);
+    let up = version.is_some();
     serde_json::json!({
-        "wslc": native_up,
-        "native": native_up,
-        // Kept temporarily for frontend compatibility; no sidecar process exists.
-        "sidecar": native_up,
+        "wslc": up,
+        "sidecar": false,
         "version": version,
         "sidecarPath": null,
-        "sidecarError": native_error,
+        "sidecarError": null,
     })
 }
 
 #[tauri::command]
-fn sidecar_up(backend: State<Backend>) -> bool {
-    #[cfg(windows)]
-    {
-        backend
-            .worker
-            .invoke(serde_json::json!({"cmd":"health"}))
-            .ok()
-            .and_then(|x| x.get("ok").and_then(Value::as_bool))
-            .unwrap_or(false)
-    }
-    #[cfg(not(windows))]
-    {
-        let _ = backend;
-        false
-    }
+fn sidecar_up() -> bool {
+    false
 }
 
 const AUTOSTART_VALUE: &str = "Quay";
@@ -220,13 +190,6 @@ fn autostart_set(enabled: bool) -> Result<bool, String> {
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
-            #[cfg(windows)]
-            if let Ok(resource_dir) = app.path().resource_dir() {
-                let dll = resource_dir.join("binaries").join("wslcsdk.dll");
-                if dll.is_file() {
-                    std::env::set_var("QUAY_WSLC_SDK_DLL", dll);
-                }
-            }
             app.manage(Backend::new());
             if let Err(err) = setup_tray(app.handle()) {
                 eprintln!("tray: {err}");
