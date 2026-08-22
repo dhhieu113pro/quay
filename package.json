@@ -9,7 +9,6 @@
   },
   "scripts": {
     "dev": "vite --config vite.desktop.config.ts --host 127.0.0.1 --port 8080",
-    "sdk": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-wslc-sdk.ps1",
     "build:desktop": "node scripts/build-desktop.mjs",
     "tauri": "tauri",
     "typecheck": "tsc --noEmit",
