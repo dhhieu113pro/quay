@@ -39,17 +39,32 @@ function parseSizeMB(value: string) {
   }
 }
 
+function objectRow(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
 function statsRows(output?: string): Record<string, unknown>[] {
   if (!output?.trim()) return [];
+
   try {
     const parsed: unknown = JSON.parse(output);
-    if (Array.isArray(parsed)) {
-      return parsed.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object");
-    }
-    if (parsed && typeof parsed === "object") return [parsed as Record<string, unknown>];
+    if (Array.isArray(parsed)) return parsed.filter(objectRow);
+    if (objectRow(parsed)) return [parsed];
   } catch {
-    return [];
+    return output
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .flatMap((line) => {
+        try {
+          const parsed: unknown = JSON.parse(line);
+          return objectRow(parsed) ? [parsed] : [];
+        } catch {
+          return [];
+        }
+      });
   }
+
   return [];
 }
 
