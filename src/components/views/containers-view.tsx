@@ -40,7 +40,7 @@ export function ContainersView() {
 
   const grouped = useMemo(() => {
     return groups.map((group) => {
-      applyStackConfig(group);
+      if (group.id === "local-coding") applyStackConfig(group);
       const names = new Set(group.specs.map((s) => s.name));
       const items = filtered.filter(
         (c) => c.groupId === group.id || names.has(c.name),
@@ -102,7 +102,7 @@ export function ContainersView() {
             <div>
               {grouped.map(({ group, items }) =>
                 items.length === 0 && q.trim() ? null : (
-                  <GroupBlock
+                  <CubeBlock
                     key={group.id}
                     group={group}
                     items={items}
@@ -155,7 +155,7 @@ export function ContainersView() {
   );
 }
 
-function GroupBlock({
+function CubeBlock({
   group,
   items,
   selectedId,
@@ -188,7 +188,7 @@ function GroupBlock({
             {items.length} containers · {running} running
           </p>
         </div>
-        <StackConfigDialog group={group} />
+        {group.id === "local-coding" ? <StackConfigDialog group={group} /> : null}
         <label className="flex items-center gap-2 text-xs text-muted-foreground">
           <Switch checked={group.autoStart} onCheckedChange={onAuto} />
           Auto
