@@ -23,6 +23,10 @@ export type WslcInvokeResult = {
   ok: boolean;
   output?: string;
   error?: string;
+  command?: string;
+  exitCode?: number;
+  stdout?: string;
+  stderr?: string;
 };
 
 export async function invokeWslcHost(payload: Record<string, unknown>): Promise<WslcInvokeResult> {
