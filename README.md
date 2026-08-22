@@ -6,6 +6,9 @@
 
 <p align="center">A desktop for <a href="https://learn.microsoft.com/windows/wsl/wsl-container">WSL containers</a> (<code>wslc</code>).</p>
 
+<p align="center">
+  <img src="docs/quay-hero.svg" alt="Quay — run and manage WSL containers, stacks, images, logs, ports and GPU on Windows" width="1100">
+</p>
 
 A **quay** is a dock — the stone edge where ships tie up. Linux containers on Windows are the ships. This app is the berth: list them, pull images, start and stop, exec in, watch logs, hand GPU and ports across, all from a Tauri WebView whose native work is C# on `Microsoft.WSL.Containers`.
 
@@ -59,7 +62,6 @@ Windows x64 and ARM64. WSL **2.9.3+** (`wsl --update --pre-release`) and `wslc.e
 Close hides to the tray; quit from the tray menu. Appearance follows sunrise and sunset, or lock light / dark from the titlebar.
 
 Every push to `main` runs **CI** (typecheck + both Windows installers as artifacts). Tag `v*` runs **Release** onto GitHub Releases. Microsoft Store is a separate manual workflow — Partner Center steps are in [`docs/store.md`](docs/store.md). Listing copy: [`store/listing.md`](store/listing.md).
-
 
 ## What you can do
 
@@ -141,7 +143,6 @@ npm run tauri dev
 ./scripts/prepare-sidecar.ps1          # or: npm run sidecar
 npm run tauri -- build --bundles nsis,msi
 ```
-
 
 | Path | Role |
 | --- | --- |
