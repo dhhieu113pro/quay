@@ -55,15 +55,23 @@ function envSuggestions(cube: ContainerGroup): EnvSuggestion[] {
   );
 }
 
-function cubeMembers(cube: ContainerGroup, containers: Container[]) {
+type CubeMember = {
+  name: string;
+  image: string;
+  spec?: RunSpec;
+  container?: Container;
+};
+
+function cubeMembers(cube: ContainerGroup, containers: Container[]): CubeMember[] {
   const expectedNames = new Set(cube.specs.map((spec) => spec.name).filter(Boolean));
   const runtime = containers.filter(
     (container) => container.groupId === cube.id || expectedNames.has(container.name),
   );
 
-  const rows = cube.specs.map((spec) => ({
+  const rows: CubeMember[] = cube.specs.map((spec) => ({
     name: spec.name || spec.image,
     image: spec.image,
+    spec,
     container: runtime.find((item) => item.name === spec.name),
   }));
 
@@ -89,6 +97,7 @@ export function CubesView() {
   const saveGroup = useWslc((s) => s.saveGroup);
   const deleteGroup = useWslc((s) => s.deleteGroup);
   const startGroup = useWslc((s) => s.startGroup);
+  const startGroupContainer = useWslc((s) => s.startGroupContainer);
   const startContainer = useWslc((s) => s.startContainer);
   const stopContainer = useWslc((s) => s.stopContainer);
   const stopGroup = useWslc((s) => s.stopGroup);
@@ -212,11 +221,12 @@ export function CubesView() {
                       {members.map((member) => {
                         const status = member.container?.status ?? "missing";
                         const running = status === "running";
+                        const canStart = Boolean(member.container || member.spec);
                         const actionLabel = running
                           ? `Stop ${member.name}`
-                          : member.container
+                          : canStart
                             ? `Start ${member.name}`
-                            : `${member.name} is not created`;
+                            : `${member.name} cannot be started`;
                         return (
                           <li key={member.name} className="flex items-center gap-3 px-4 py-2.5">
                             <span
@@ -234,15 +244,17 @@ export function CubesView() {
                               type="button"
                               size="icon-sm"
                               variant="ghost"
-                              disabled={!member.container}
+                              disabled={running ? !member.container : !canStart}
                               aria-label={actionLabel}
                               title={actionLabel}
                               onClick={() => {
-                                if (!member.container) return;
-                                if (running) {
+                                if (running && member.container) {
                                   stopContainer(member.container.id);
                                   toast(`Stopping ${member.name}`);
-                                } else {
+                                } else if (member.spec) {
+                                  startGroupContainer(cube.id, member.name);
+                                  toast(`Starting ${member.name}`);
+                                } else if (member.container) {
                                   startContainer(member.container.id);
                                   toast(`Starting ${member.name}`);
                                 }
