@@ -5,8 +5,7 @@ export type ViewId =
   | "containers"
   | "images"
   | "volumes"
-  | "session"
-  | "host";
+  | "session";
 
 export type ContainerStatus =
   | "created"

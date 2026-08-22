@@ -149,6 +149,16 @@ npm run test:windows
 
 Runtime tests use the real default WSLC session on your Windows machine. They are intentionally not run on GitHub-hosted Actions runners.
 
+The Rust backend also has an opt-in real-container lifecycle test. It runs an
+`alpine:latest` container through the same `CliWorker` used by Quay, verifies the
+real JSON list record and logs, and removes its uniquely named container:
+
+```powershell
+cargo test --manifest-path src-tauri/Cargo.toml real_wslc_container_lifecycle -- --ignored --nocapture
+```
+
+Set `QUAY_WSLC_TEST_IMAGE` to use another image that provides `sh` and `printf`.
+
 ## Repository layout
 
 | Path | Role |

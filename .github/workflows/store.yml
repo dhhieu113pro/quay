@@ -32,16 +32,8 @@ jobs:
         with:
           workspaces: src-tauri -> target
 
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: "9.0.x"
-
       - name: Install frontend
         run: npm ci
-
-      - name: Publish C# sidecar
-        shell: pwsh
-        run: ./scripts/prepare-sidecar.ps1
 
       - name: Install Tauri CLI
         run: npm install -g @tauri-apps/cli@2

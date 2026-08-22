@@ -29,9 +29,7 @@ export function SetupScreen() {
   const gate = useWslc((s) => s.gate);
   const probeNote = useWslc((s) => s.probeNote);
   const retryProbe = useWslc((s) => s.retryProbe);
-  const enterLab = useWslc((s) => s.enterLab);
   const checking = gate === "checking";
-  const backendFailure = probeNote.includes("Quay.Host backend failed to start");
 
   return (
     <div className="mx-auto flex min-h-0 w-full max-w-xl flex-1 flex-col justify-center gap-6 overflow-y-auto p-6">
@@ -40,43 +38,21 @@ export function SetupScreen() {
         <div>
           <p className="text-xs uppercase tracking-widest text-subtle">Quay</p>
           <h1 className="text-2xl font-medium tracking-tight">
-            {backendFailure ? "Quay backend failed to start" : "WSL containers aren’t here"}
+            WSL containers aren’t here
           </h1>
         </div>
       </div>
 
       <p className="text-sm leading-relaxed text-muted-foreground">
-        {backendFailure ? (
-          <>
-            WSL containers are installed, but Quay could not start its bundled{" "}
-            <span className="font-mono text-foreground">Quay.Host</span> backend. The C# host starts
-            automatically with Quay and does not depend on the old C# Host UI tab.
-          </>
-        ) : (
-          <>
-            This desktop talks to <span className="font-mono text-foreground">wslc.exe</span> through
-            a C# sidecar on{" "}
-            <span className="font-mono text-foreground">Microsoft.WSL.Containers</span>. Install the
-            WSL container runtime, then check again.
-          </>
-        )}
+        This desktop runs <span className="font-mono text-foreground">wslc.exe</span> through its
+        native backend. Install the WSL container runtime, then check again.
       </p>
 
       <p className="whitespace-pre-wrap break-words font-mono text-xs text-subtle">
-        {checking ? "Checking wslc.exe and Quay.Host…" : probeNote}
+        {checking ? "Checking wslc.exe…" : probeNote}
       </p>
 
-      {backendFailure ? (
-        <div className="rounded-xl border border-border bg-card p-4 text-sm">
-          <p className="font-medium">Development recovery</p>
-          <CopyRow cmd="powershell -ExecutionPolicy Bypass -File scripts/ensure-sidecar.ps1 -Force" />
-          <p className="mt-2 text-xs text-subtle">
-            Fully quit Quay from the tray after rebuilding, then start it again. Release and Store
-            builds ship this backend prebuilt; end users do not compile it.
-          </p>
-        </div>
-      ) : (
-        <ol className="grid gap-3">
+      <ol className="grid gap-3">
           {STEPS.map((step) => (
             <li key={step.n} className="rounded-xl border border-border bg-card p-4">
               <div className="flex items-baseline gap-2">
@@ -87,11 +63,9 @@ export function SetupScreen() {
               <p className="mt-2 text-xs text-subtle">{step.hint}</p>
             </li>
           ))}
-        </ol>
-      )}
+      </ol>
 
-      {!backendFailure ? (
-        <p className="text-xs text-muted-foreground">
+      <p className="text-xs text-muted-foreground">
           Docs:{" "}
           <a
             className="text-accent underline-offset-2 hover:underline"
@@ -102,24 +76,18 @@ export function SetupScreen() {
             WSL containers
           </a>
           . After install, come back here and check again — no reinstall of Quay.
-        </p>
-      ) : null}
+      </p>
 
-      <div className="flex flex-col gap-2 sm:flex-row">
-        <Button onClick={() => void retryProbe()} disabled={checking} className="sm:flex-1">
+      <div>
+        <Button onClick={() => void retryProbe()} disabled={checking} className="w-full">
           {checking ? (
             <>
               <LoaderCircle className="size-4 animate-spin" />
               Checking
             </>
-          ) : backendFailure ? (
-            "Check backend again"
           ) : (
             "I’ve installed it — check again"
           )}
-        </Button>
-        <Button variant="secondary" onClick={enterLab} className="sm:flex-1">
-          Explore with sample data
         </Button>
       </div>
     </div>

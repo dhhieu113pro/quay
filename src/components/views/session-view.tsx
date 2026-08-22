@@ -15,7 +15,6 @@ export function SessionView() {
   const startSession = useWslc((s) => s.startSession);
   const stopSession = useWslc((s) => s.stopSession);
   const updateSession = useWslc((s) => s.updateSession);
-  const resetLab = useWslc((s) => s.resetLab);
   const groups = useWslc((s) => s.groups);
   const launchAtSignIn = useWslc((s) => s.launchAtSignIn);
   const setLaunchAtSignIn = useWslc((s) => s.setLaunchAtSignIn);
@@ -27,9 +26,8 @@ export function SessionView() {
       <div>
         <h1 className="text-xl font-medium tracking-tight">WSL container session</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          One Hyper-V VM, separate from WSL distros. The C# host constructs{" "}
-          <span className="font-mono text-foreground/80">SessionSettings</span> then{" "}
-          <span className="font-mono text-foreground/80">Session.Start()</span>.
+          One Hyper-V VM, separate from WSL distros. Quay controls it by running the installed{" "}
+          <span className="font-mono text-foreground/80">wslc.exe</span> CLI.
         </p>
       </div>
 
@@ -84,7 +82,7 @@ export function SessionView() {
       </section>
 
       <section className="grid gap-4 rounded-xl border border-border bg-card p-4">
-        <h2 className="text-sm font-medium">SessionSettings</h2>
+        <h2 className="text-sm font-medium">Session preferences</h2>
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="grid gap-1.5">
             <Label htmlFor="sname">Name</Label>
@@ -217,20 +215,10 @@ export function SessionView() {
       <CodeBlock code={csharpSessionStart(session)} />
 
       <p className="text-xs text-subtle">
-        This preview simulates the host. On Windows 11 with WSL 2.9.3+, the same
-        calls hit the real VM.
+        This preview simulates the runtime. On Windows 11 with WSL 2.9.3+, these
+        commands run against the real VM.
       </p>
 
-      <Button
-        variant="ghost"
-        className="self-start text-muted-foreground"
-        onClick={() => {
-          resetLab();
-          toast("Lab reset");
-        }}
-      >
-        Reset lab
-      </Button>
     </div>
   );
 }

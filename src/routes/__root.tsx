@@ -14,7 +14,7 @@ export const Route = createRootRoute({
       {
         name: "description",
         content:
-          "A dock for WSL containers. Tauri WebView + C# sidecar on Microsoft.WSL.Containers.",
+          "A dock for WSL containers. Tauri desktop powered by the installed wslc CLI.",
       },
     ],
     links: [

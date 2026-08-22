@@ -49,8 +49,8 @@ export function DashboardView() {
           <p className="text-xs uppercase tracking-widest text-subtle">Session</p>
           <h1 className="mt-1 text-2xl font-medium tracking-tight">{session.name}</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Tauri WebView talking to a C# sidecar on{" "}
-            <span className="font-mono text-foreground/80">Microsoft.WSL.Containers</span>
+            Tauri WebView running the installed{" "}
+            <span className="font-mono text-foreground/80">wslc.exe</span> CLI
           </p>
         </div>
         <Button onClick={() => setRunOpen(true)}>Run container</Button>
@@ -177,13 +177,13 @@ export function DashboardView() {
 
         <section className="rounded-xl border border-border bg-card">
           <div className="flex items-center justify-between px-4 py-3">
-            <h2 className="text-sm font-medium">C# host</h2>
+            <h2 className="text-sm font-medium">CLI activity</h2>
             <button
               type="button"
               className="text-xs text-accent hover:underline"
-              onClick={() => setView("host")}
+              onClick={() => setView("session")}
             >
-              Sidecar
+              Session
             </button>
           </div>
           <ul className="divide-y divide-border">

@@ -4,7 +4,7 @@ Quay runs on your PC. It does not have an account system and does not send telem
 
 ## What it touches
 
-- **WSL containers** on this machine, through the bundled `quay-host.exe` sidecar (`Microsoft.WSL.Containers`).
+- **WSL containers** on this machine, through the installed `wslc.exe` command-line tool.
 - **Images you pull** from the registries you name (for example `docker.io`). Those registries see the pull, not us.
 - **Local files** you bind-mount into a container.
 

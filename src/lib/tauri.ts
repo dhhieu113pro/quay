@@ -13,10 +13,7 @@ export async function windowAction(kind: "minimize" | "toggleMaximize" | "close"
 
 export type WslcProbe = {
   wslc: boolean;
-  sidecar: boolean;
   version: string | null;
-  sidecarPath?: string | null;
-  sidecarError?: string | null;
 };
 
 export type WslcInvokeResult = {
@@ -37,16 +34,13 @@ export async function invokeWslcHost(payload: Record<string, unknown>): Promise<
 
 export async function probeWslc(): Promise<WslcProbe> {
   if (!isTauri()) {
-    return { wslc: false, sidecar: false, version: null };
+    return { wslc: false, version: null };
   }
   const { invoke } = await import("@tauri-apps/api/core");
   const raw = await invoke<WslcProbe>("wslc_probe");
   return {
     wslc: Boolean(raw?.wslc),
-    sidecar: Boolean(raw?.sidecar),
     version: raw?.version ?? null,
-    sidecarPath: raw?.sidecarPath ?? null,
-    sidecarError: raw?.sidecarError ?? null,
   };
 }
 

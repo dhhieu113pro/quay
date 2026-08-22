@@ -23,7 +23,7 @@ import {
 } from "@/components/kv-editor";
 import { useWslc } from "@/lib/wslc/store";
 import { cliForRun } from "@/lib/wslc/csharp";
-import { catalogPresets, mcpStack, specFromPreset } from "@/lib/wslc/seed";
+import { catalogPresets, mcpStack, specFromPreset } from "@/lib/wslc/catalog";
 import type { RunSpec } from "@/lib/wslc/types";
 import { cn } from "@/lib/utils";
 

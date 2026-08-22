@@ -1,6 +1,6 @@
 # Microsoft Store
 
-Quay is a full-trust Win32 desktop (Tauri + C# sidecar). It talks to WSL, so it cannot ship as a sandboxed UWP/MSIX without `runFullTrust`. Partner Center’s **EXE or MSI app** listing is the path Tauri documents and the one this repo builds for.
+Quay is a full-trust Win32 Tauri desktop. It runs the installed WSL container CLI, so it cannot ship as a sandboxed UWP/MSIX without `runFullTrust`. Partner Center’s **EXE or MSI app** listing is the path Tauri documents and the one this repo builds for.
 
 ## First listing (once)
 
@@ -45,7 +45,6 @@ Optional Authenticode (SmartScreen on GitHub Releases):
 On a Windows box with Node 22, Rust, and .NET 9:
 
 ```powershell
-./scripts/prepare-sidecar.ps1
 npm ci
 npm run tauri -- build --bundles nsis,msi --config src-tauri/tauri.store.conf.json
 ```

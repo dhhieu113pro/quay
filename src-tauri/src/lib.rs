@@ -106,16 +106,8 @@ fn wslc_probe() -> Value {
     let up = version.is_some();
     serde_json::json!({
         "wslc": up,
-        "sidecar": false,
         "version": version,
-        "sidecarPath": null,
-        "sidecarError": null,
     })
-}
-
-#[tauri::command]
-fn sidecar_up() -> bool {
-    false
 }
 
 const AUTOSTART_VALUE: &str = "Quay";
@@ -204,7 +196,6 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             wslc_invoke,
-            sidecar_up,
             wslc_probe,
             autostart_enabled,
             autostart_set
