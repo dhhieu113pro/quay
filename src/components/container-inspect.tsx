@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { Play, RotateCcw, Square, Trash2, X } from "lucide-react";
+import { LoaderCircle, Play, RotateCcw, Square, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusPill } from "@/components/status-pill";
-import { formatBytes, formatUptime } from "@/lib/utils";
+import { formatUptime } from "@/lib/utils";
 import { execInContainer } from "@/lib/wslc/terminal";
 import { useWslc } from "@/lib/wslc/store";
 import type { Container } from "@/lib/wslc/types";
@@ -22,7 +22,10 @@ export function ContainerInspect({
   const stopContainer = useWslc((s) => s.stopContainer);
   const restartContainer = useWslc((s) => s.restartContainer);
   const deleteContainer = useWslc((s) => s.deleteContainer);
+  const operations = useWslc((s) => s.operations);
   const now = useWslc((s) => s.now);
+  const [tab, setTab] = useState("logs");
+  const busy = Boolean(operations[`container:${container.name}`]);
 
   return (
     <aside className="flex h-full min-h-0 flex-col border-border bg-card md:border-l">
@@ -47,44 +50,48 @@ export function ContainerInspect({
           <Button
             size="sm"
             variant="secondary"
+            disabled={busy}
             onClick={() => {
               stopContainer(container.id);
-              toast(`Stopped ${container.name}`);
+              toast(`Stopping ${container.name}`);
             }}
           >
-            <Square className="size-3.5" />
-            Stop
+            {busy ? <LoaderCircle className="size-3.5 animate-spin" /> : <Square className="size-3.5" />}
+            {busy ? "Stopping…" : "Stop"}
           </Button>
         ) : (
           <Button
             size="sm"
+            disabled={busy}
             onClick={() => {
               startContainer(container.id);
-              toast(`Started ${container.name}`);
+              toast(`Starting ${container.name}`);
             }}
           >
-            <Play className="size-3.5" />
-            Start
+            {busy ? <LoaderCircle className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
+            {busy ? "Starting…" : "Start"}
           </Button>
         )}
         <Button
           size="sm"
           variant="secondary"
+          disabled={busy}
           onClick={() => {
             restartContainer(container.id);
             toast(`Restarting ${container.name}`);
           }}
         >
-          <RotateCcw className="size-3.5" />
+          <RotateCcw className={busy ? "size-3.5 animate-spin" : "size-3.5"} />
           Restart
         </Button>
         <Button
           size="sm"
           variant="ghost"
           className="text-destructive"
+          disabled={busy}
           onClick={() => {
             deleteContainer(container.id);
-            toast(`Removed ${container.name}`);
+            toast(`Removing ${container.name}`);
           }}
         >
           <Trash2 className="size-3.5" />
@@ -92,14 +99,14 @@ export function ContainerInspect({
         </Button>
       </div>
 
-      <Tabs defaultValue="logs" className="flex min-h-0 flex-1 flex-col px-4 py-3">
+      <Tabs value={tab} onValueChange={setTab} className="flex min-h-0 flex-1 flex-col px-4 py-3">
         <TabsList className="w-full justify-start">
           <TabsTrigger value="logs">Logs</TabsTrigger>
           <TabsTrigger value="exec">Exec</TabsTrigger>
           <TabsTrigger value="inspect">Inspect</TabsTrigger>
         </TabsList>
         <TabsContent value="logs" className="min-h-0 flex-1">
-          <LogPane container={container} />
+          {tab === "logs" ? <LogPane container={container} /> : null}
         </TabsContent>
         <TabsContent value="exec" className="min-h-0 flex-1">
           <ExecPane container={container} />
@@ -108,16 +115,14 @@ export function ContainerInspect({
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-xs">
             <Row k="Status" v={container.status} />
             <Row k="Image" v={container.image} />
-            <Row k="Command" v={container.command.join(" ")} mono />
-            <Row k="User" v={container.user} />
-            <Row k="Workdir" v={container.workdir} mono />
+            <Row k="Command" v={container.command.join(" ") || "—"} mono />
+            <Row k="User" v={container.user || "—"} />
+            <Row k="Workdir" v={container.workdir || "/"} mono />
             <Row
               k="Ports"
               v={
                 container.ports.length
-                  ? container.ports
-                      .map((p) => `${p.host}:${p.container}/${p.protocol}`)
-                      .join(", ")
+                  ? container.ports.map((p) => `${p.host}:${p.container}/${p.protocol}`).join(", ")
                   : "none"
               }
               mono
@@ -126,23 +131,17 @@ export function ContainerInspect({
               k="Mounts"
               v={
                 container.mounts.length
-                  ? container.mounts
-                      .map((m) => `${m.source} → ${m.destination} (${m.mode})`)
-                      .join("\n")
-                  : "none"
+                  ? container.mounts.map((m) => `${m.source} → ${m.destination} (${m.mode})`).join("\n")
+                  : "not reported by container list"
               }
               mono
             />
-            <Row k="CPU" v={`${container.cpuPercent.toFixed(1)}%`} />
-            <Row
-              k="Memory"
-              v={`${formatBytes(container.memoryMB)} / ${formatBytes(container.memoryLimitMB)}`}
-            />
-            <Row k="Uptime" v={formatUptime(container.startedAt, now)} />
-            {container.exitCode !== undefined ? (
-              <Row k="Exit" v={String(container.exitCode)} />
-            ) : null}
+            <Row k="Uptime" v={container.status === "running" ? formatUptime(container.startedAt, now) : "—"} />
+            {container.exitCode !== undefined ? <Row k="Exit" v={String(container.exitCode)} /> : null}
           </dl>
+          <p className="mt-4 text-[11px] leading-relaxed text-subtle">
+            Quay only shows fields returned by the current WSLC list data here. Resource usage is intentionally omitted unless WSLC reports it directly.
+          </p>
         </TabsContent>
       </Tabs>
     </aside>
@@ -159,7 +158,16 @@ function Row({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
 }
 
 function LogPane({ container }: { container: Container }) {
+  const refreshLogs = useWslc((s) => s.refreshLogs);
   const end = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (container.status !== "running") return;
+    void refreshLogs(container.id);
+    const id = window.setInterval(() => void refreshLogs(container.id), 3000);
+    return () => window.clearInterval(id);
+  }, [container.id, container.status, refreshLogs]);
+
   useEffect(() => {
     end.current?.scrollIntoView({ block: "end" });
   }, [container.logs.length]);
@@ -167,17 +175,14 @@ function LogPane({ container }: { container: Container }) {
   return (
     <div className="h-64 overflow-y-auto rounded-lg border border-border bg-background p-3 font-mono text-xs leading-relaxed md:h-full">
       {container.logs.length === 0 ? (
-        <p className="text-subtle">No output yet.</p>
+        <p className="text-subtle">{container.status === "running" ? "No output yet." : "Start the container to read logs."}</p>
       ) : (
-        container.logs.map((l, i) => (
+        container.logs.map((line, index) => (
           <div
-            key={`${l.ts}-${i}`}
-            className={l.stream === "stderr" ? "text-destructive" : "text-foreground/85"}
+            key={`${line.ts}-${index}`}
+            className={line.stream === "stderr" ? "text-destructive" : "text-foreground/85"}
           >
-            <span className="mr-2 text-subtle">
-              {new Date(l.ts).toISOString().slice(11, 19)}
-            </span>
-            {l.text}
+            {line.text}
           </div>
         ))
       )}
@@ -221,17 +226,10 @@ function ExecPane({ container }: { container: Container }) {
 
     try {
       const result = await execInContainer(container, value);
-      if (result.output) {
-        setLines((current) => [...current, result.output]);
-      }
-      if (!result.ok && result.exitCode != null) {
-        setLines((current) => [...current, `[exit ${result.exitCode}]`]);
-      }
+      if (result.output) setLines((current) => [...current, result.output]);
+      if (!result.ok && result.exitCode != null) setLines((current) => [...current, `[exit ${result.exitCode}]`]);
     } catch (error) {
-      setLines((current) => [
-        ...current,
-        error instanceof Error ? error.message : String(error),
-      ]);
+      setLines((current) => [...current, error instanceof Error ? error.message : String(error)]);
     } finally {
       setBusy(false);
     }
@@ -240,30 +238,24 @@ function ExecPane({ container }: { container: Container }) {
   return (
     <div className="flex h-64 flex-col rounded-lg border border-border bg-background md:h-full">
       <div className="min-h-0 flex-1 overflow-y-auto p-3 font-mono text-xs leading-relaxed">
-        {lines.map((line, i) => (
-          <div key={i} className="whitespace-pre-wrap text-foreground/85">
-            {line}
-          </div>
+        {lines.map((line, index) => (
+          <div key={index} className="whitespace-pre-wrap text-foreground/85">{line}</div>
         ))}
         {busy ? <div className="animate-pulse text-subtle">running…</div> : null}
         <div ref={end} />
       </div>
       <form
         className="flex gap-2 border-t border-border p-2"
-        onSubmit={(e) => {
-          e.preventDefault();
+        onSubmit={(event) => {
+          event.preventDefault();
           void run();
         }}
       >
         <span className="hidden items-center px-1 font-mono text-xs text-accent sm:flex">#</span>
         <Input
           value={cmd}
-          onChange={(e) => setCmd(e.target.value)}
-          placeholder={
-            container.status === "running"
-              ? "Run a shell command"
-              : "start the container first"
-          }
+          onChange={(event) => setCmd(event.target.value)}
+          placeholder={container.status === "running" ? "Run a shell command" : "start the container first"}
           className="h-10 font-mono text-xs"
           autoComplete="off"
           disabled={busy}
