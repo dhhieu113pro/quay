@@ -8,17 +8,10 @@
     "nf3": "0.3.17"
   },
   "scripts": {
-    "dev": "node scripts/with-app-env.mjs vite dev --host 0.0.0.0 --port 8080",
-    "build": "node scripts/with-app-env.mjs vite build && npm run db:migrate",
-    "db:migrate": "node scripts/migrate.mjs",
+    "dev": "vite --config vite.desktop.config.ts --host 127.0.0.1 --port 8080",
     "build:desktop": "node scripts/build-desktop.mjs",
     "tauri": "tauri",
-    "preview": "node scripts/with-app-env.mjs vite preview",
-    "typecheck": "tsc --noEmit",
-    "check:auth": "node scripts/check-auth-invariant.mjs",
-    "test": "node --test 'scripts/**/*.test.mjs'",
-    "lint": "eslint .",
-    "format": "prettier --write ."
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.4",

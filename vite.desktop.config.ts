@@ -13,7 +13,8 @@ export default defineConfig({
   resolve: { tsconfigPaths: true },
   clearScreen: false,
   server: {
-    port: 1420,
+    host: "127.0.0.1",
+    port: 8080,
     strictPort: true,
     watch: { ignored: ["**/src-tauri/**"] },
   },

@@ -132,10 +132,10 @@ container.Start();
 
 ```bash
 npm install
-npm run dev
+npm run tauri dev
 ```
 
-On Windows, with Node 22, Rust, and .NET 9:
+`npm run dev` is the Vite WebView only. Tauri needs the C# sidecar first:
 
 ```powershell
 ./scripts/prepare-sidecar.ps1
