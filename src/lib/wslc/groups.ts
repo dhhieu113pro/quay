@@ -31,11 +31,17 @@ export function slugGroupName(name: string) {
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "") || `group-${Date.now()}`;
+    .replace(/^-+|-+$/g, "") || `cube-${Date.now()}`;
 }
 
 export function defaultGroupNetwork(id: string) {
   return `quay-${id}`;
+}
+
+function mergeSpecs(base: RunSpec[], override: RunSpec[] = []) {
+  const byName = new Map(base.map((spec) => [spec.name, { ...spec }]));
+  for (const spec of override) byName.set(spec.name, { ...spec });
+  return Array.from(byName.values());
 }
 
 export function loadGroups(): ContainerGroup[] {
@@ -47,7 +53,7 @@ export function loadGroups(): ContainerGroup[] {
       network: override.network || group.network,
       env: override.env ?? group.env,
       autoStart: override.autoStart ?? group.autoStart,
-      specs: group.specs.map((spec) => ({ ...spec })),
+      specs: mergeSpecs(group.specs, override.specs),
     };
   });
   const users = safeParse<ContainerGroup[]>(GROUPS_KEY, [])
@@ -70,6 +76,7 @@ export function saveGroup(group: ContainerGroup) {
       network: group.network,
       env: group.env,
       autoStart: group.autoStart,
+      specs: group.specs,
     };
     localStorage.setItem(BUILTIN_OVERRIDES_KEY, JSON.stringify(overrides));
     return;
@@ -77,6 +84,17 @@ export function saveGroup(group: ContainerGroup) {
   const users = loadGroups().filter((item) => !item.builtIn && item.id !== group.id);
   users.push({ ...group, builtIn: false });
   localStorage.setItem(GROUPS_KEY, JSON.stringify(users));
+}
+
+export function rememberGroupSpec(group: ContainerGroup, spec: RunSpec) {
+  const normalized = { ...spec, groupId: group.id };
+  const specs = [
+    ...group.specs.filter((item) => item.name !== normalized.name),
+    normalized,
+  ];
+  const updated = { ...group, specs };
+  saveGroup(updated);
+  return updated;
 }
 
 export function deleteGroupDefinition(id: string) {
