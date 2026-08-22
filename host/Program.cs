@@ -120,7 +120,7 @@ public sealed class QuayHost
 
     private string EnsureNetwork(string name)
     {
-        var list = ExecWslc(["network", "ls"]);
+        var list = ExecWslc(["network", "list"]);
         if (list.Ok && list.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries)
                 .Any(line => line.Contains(name, StringComparison.OrdinalIgnoreCase)))
             return JsonSerializer.Serialize(new { ok = true, output = $"network {name} exists" });
