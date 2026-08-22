@@ -139,9 +139,9 @@ export function DashboardView() {
 
       {groups.length > 0 ? (
         <section className="rounded-xl border border-border bg-card p-4">
-          <h2 className="text-sm font-medium">Groups</h2>
+          <h2 className="text-sm font-medium">Cubes</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Auto groups start when the session comes up.
+            Auto Cubes start when the session comes up.
           </p>
           <ul className="mt-3 grid gap-2">
             {groups.map((g) => {
