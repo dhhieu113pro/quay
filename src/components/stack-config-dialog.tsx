@@ -19,22 +19,25 @@ export type StackConfig = {
   workspacePath: string;
   githubToken: string;
   ngrokToken: string;
+  ngrokDomain: string;
 };
 
-function loadAll(): Record<string, StackConfig> {
+function loadAll(): Record<string, Partial<StackConfig>> {
   if (typeof localStorage === "undefined") return {};
   try {
-    return JSON.parse(localStorage.getItem(KEY) || "{}") as Record<string, StackConfig>;
+    return JSON.parse(localStorage.getItem(KEY) || "{}") as Record<string, Partial<StackConfig>>;
   } catch {
     return {};
   }
 }
 
 export function loadStackConfig(groupId: string): StackConfig {
-  return loadAll()[groupId] ?? {
-    workspacePath: "D:\\wslc\\workspaces",
-    githubToken: "",
-    ngrokToken: "",
+  const saved = loadAll()[groupId] ?? {};
+  return {
+    workspacePath: saved.workspacePath ?? "D:\\wslc\\workspaces",
+    githubToken: saved.githubToken ?? "",
+    ngrokToken: saved.ngrokToken ?? "",
+    ngrokDomain: saved.ngrokDomain ?? "",
   };
 }
 
@@ -56,6 +59,7 @@ export function applyStackConfig(group: ContainerGroup) {
 
     if (spec.name === "local-coding-mcp") {
       if (cfg.githubToken) env.set("GITHUB_TOKEN", cfg.githubToken);
+      else env.delete("GITHUB_TOKEN");
       if (cfg.workspacePath) {
         mounts = mounts.filter((m) => !m.includes(":/workspace"));
         mounts.push(`${cfg.workspacePath}:/workspace:rw`);
@@ -63,8 +67,20 @@ export function applyStackConfig(group: ContainerGroup) {
       }
     }
 
-    if (spec.name === "ngrok" && cfg.ngrokToken) {
-      env.set("NGROK_AUTHTOKEN", cfg.ngrokToken);
+    if (spec.name === "ngrok" || spec.name === "local-coding-mcp-ngrok") {
+      if (cfg.ngrokToken) env.set("NGROK_AUTHTOKEN", cfg.ngrokToken);
+      else env.delete("NGROK_AUTHTOKEN");
+      if (cfg.ngrokDomain) env.set("NGROK_DOMAIN", cfg.ngrokDomain);
+      else env.delete("NGROK_DOMAIN");
+
+      return {
+        ...spec,
+        command: cfg.ngrokDomain
+          ? `http local-coding-mcp:5000 --url https://${cfg.ngrokDomain} --log=stdout`
+          : "http local-coding-mcp:5000 --log=stdout",
+        env: Array.from(env, ([k, v]) => `${k}=${v}`).join("\n"),
+        mounts: mounts.join("\n"),
+      };
     }
 
     return {
@@ -101,9 +117,9 @@ export function StackConfigDialog({ group }: { group: ContainerGroup }) {
       </DialogTrigger>
       <DialogContent className="max-w-xl">
         <DialogHeader>
-          <DialogTitle>Configure {group.name}</DialogTitle>
+          <DialogTitle>Configure Group · {group.name}</DialogTitle>
           <DialogDescription>
-            Settings are applied to the containers in this stack the next time it starts.
+            Group settings are applied to its containers the next time the Group starts.
           </DialogDescription>
         </DialogHeader>
 
@@ -148,6 +164,28 @@ export function StackConfigDialog({ group }: { group: ContainerGroup }) {
             />
             <p className="text-xs text-muted-foreground">
               Passed only to ngrok as NGROK_AUTHTOKEN.
+            </p>
+          </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="ngrok-domain">ngrok domain</Label>
+            <Input
+              id="ngrok-domain"
+              value={config.ngrokDomain}
+              onChange={(e) =>
+                setConfig((c) => ({
+                  ...c,
+                  ngrokDomain: e.target.value
+                    .trim()
+                    .replace(/^https?:\/\//, "")
+                    .replace(/\/$/, ""),
+                }))
+              }
+              placeholder="random-tweed-runt.ngrok-free.dev"
+              autoComplete="off"
+            />
+            <p className="text-xs text-muted-foreground">
+              Passed to ngrok as NGROK_DOMAIN and used as the public endpoint URL.
             </p>
           </div>
         </div>
