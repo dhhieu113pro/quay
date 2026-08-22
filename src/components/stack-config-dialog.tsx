@@ -75,9 +75,11 @@ export function applyStackConfig(group: ContainerGroup) {
 
       return {
         ...spec,
+        // ProcessSettings.CommandLine is the full init command. Unlike `wslc run`,
+        // it is not just the arguments appended to the image ENTRYPOINT.
         command: cfg.ngrokDomain
-          ? `http local-coding-mcp:5000 --url https://${cfg.ngrokDomain} --log=stdout`
-          : "http local-coding-mcp:5000 --log=stdout",
+          ? `ngrok http local-coding-mcp:5000 --url https://${cfg.ngrokDomain} --log=stdout`
+          : "ngrok http local-coding-mcp:5000 --log=stdout",
         env: Array.from(env, ([k, v]) => `${k}=${v}`).join("\n"),
         mounts: mounts.join("\n"),
       };
@@ -85,8 +87,11 @@ export function applyStackConfig(group: ContainerGroup) {
 
     return {
       ...spec,
-      // The image ENTRYPOINT is `dotnet LocalCodingMcp.dll` and its Dockerfile
-      // WORKDIR is /app. /workspace is only the bind-mounted data directory.
+      // The SDK init process needs an explicit executable. The image Dockerfile
+      // uses WORKDIR /app and ENTRYPOINT ["dotnet", "LocalCodingMcp.dll"].
+      command: spec.name === "local-coding-mcp"
+        ? "/usr/bin/dotnet /app/LocalCodingMcp.dll"
+        : spec.command,
       workdir: spec.name === "local-coding-mcp" ? "/app" : spec.workdir,
       env: Array.from(env, ([k, v]) => `${k}=${v}`).join("\n"),
       mounts: mounts.join("\n"),
