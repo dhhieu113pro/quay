@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { LoaderCircle } from "lucide-react";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -44,6 +45,7 @@ export function RunDialog() {
   const setRunOpen = useWslc((s) => s.setRunOpen);
   const runContainer = useWslc((s) => s.runContainer);
   const images = useWslc((s) => s.images);
+  const operations = useWslc((s) => s.operations);
   const [spec, setSpec] = useState<RunSpec>(defaultSpec);
   const [envRows, setEnvRows] = useState<KvPair[]>([]);
   const [mountRows, setMountRows] = useState<MountRow[]>([]);
@@ -75,9 +77,11 @@ export function RunDialog() {
     mounts: joinMountLines(mountRows),
   };
   const preview = cliForRun(submittedSpec);
+  const operationKey = `container:${spec.name.trim() || spec.image.trim()}`;
+  const busy = Boolean(operations[operationKey]);
 
   return (
-    <Dialog open={open} onOpenChange={setRunOpen}>
+    <Dialog open={open} onOpenChange={(next) => { if (!busy) setRunOpen(next); }}>
       <DialogContent className="flex max-h-[90dvh] max-w-2xl flex-col gap-0 overflow-hidden p-0">
         <DialogHeader className="border-b border-border px-5 py-4">
           <DialogTitle>Run Container</DialogTitle>
@@ -88,106 +92,94 @@ export function RunDialog() {
 
         <form
           className="flex min-h-0 flex-1 flex-col"
-          onSubmit={(e) => {
-            e.preventDefault();
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (busy) return;
             runContainer(submittedSpec);
             toast(`Creating ${spec.name || spec.image}`);
-            setRunOpen(false);
           }}
         >
-          <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto px-5 py-4">
-            <div className="grid gap-1.5">
-              <Label htmlFor="image">Image</Label>
-              <Input
-                id="image"
-                list="pulled-image-catalog"
-                value={spec.image}
-                onChange={(e) => patch({ image: e.target.value })}
-                placeholder={pulledImages.length ? "Select or type a pulled image" : "repository/image:tag"}
-                required
-                className="font-mono text-xs"
-              />
-              <datalist id="pulled-image-catalog">
-                {pulledImages.map((image) => <option key={image} value={image} />)}
-              </datalist>
-              <p className="text-xs text-subtle">
-                {pulledImages.length
-                  ? `${pulledImages.length} pulled image${pulledImages.length === 1 ? "" : "s"} available.`
-                  : "No pulled images yet. You can still type an image reference manually."}
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <fieldset disabled={busy} className="contents">
+            <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto px-5 py-4">
               <div className="grid gap-1.5">
-                <Label htmlFor="name">Name</Label>
+                <Label htmlFor="image">Image</Label>
                 <Input
-                  id="name"
-                  placeholder="web"
-                  value={spec.name}
-                  onChange={(e) => patch({ name: e.target.value })}
+                  id="image"
+                  list="pulled-image-catalog"
+                  value={spec.image}
+                  onChange={(event) => patch({ image: event.target.value })}
+                  placeholder={pulledImages.length ? "Select or type a pulled image" : "repository/image:tag"}
+                  required
+                  className="font-mono text-xs"
                 />
+                <datalist id="pulled-image-catalog">
+                  {pulledImages.map((image) => <option key={image} value={image} />)}
+                </datalist>
+                <p className="text-xs text-subtle">
+                  {pulledImages.length
+                    ? `${pulledImages.length} pulled image${pulledImages.length === 1 ? "" : "s"} available.`
+                    : "No pulled images yet. You can still type an image reference manually."}
+                </p>
               </div>
-              <div className="grid gap-1.5">
-                <Label htmlFor="ports">Publish ports</Label>
-                <Input
-                  id="ports"
-                  placeholder="8080:80"
-                  value={spec.ports}
-                  onChange={(e) => patch({ ports: e.target.value })}
-                />
-              </div>
-            </div>
 
-            <div className="grid gap-1.5">
-              <Label htmlFor="cmd">Command</Label>
-              <Input
-                id="cmd"
-                placeholder="optional override"
-                value={spec.command}
-                onChange={(e) => patch({ command: e.target.value })}
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="grid gap-1.5">
+                  <Label htmlFor="name">Name</Label>
+                  <Input id="name" placeholder="web" value={spec.name} onChange={(event) => patch({ name: event.target.value })} />
+                </div>
+                <div className="grid gap-1.5">
+                  <Label htmlFor="ports">Publish ports</Label>
+                  <Input id="ports" placeholder="8080:80" value={spec.ports} onChange={(event) => patch({ ports: event.target.value })} />
+                </div>
+              </div>
+
+              <div className="grid gap-1.5">
+                <Label htmlFor="cmd">Command</Label>
+                <Input id="cmd" placeholder="optional override" value={spec.command} onChange={(event) => patch({ command: event.target.value })} />
+              </div>
+
+              <EnvEditor
+                rows={envRows}
+                onChange={(rows) => {
+                  setEnvRows(rows);
+                  patch({ env: joinEnvLines(rows) });
+                }}
+              />
+
+              <MountEditor
+                rows={mountRows}
+                onChange={(rows) => {
+                  setMountRows(rows);
+                  patch({ mounts: joinMountLines(rows) });
+                }}
               />
             </div>
 
-            <EnvEditor
-              rows={envRows}
-              onChange={(rows) => {
-                setEnvRows(rows);
-                patch({ env: joinEnvLines(rows) });
-              }}
-            />
-
-            <MountEditor
-              rows={mountRows}
-              onChange={(rows) => {
-                setMountRows(rows);
-                patch({ mounts: joinMountLines(rows) });
-              }}
-            />
-          </div>
-
-          <div className="grid gap-3 border-t border-border px-5 py-3">
-            <div className="flex flex-wrap items-center gap-5">
-              <label className="flex items-center gap-2 text-sm">
-                <Switch checked={spec.gpu} onCheckedChange={(gpu) => patch({ gpu })} />
-                GPU
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <Switch checked={spec.detach} onCheckedChange={(detach) => patch({ detach })} />
-                Detach
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <Switch checked={spec.remove} onCheckedChange={(remove) => patch({ remove })} />
-                Auto-remove
-              </label>
+            <div className="grid gap-3 border-t border-border px-5 py-3">
+              <div className="flex flex-wrap items-center gap-5">
+                <label className="flex items-center gap-2 text-sm">
+                  <Switch checked={spec.gpu} onCheckedChange={(gpu) => patch({ gpu })} />
+                  GPU
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <Switch checked={spec.detach} onCheckedChange={(detach) => patch({ detach })} />
+                  Detach
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <Switch checked={spec.remove} onCheckedChange={(remove) => patch({ remove })} />
+                  Auto-remove
+                </label>
+              </div>
+              <p className="truncate font-mono text-[11px] text-subtle">{preview}</p>
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="ghost" onClick={() => setRunOpen(false)} disabled={busy}>Cancel</Button>
+                <Button type="submit" disabled={busy || !spec.image.trim()}>
+                  {busy ? <LoaderCircle className="size-4 animate-spin" /> : null}
+                  {busy ? "Creating…" : "Create & start"}
+                </Button>
+              </div>
             </div>
-            <p className="truncate font-mono text-[11px] text-subtle">{preview}</p>
-            <div className="flex justify-end gap-2">
-              <Button type="button" variant="ghost" onClick={() => setRunOpen(false)}>
-                Cancel
-              </Button>
-              <Button type="submit">Create & start</Button>
-            </div>
-          </div>
+          </fieldset>
         </form>
       </DialogContent>
     </Dialog>
