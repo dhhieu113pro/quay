@@ -1,0 +1,205 @@
+import { Plus, Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+
+export type KvPair = { id: string; key: string; value: string };
+
+function rid() {
+  return Math.random().toString(16).slice(2, 10);
+}
+
+export function parseEnvLines(raw: string): KvPair[] {
+  const rows = raw
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .filter((line) => line.length > 0)
+    .map((line) => {
+      const eq = line.indexOf("=");
+      if (eq === -1) return { id: rid(), key: line, value: "" };
+      return { id: rid(), key: line.slice(0, eq), value: line.slice(eq + 1) };
+    });
+  return rows.length ? rows : [{ id: rid(), key: "", value: "" }];
+}
+
+export function joinEnvLines(rows: KvPair[]) {
+  return rows
+    .filter((r) => r.key.trim())
+    .map((r) => `${r.key}=${r.value}`)
+    .join("\n");
+}
+
+export function EnvEditor({
+  rows,
+  onChange,
+}: {
+  rows: KvPair[];
+  onChange: (rows: KvPair[]) => void;
+}) {
+  function patch(id: string, next: Partial<KvPair>) {
+    onChange(rows.map((r) => (r.id === id ? { ...r, ...next } : r)));
+  }
+
+  return (
+    <div className="grid gap-2">
+      <div className="flex items-center justify-between gap-2">
+        <Label>Environment</Label>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => onChange([...rows, { id: rid(), key: "", value: "" }])}
+        >
+          <Plus className="size-3.5" />
+          Add
+        </Button>
+      </div>
+      <div className="hidden grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_2.75rem] gap-2 px-0.5 text-xs text-subtle sm:grid">
+        <span>Name</span>
+        <span>Value</span>
+        <span className="sr-only">Remove</span>
+      </div>
+      <ul className="grid gap-2">
+        {rows.map((row) => (
+          <li
+            key={row.id}
+            className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_2.75rem]"
+          >
+            <Input
+              value={row.key}
+              onChange={(e) => patch(row.id, { key: e.target.value })}
+              placeholder="NAME"
+              aria-label="Variable name"
+              className="font-mono text-xs"
+              autoComplete="off"
+              spellCheck={false}
+            />
+            <Input
+              value={row.value}
+              onChange={(e) => patch(row.id, { value: e.target.value })}
+              placeholder="value"
+              aria-label={`Value for ${row.key || "variable"}`}
+              className="font-mono text-xs"
+              autoComplete="off"
+              spellCheck={false}
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label="Remove variable"
+              disabled={rows.length <= 1 && !row.key && !row.value}
+              onClick={() => {
+                const next = rows.filter((r) => r.id !== row.id);
+                onChange(next.length ? next : [{ id: rid(), key: "", value: "" }]);
+              }}
+            >
+              <Trash2 className="size-3.5" />
+            </Button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+export type MountRow = { id: string; source: string; destination: string; mode: "rw" | "ro" };
+
+export function parseMountLines(raw: string): MountRow[] {
+  const rows = raw
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [source = "", destination = "", mode] = line.split(":");
+      return {
+        id: rid(),
+        source,
+        destination: destination || source,
+        mode: mode === "ro" ? ("ro" as const) : ("rw" as const),
+      };
+    });
+  return rows.length ? rows : [{ id: rid(), source: "", destination: "", mode: "rw" }];
+}
+
+export function joinMountLines(rows: MountRow[]) {
+  return rows
+    .filter((r) => r.source.trim() && r.destination.trim())
+    .map((r) => `${r.source}:${r.destination}:${r.mode}`)
+    .join("\n");
+}
+
+export function MountEditor({
+  rows,
+  onChange,
+}: {
+  rows: MountRow[];
+  onChange: (rows: MountRow[]) => void;
+}) {
+  function patch(id: string, next: Partial<MountRow>) {
+    onChange(rows.map((r) => (r.id === id ? { ...r, ...next } : r)));
+  }
+
+  return (
+    <div className="grid gap-2">
+      <div className="flex items-center justify-between gap-2">
+        <Label>Mounts</Label>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() =>
+            onChange([...rows, { id: rid(), source: "", destination: "", mode: "rw" }])
+          }
+        >
+          <Plus className="size-3.5" />
+          Add
+        </Button>
+      </div>
+      <ul className="grid gap-2">
+        {rows.map((row) => (
+          <li key={row.id} className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_4.5rem_2.75rem]">
+            <Input
+              value={row.source}
+              onChange={(e) => patch(row.id, { source: e.target.value })}
+              placeholder="D:\wslc\workspaces"
+              aria-label="Host path"
+              className="font-mono text-xs"
+              spellCheck={false}
+            />
+            <Input
+              value={row.destination}
+              onChange={(e) => patch(row.id, { destination: e.target.value })}
+              placeholder="/workspace"
+              aria-label="Container path"
+              className="font-mono text-xs"
+              spellCheck={false}
+            />
+            <button
+              type="button"
+              className="h-11 rounded-md border border-border bg-background font-mono text-xs text-muted-foreground hover:bg-elevated hover:text-foreground"
+              onClick={() => patch(row.id, { mode: row.mode === "rw" ? "ro" : "rw" })}
+              aria-label={`Mode ${row.mode}`}
+            >
+              {row.mode}
+            </button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label="Remove mount"
+              onClick={() => {
+                const next = rows.filter((r) => r.id !== row.id);
+                onChange(
+                  next.length ? next : [{ id: rid(), source: "", destination: "", mode: "rw" }],
+                );
+              }}
+            >
+              <Trash2 className="size-3.5" />
+            </Button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}

@@ -11,7 +11,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Textarea } from "@/components/ui/textarea";
+import {
+  EnvEditor,
+  MountEditor,
+  joinEnvLines,
+  joinMountLines,
+  parseEnvLines,
+  parseMountLines,
+  type KvPair,
+  type MountRow,
+} from "@/components/kv-editor";
 import { useWslc } from "@/lib/wslc/store";
 import { cliForRun } from "@/lib/wslc/csharp";
 import { catalogPresets, specFromPreset } from "@/lib/wslc/seed";
@@ -27,12 +36,22 @@ export function RunDialog() {
   const catalog = useWslc((s) => s.catalog);
   const images = useWslc((s) => s.images);
   const [spec, setSpec] = useState<RunSpec>(defaultSpec);
+  const [envRows, setEnvRows] = useState<KvPair[]>(() => parseEnvLines(defaultSpec.env));
+  const [mountRows, setMountRows] = useState<MountRow[]>(() =>
+    parseMountLines(defaultSpec.mounts),
+  );
   const local = Array.from(
     new Set([...images.map((i) => `${i.repository}:${i.tag}`), ...catalog]),
   );
 
+  function applySpec(next: RunSpec) {
+    setSpec(next);
+    setEnvRows(parseEnvLines(next.env));
+    setMountRows(parseMountLines(next.mounts));
+  }
+
   useEffect(() => {
-    if (open) setSpec(defaultSpec);
+    if (open) applySpec(defaultSpec);
   }, [open]);
 
   function patch(p: Partial<RunSpec>) {
@@ -43,15 +62,11 @@ export function RunDialog() {
 
   return (
     <Dialog open={open} onOpenChange={setRunOpen}>
-      <DialogContent className="max-w-xl">
+      <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>Run container</DialogTitle>
           <DialogDescription>
-            Creates a container through the C# host —{" "}
-            <span className="font-mono text-[12px] text-foreground/80">
-              Session.CreateContainer
-            </span>
-            .
+            Each environment row is one variable. Name on the left, value on the right.
           </DialogDescription>
         </DialogHeader>
 
@@ -59,7 +74,11 @@ export function RunDialog() {
           className="grid gap-4"
           onSubmit={(e) => {
             e.preventDefault();
-            runContainer(spec);
+            runContainer({
+              ...spec,
+              env: joinEnvLines(envRows),
+              mounts: joinMountLines(mountRows),
+            });
             toast(`Creating ${spec.name || spec.image}`);
           }}
         >
@@ -70,7 +89,7 @@ export function RunDialog() {
                 <button
                   key={p.image}
                   type="button"
-                  onClick={() => setSpec(specFromPreset(p))}
+                  onClick={() => applySpec(specFromPreset(p))}
                   className={cn(
                     "h-9 rounded-md border px-3 text-xs",
                     spec.image === p.image
@@ -135,28 +154,21 @@ export function RunDialog() {
             />
           </div>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div className="grid gap-1.5">
-              <Label htmlFor="env">Environment</Label>
-              <Textarea
-                id="env"
-                placeholder={"KEY=value"}
-                value={spec.env}
-                onChange={(e) => patch({ env: e.target.value })}
-                className="min-h-16 font-mono text-xs"
-              />
-            </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor="mounts">Mounts</Label>
-              <Textarea
-                id="mounts"
-                placeholder={"C:\\src:/workspace:rw"}
-                value={spec.mounts}
-                onChange={(e) => patch({ mounts: e.target.value })}
-                className="min-h-16 font-mono text-xs"
-              />
-            </div>
-          </div>
+          <EnvEditor
+            rows={envRows}
+            onChange={(rows) => {
+              setEnvRows(rows);
+              patch({ env: joinEnvLines(rows) });
+            }}
+          />
+
+          <MountEditor
+            rows={mountRows}
+            onChange={(rows) => {
+              setMountRows(rows);
+              patch({ mounts: joinMountLines(rows) });
+            }}
+          />
 
           <div className="flex flex-wrap items-center gap-5">
             <label className="flex items-center gap-2 text-sm">
@@ -183,7 +195,7 @@ export function RunDialog() {
           </div>
 
           <p className="truncate font-mono text-[11px] text-subtle">
-            {cliForRun(spec)}
+            {cliForRun({ ...spec, env: joinEnvLines(envRows), mounts: joinMountLines(mountRows) })}
           </p>
 
           <div className="flex justify-end gap-2">
