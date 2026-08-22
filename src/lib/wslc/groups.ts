@@ -2,6 +2,7 @@ import { mcpStack, specFromPreset } from "./catalog";
 import type { ContainerGroup, RunSpec } from "./types";
 
 const GROUPS_KEY = "quay.groups.v1";
+const BUILTIN_OVERRIDES_KEY = "quay.group-overrides.v1";
 const ASSIGNMENTS_KEY = "quay.container-groups.v1";
 
 const localCoding: ContainerGroup = {
@@ -38,6 +39,17 @@ export function defaultGroupNetwork(id: string) {
 }
 
 export function loadGroups(): ContainerGroup[] {
+  const overrides = safeParse<Record<string, Partial<ContainerGroup>>>(BUILTIN_OVERRIDES_KEY, {});
+  const builtIns = builtInGroups.map((group) => {
+    const override = overrides[group.id] ?? {};
+    return {
+      ...group,
+      network: override.network || group.network,
+      env: override.env ?? group.env,
+      autoStart: override.autoStart ?? group.autoStart,
+      specs: group.specs.map((spec) => ({ ...spec })),
+    };
+  });
   const users = safeParse<ContainerGroup[]>(GROUPS_KEY, [])
     .filter((group) => group && group.id && group.name)
     .map((group) => ({
@@ -47,11 +59,21 @@ export function loadGroups(): ContainerGroup[] {
       network: group.network || defaultGroupNetwork(group.id),
       specs: group.specs ?? [],
     }));
-  return [...builtInGroups.map((group) => ({ ...group, specs: group.specs.map((spec) => ({ ...spec })) })), ...users];
+  return [...builtIns, ...users];
 }
 
 export function saveGroup(group: ContainerGroup) {
-  if (group.builtIn || typeof localStorage === "undefined") return;
+  if (typeof localStorage === "undefined") return;
+  if (group.builtIn) {
+    const overrides = safeParse<Record<string, Partial<ContainerGroup>>>(BUILTIN_OVERRIDES_KEY, {});
+    overrides[group.id] = {
+      network: group.network,
+      env: group.env,
+      autoStart: group.autoStart,
+    };
+    localStorage.setItem(BUILTIN_OVERRIDES_KEY, JSON.stringify(overrides));
+    return;
+  }
   const users = loadGroups().filter((item) => !item.builtIn && item.id !== group.id);
   users.push({ ...group, builtIn: false });
   localStorage.setItem(GROUPS_KEY, JSON.stringify(users));
