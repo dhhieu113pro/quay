@@ -1,6 +1,6 @@
 name: CI
 
-# GitHub-hosted runners are used only to build/package Quay.
+# GitHub-hosted runners verify source/build/package only.
 # WSLC runtime tests are local-only because hosted runners do not reliably
 # provide the WSL Containers runtime (`wslc`).
 on:
@@ -43,6 +43,12 @@ jobs:
 
       - name: Install frontend dependencies
         run: npm ci --legacy-peer-deps
+
+      - name: TypeScript check
+        run: npm run typecheck
+
+      - name: Rust check
+        run: cargo check --manifest-path src-tauri/Cargo.toml --target ${{ matrix.rust_target }}
 
       - name: Build Windows installer
         uses: tauri-apps/tauri-action@v1
