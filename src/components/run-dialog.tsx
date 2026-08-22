@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -23,23 +23,34 @@ import {
 } from "@/components/kv-editor";
 import { useWslc } from "@/lib/wslc/store";
 import { cliForRun } from "@/lib/wslc/csharp";
-import { catalogPresets, specFromPreset } from "@/lib/wslc/catalog";
 import type { RunSpec } from "@/lib/wslc/types";
-import { cn } from "@/lib/utils";
 
-const defaultSpec = specFromPreset(catalogPresets[0]!);
+const defaultSpec: RunSpec = {
+  image: "",
+  name: "",
+  command: "",
+  ports: "",
+  env: "",
+  mounts: "",
+  gpu: false,
+  remove: false,
+  detach: true,
+  workdir: "/",
+  groupId: undefined,
+};
 
 export function RunDialog() {
   const open = useWslc((s) => s.runOpen);
   const setRunOpen = useWslc((s) => s.setRunOpen);
   const runContainer = useWslc((s) => s.runContainer);
-  const catalog = useWslc((s) => s.catalog);
   const images = useWslc((s) => s.images);
-  const [spec, setSpec] = useState<RunSpec>({ ...defaultSpec, groupId: undefined });
-  const [envRows, setEnvRows] = useState<KvPair[]>(() => parseEnvLines(defaultSpec.env));
-  const [mountRows, setMountRows] = useState<MountRow[]>(() => parseMountLines(defaultSpec.mounts));
-  const local = Array.from(
-    new Set([...images.map((i) => `${i.repository}:${i.tag}`), ...catalog]),
+  const [spec, setSpec] = useState<RunSpec>(defaultSpec);
+  const [envRows, setEnvRows] = useState<KvPair[]>([]);
+  const [mountRows, setMountRows] = useState<MountRow[]>([]);
+
+  const pulledImages = useMemo(
+    () => Array.from(new Set(images.map((image) => `${image.repository}:${image.tag}`))).sort(),
+    [images],
   );
 
   function applySpec(next: RunSpec) {
@@ -57,7 +68,6 @@ export function RunDialog() {
     setSpec((s) => ({ ...s, ...p, groupId: undefined }));
   }
 
-  const selectedPreset = catalogPresets.find((p) => p.image === spec.image);
   const submittedSpec: RunSpec = {
     ...spec,
     groupId: undefined,
@@ -87,40 +97,24 @@ export function RunDialog() {
         >
           <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto px-5 py-4">
             <div className="grid gap-1.5">
-              <Label>Quick pick</Label>
-              <div className="flex flex-wrap gap-1.5">
-                {catalogPresets.map((p) => (
-                  <button
-                    key={p.image}
-                    type="button"
-                    onClick={() => applySpec(specFromPreset(p))}
-                    className={cn(
-                      "h-9 rounded-md border px-3 text-xs",
-                      spec.image === p.image
-                        ? "border-foreground bg-elevated text-foreground"
-                        : "border-border text-muted-foreground hover:bg-elevated/70",
-                    )}
-                  >
-                    {p.label}
-                  </button>
-                ))}
-              </div>
-              {selectedPreset ? <p className="text-xs text-subtle">{selectedPreset.hint}</p> : null}
-            </div>
-
-            <div className="grid gap-1.5">
               <Label htmlFor="image">Image</Label>
               <Input
                 id="image"
-                list="image-catalog"
+                list="pulled-image-catalog"
                 value={spec.image}
                 onChange={(e) => patch({ image: e.target.value })}
+                placeholder={pulledImages.length ? "Select or type a pulled image" : "repository/image:tag"}
                 required
                 className="font-mono text-xs"
               />
-              <datalist id="image-catalog">
-                {local.map((i) => <option key={i} value={i} />)}
+              <datalist id="pulled-image-catalog">
+                {pulledImages.map((image) => <option key={image} value={image} />)}
               </datalist>
+              <p className="text-xs text-subtle">
+                {pulledImages.length
+                  ? `${pulledImages.length} pulled image${pulledImages.length === 1 ? "" : "s"} available.`
+                  : "No pulled images yet. You can still type an image reference manually."}
+              </p>
             </div>
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
