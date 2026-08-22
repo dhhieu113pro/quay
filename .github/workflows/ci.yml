@@ -22,14 +22,15 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
 
-  # This is intentionally a real runtime test, not a compile-only check.
-  # It creates a temporary Microsoft.WSL.Containers session, pulls Alpine,
-  # starts a container, verifies state/output, then exercises quay-host.exe
-  # through the same JSON stdin/stdout protocol used by the Tauri frontend.
+  # Real runtime verification. This must prove that WSLC can create containers,
+  # host port mappings work, Quay.Host can start the production MCP image, and
+  # the complete local-coding Group (MCP + ngrok) is operational.
   wslc-runtime:
     needs: typecheck
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
+    env:
+      NGROK_AUTHTOKEN: ${{ secrets.NGROK_AUTHTOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -47,6 +48,13 @@ jobs:
             Write-Host "wslc CLI is not on PATH; SDK smoke test will validate runtime prerequisites."
           }
 
+      - name: Require ngrok CI credential
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:NGROK_AUTHTOKEN)) {
+            throw "Repository secret NGROK_AUTHTOKEN is required. The local-coding Group runtime test is mandatory."
+          }
+
       - name: WSLC SDK smoke test
         shell: pwsh
         run: dotnet run --project tests/Wslc.Smoke/Wslc.Smoke.csproj -c Release
@@ -55,7 +63,7 @@ jobs:
         shell: pwsh
         run: ./scripts/prepare-sidecar.ps1 -Rid win-x64
 
-      - name: Quay.Host WSLC protocol smoke test
+      - name: Nginx and local-coding Group runtime test
         shell: pwsh
         run: ./tests/host-smoke.ps1 -HostExe host/publish/win-x64/quay-host.exe
 
