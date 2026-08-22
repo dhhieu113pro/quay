@@ -89,7 +89,7 @@ export function ContainersView() {
             ))}
           </div>
           <Button onClick={() => setRunOpen(true)} className="md:w-auto">
-            Run
+            Run Container
           </Button>
         </div>
 
