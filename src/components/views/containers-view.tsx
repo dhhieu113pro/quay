@@ -2,6 +2,7 @@ import { Gpu, Play, Search, Square } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { ContainerInspect } from "@/components/container-inspect";
+import { applyStackConfig, StackConfigDialog } from "@/components/stack-config-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,6 +41,7 @@ export function ContainersView() {
 
   const grouped = useMemo(() => {
     return groups.map((group) => {
+      applyStackConfig(group);
       const names = new Set(group.specs.map((s) => s.name));
       const items = filtered.filter(
         (c) => c.groupId === group.id || names.has(c.name),
@@ -120,6 +122,7 @@ export function ContainersView() {
                       toast(`Stopped ${c?.name ?? id}`);
                     }}
                     onStartGroup={() => {
+                      applyStackConfig(group);
                       startGroup(group.id);
                       toast(`Starting ${group.name}`);
                     }}
@@ -211,6 +214,7 @@ function GroupBlock({
             {items.length} containers · {running} running
           </p>
         </div>
+        <StackConfigDialog group={group} />
         <label className="flex items-center gap-2 text-xs text-muted-foreground">
           <Switch checked={group.autoStart} onCheckedChange={onAuto} />
           Auto
