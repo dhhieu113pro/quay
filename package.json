@@ -12,7 +12,8 @@
     "sidecar": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/ensure-sidecar.ps1",
     "build:desktop": "node scripts/build-desktop.mjs",
     "tauri": "tauri",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File tests/run-all.ps1"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.4",
@@ -43,7 +44,6 @@
     "@tanstack/react-router": "^1.170.0",
     "@tanstack/react-start": "^1.168.0",
     "@tanstack/react-table": "^8.21.0",
-    "@tanstack/router-plugin": "^1.168.0",
     "@tauri-apps/api": "^2.11.1",
     "better-auth": "~1.6.30",
     "class-variance-authority": "^0.7.1",
@@ -78,7 +78,7 @@
     "eslint": "^9.20.0",
     "eslint-config-prettier": "^10.1.1",
     "eslint-plugin-prettier": "^5.2.6",
-    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-hooks": "^6.1.1",
     "eslint-plugin-react-refresh": "^0.4.20",
     "globals": "^15.15.0",
     "lightningcss": "^1.28.0",
