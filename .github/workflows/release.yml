@@ -17,11 +17,11 @@ jobs:
         include:
           - os: windows-latest
             rust_target: x86_64-pc-windows-msvc
-            sidecar_rid: win-x64
+            sdk_rid: win-x64
             name: x64
           - os: windows-11-arm
             rust_target: aarch64-pc-windows-msvc
-            sidecar_rid: win-arm64
+            sdk_rid: win-arm64
             name: arm64
     runs-on: ${{ matrix.os }}
     steps:
@@ -41,16 +41,12 @@ jobs:
           workspaces: src-tauri -> target
           key: release-${{ matrix.rust_target }}
 
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: "9.0.x"
-
       - name: Install frontend
         run: npm ci
 
-      - name: Publish C# sidecar
+      - name: Stage Microsoft native WSLC SDK
         shell: pwsh
-        run: ./scripts/prepare-sidecar.ps1 -Rid ${{ matrix.sidecar_rid }}
+        run: ./scripts/prepare-wslc-sdk.ps1 -Rid ${{ matrix.sdk_rid }}
 
       - name: Build and publish
         uses: tauri-apps/tauri-action@v1
