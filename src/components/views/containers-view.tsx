@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { StatusPill } from "@/components/status-pill";
 import { cn, formatUptime } from "@/lib/utils";
-import { runNativeStack } from "@/lib/wslc/stack-runner";
+import { runNativeStack, stopNativeStack } from "@/lib/wslc/stack-runner";
 import { useWslc } from "@/lib/wslc/store";
 import type { Container, ContainerGroup } from "@/lib/wslc/types";
 
@@ -136,8 +136,17 @@ export function ContainersView() {
                         });
                     }}
                     onStopGroup={() => {
-                      stopGroup(group.id);
-                      toast(`Stopping ${group.name}`);
+                      toast(`Stopping ${group.name}…`);
+                      void stopNativeStack(group)
+                        .then(() => {
+                          stopGroup(group.id);
+                          toast.success(`${group.name} stopped`);
+                        })
+                        .catch((error) => {
+                          toast.error(
+                            error instanceof Error ? error.message : `Could not stop ${group.name}`,
+                          );
+                        });
                     }}
                     onAuto={(on) => {
                       setGroupAutoStart(group.id, on);
