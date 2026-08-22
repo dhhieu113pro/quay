@@ -1,0 +1,85 @@
+name: Finish Store hardening
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/finish-store-hardening.yml
+
+permissions:
+  contents: write
+
+jobs:
+  finish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Apply final release edits
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace(path, old, new):
+              p = Path(path)
+              text = p.read_text(encoding="utf-8")
+              if old not in text:
+                  raise SystemExit(f"Expected text not found in {path}: {old!r}")
+              p.write_text(text.replace(old, new), encoding="utf-8")
+
+          replace("src/components/app-shell.tsx", 'const QUAY_VERSION = "0.1.3";', 'const QUAY_VERSION = "0.1.4";')
+          replace("README.md", "git tag v0.1.3\ngit push origin v0.1.3", "git tag v0.1.4\ngit push origin v0.1.4")
+          replace("docs/store.md", "For the current release, use `v0.1.3`.", "For the current release, use `v0.1.4`.")
+
+          store = Path("src/lib/wslc/store.ts")
+          text = store.read_text(encoding="utf-8")
+          old = '''  const refreshLogs = async (id: string) => {\n    const container = get().containers.find((item) => item.id === id);\n    if (!container || container.status !== "running") return;\n    const logs = await call(["container", "logs", "--tail", "100", container.name]);'''
+          new = '''  const refreshLogs = async (id: string) => {\n    const container = get().containers.find((item) => item.id === id);\n    if (!container) return;\n    const logs = await call(["container", "logs", "--tail", "100", container.name]);'''
+          if old not in text:
+              raise SystemExit("refreshLogs block not found")
+          text = text.replace(old, new)
+          old = '''  const prepareGroup = async (group: ContainerGroup) => {\n    if (group.id === "local-coding") await ensureHostDirectory(LOCAL_CODING_WORKSPACE);\n  };'''
+          new = '''  const prepareGroup = async (group: ContainerGroup) => {\n    if (group.id !== "local-coding") return;\n    const spec = group.specs.find((item) => item.name === "local-coding-mcp");\n    const mount = spec?.mounts\n      .split("\\n")\n      .map((item) => item.trim())\n      .find((item) => item.includes(":/workspace"));\n    const marker = ":/workspace";\n    const at = mount?.lastIndexOf(marker) ?? -1;\n    const workspacePath = at > 0 ? mount!.slice(0, at) : LOCAL_CODING_WORKSPACE;\n    await ensureHostDirectory(workspacePath);\n  };'''
+          if old not in text:
+              raise SystemExit("prepareGroup block not found")
+          store.write_text(text.replace(old, new), encoding="utf-8")
+
+          inspect = Path("src/components/container-inspect.tsx")
+          text = inspect.read_text(encoding="utf-8")
+          old = '''  useEffect(() => {\n    if (container.status !== "running") return;\n    void refreshLogs(container.id);\n    const id = window.setInterval(() => void refreshLogs(container.id), 3000);\n    return () => window.clearInterval(id);\n  }, [container.id, container.status, refreshLogs]);'''
+          new = '''  useEffect(() => {\n    void refreshLogs(container.id);\n    if (container.status !== "running") return;\n    const id = window.setInterval(() => void refreshLogs(container.id), 3000);\n    return () => window.clearInterval(id);\n  }, [container.id, container.status, refreshLogs]);'''
+          if old not in text:
+              raise SystemExit("LogPane effect not found")
+          text = text.replace(old, new)
+          text = text.replace(
+              '{container.status === "running" ? "No output yet." : "Start the container to read logs."}',
+              '"No output yet."',
+          )
+          inspect.write_text(text, encoding="utf-8")
+
+      - name: Refresh generated lock versions
+        run: |
+          npm install --package-lock-only --legacy-peer-deps --ignore-scripts
+          cargo check --manifest-path src-tauri/Cargo.toml
+
+      - name: Commit final release metadata
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json src-tauri/Cargo.lock src/components/app-shell.tsx src/lib/wslc/store.ts src/components/container-inspect.tsx README.md docs/store.md
+          if git diff --cached --quiet; then
+            echo "No final changes needed"
+            exit 0
+          fi
+          git commit -m "Finish Store release hardening"
+          git push origin HEAD:main
