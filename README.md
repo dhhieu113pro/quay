@@ -1,6 +1,10 @@
-# Quay
+<p align="center">
+  <img src="docs/logo.png" width="168" height="168" alt="Quay">
+</p>
 
-A desktop for [WSL containers](https://learn.microsoft.com/windows/wsl/wsl-container) (`wslc`).
+<h1 align="center">Quay</h1>
+
+<p align="center">A desktop for <a href="https://learn.microsoft.com/windows/wsl/wsl-container">WSL containers</a> (<code>wslc</code>).</p>
 
 A **quay** is a dock — the stone edge where ships tie up. Linux containers on Windows are the ships. This app is the berth: list them, pull images, start and stop, exec in, watch logs, hand GPU and ports across, all from a Tauri WebView whose native work is C# on `Microsoft.WSL.Containers`.
 
@@ -100,6 +104,7 @@ npm run dev
 | `src/` | React desktop (overview, containers, images, session, C# host) |
 | `host/` | `Quay.Host` — C# sidecar, `quay-host.exe` |
 | `src-tauri/` | Tauri 2 bridge: `wslc_invoke` → sidecar stdin |
+| `docs/logo.png` | App mark — stacked containers on a quay |
 
 ## License
 

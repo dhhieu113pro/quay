@@ -1,7 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <rect width="100" height="100" rx="18" fill="#0c0d10"/>
-  <rect x="12" y="84" width="76" height="5" rx="1" fill="#8aa0b5"/>
-  <rect x="16" y="56" width="32" height="24" rx="2.5" fill="#8aa0b5"/>
-  <rect x="52" y="56" width="32" height="24" rx="2.5" fill="#8aa0b5"/>
-  <rect x="16" y="28" width="32" height="24" rx="2.5" fill="#e8eaee"/>
+  <rect width="100" height="100" rx="22" fill="#0c0d10"/>
+  <!-- quay -->
+  <path d="M18 78h64l-6 8H24z" fill="#6a717c"/>
+  <path d="M18 78h64v2H18z" fill="#8aa0b5"/>
+  <!-- bottom container -->
+  <path d="M32 52h40l8 10H40z" fill="#5f7386"/>
+  <path d="M32 40h40v12H32z" fill="#8aa0b5"/>
+  <path d="M72 40l8 10V62l-8-10z" fill="#6d8296"/>
+  <!-- top container -->
+  <path d="M32 38h40l8 10H40z" fill="#c9ced6"/>
+  <path d="M32 26h40v12H32z" fill="#e8eaee"/>
+  <path d="M72 26l8 10V48l-8-10z" fill="#b7bcc4"/>
+  <!-- door lines -->
+  <rect x="35" y="29" width="1.4" height="8" rx="0.5" fill="#0c0d10" opacity=".35"/>
+  <rect x="35" y="43" width="1.4" height="8" rx="0.5" fill="#0c0d10" opacity=".28"/>
 </svg>
