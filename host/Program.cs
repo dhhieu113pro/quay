@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.WSL.Containers;
 
@@ -57,17 +58,20 @@ public sealed class QuayHost
     public async Task<string> Invoke(string json)
     {
         using var doc = JsonDocument.Parse(json);
-        var cmd = doc.RootElement.GetProperty("cmd").GetString();
+        var root = doc.RootElement;
+        var cmd = root.GetProperty("cmd").GetString();
         try
         {
             return cmd switch
             {
                 "health" => Health(),
-                "pull" => await Pull(doc.RootElement.GetProperty("image").GetString()!),
-                "run" => Run(doc.RootElement),
-                "stop" => Stop(doc.RootElement.GetProperty("id").GetString()!),
-                "rm" => Delete(doc.RootElement.GetProperty("id").GetString()!),
+                "pull" => await Pull(root.GetProperty("image").GetString()!),
+                "run" => Run(root),
+                "stop" => Stop(root.GetProperty("id").GetString()!),
+                "rm" => Delete(root.GetProperty("id").GetString()!),
                 "ps" => ListContainers(),
+                "ensure_network" => EnsureNetwork(root.GetProperty("name").GetString()!),
+                "run_cli" => RunCli(root.GetProperty("args")),
                 _ => """{"ok":false,"error":"unknown command"}"""
             };
         }
@@ -112,6 +116,44 @@ public sealed class QuayHost
         var id = container.Id;
         _containers[id] = container;
         return JsonSerializer.Serialize(new { ok = true, id });
+    }
+
+    private string EnsureNetwork(string name)
+    {
+        var list = ExecWslc(["network", "ls"]);
+        if (list.Ok && list.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                .Any(line => line.Contains(name, StringComparison.OrdinalIgnoreCase)))
+            return JsonSerializer.Serialize(new { ok = true, output = $"network {name} exists" });
+
+        var create = ExecWslc(["network", "create", name]);
+        return JsonSerializer.Serialize(new { ok = create.Ok, output = create.Output, error = create.Ok ? null : create.Output });
+    }
+
+    private string RunCli(JsonElement argsElement)
+    {
+        var args = argsElement.EnumerateArray().Select(x => x.GetString() ?? "").ToArray();
+        var result = ExecWslc(args);
+        return JsonSerializer.Serialize(new { ok = result.Ok, output = result.Output, error = result.Ok ? null : result.Output });
+    }
+
+    private static (bool Ok, string Output) ExecWslc(IEnumerable<string> args)
+    {
+        using var process = new Process();
+        process.StartInfo = new ProcessStartInfo
+        {
+            FileName = "wslc",
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true
+        };
+        foreach (var arg in args) process.StartInfo.ArgumentList.Add(arg);
+        process.Start();
+        var stdout = process.StandardOutput.ReadToEnd();
+        var stderr = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+        var output = string.Join(Environment.NewLine, new[] { stdout.Trim(), stderr.Trim() }.Where(x => x.Length > 0));
+        return (process.ExitCode == 0, output);
     }
 
     private string Stop(string id)
