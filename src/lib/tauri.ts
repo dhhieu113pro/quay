@@ -24,6 +24,11 @@ export type WslcInvokeResult = {
   exitCode?: number;
   stdout?: string;
   stderr?: string;
+  cpuCount?: number;
+  cpuPercent?: number;
+  memoryPercent?: number;
+  memoryTotalMB?: number;
+  memoryUsedMB?: number;
 };
 
 export async function invokeWslcHost(payload: Record<string, unknown>): Promise<WslcInvokeResult> {
