@@ -1,6 +1,8 @@
 name: Release
 
-# Only tags. CI already proved the same matrix on the commit you tagged.
+# Tag-only release: build/package Windows x64 and ARM64 installers.
+# WSLC runtime tests stay local because GitHub-hosted runners do not provide
+# a reliable WSLC runtime.
 on:
   push:
     tags:
@@ -17,11 +19,9 @@ jobs:
         include:
           - os: windows-latest
             rust_target: x86_64-pc-windows-msvc
-            sdk_rid: win-x64
             name: x64
           - os: windows-11-arm
             rust_target: aarch64-pc-windows-msvc
-            sdk_rid: win-arm64
             name: arm64
     runs-on: ${{ matrix.os }}
     steps:
@@ -44,10 +44,6 @@ jobs:
       - name: Install frontend
         run: npm ci
 
-      - name: Stage Microsoft native WSLC SDK
-        shell: pwsh
-        run: ./scripts/prepare-wslc-sdk.ps1 -Rid ${{ matrix.sdk_rid }}
-
       - name: Build and publish
         uses: tauri-apps/tauri-action@v1
         env:
@@ -60,7 +56,8 @@ jobs:
           releaseBody: |
             Windows installers for [Quay](https://github.com/dhhieu113pro/quay) — x64 and ARM64 (Snapdragon / Copilot+).
 
-            Needs WSL **2.9.3+** (`wsl --update --pre-release`) and `wslc.exe` on PATH.
+            Quay uses the installed `wslc.exe` directly with the default WSLC session.
+            Requires WSL **2.9.3+** (`wsl --update --pre-release`) and `wslc.exe` on PATH.
 
             | Asset | Machine |
             | --- | --- |
@@ -69,8 +66,6 @@ jobs:
             | `Quay_*_x64_en-US.msi` / `Quay_*_arm64_en-US.msi` | MSI. Silent: `msiexec /i … /quiet` |
 
             Close hides to the tray. Quit from the tray menu.
-
-            Microsoft Store uses the same NSIS build with silent flag `/S`. See `docs/store.md`.
           releaseDraft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
           args: --target ${{ matrix.rust_target }} --bundles nsis,msi
