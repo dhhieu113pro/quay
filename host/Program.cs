@@ -88,6 +88,7 @@ public sealed class QuayHost
         {
             ok,
             wslc = ok,
+            session = _name,
             missing = string.IsNullOrEmpty(_missing) ? Array.Empty<string>() : new[] { _missing },
             error = ok ? null : _missing
         });
@@ -136,7 +137,7 @@ public sealed class QuayHost
         return JsonSerializer.Serialize(new { ok = result.Ok, output = result.Output, error = result.Ok ? null : result.Output });
     }
 
-    private static (bool Ok, string Output) ExecWslc(IEnumerable<string> args)
+    private (bool Ok, string Output) ExecWslc(IEnumerable<string> args)
     {
         using var process = new System.Diagnostics.Process();
         process.StartInfo = new System.Diagnostics.ProcessStartInfo
@@ -147,7 +148,14 @@ public sealed class QuayHost
             RedirectStandardError = true,
             CreateNoWindow = true
         };
+
+        // Quay creates a named Microsoft.WSL.Containers session. Plain `wslc ...`
+        // targets the user's default CLI session, which is a different VM. Always
+        // bind CLI operations to the same named session that Quay.Host created.
+        process.StartInfo.ArgumentList.Add("--session");
+        process.StartInfo.ArgumentList.Add(_name);
         foreach (var arg in args) process.StartInfo.ArgumentList.Add(arg);
+
         process.Start();
         var stdout = process.StandardOutput.ReadToEnd();
         var stderr = process.StandardError.ReadToEnd();
