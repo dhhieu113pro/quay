@@ -9,9 +9,18 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { StatusPill } from "@/components/status-pill";
 import { cn, formatUptime } from "@/lib/utils";
-import { runNativeStack, stopNativeStack } from "@/lib/wslc/stack-runner";
+import { readNativeGroup, runNativeStack, stopNativeStack } from "@/lib/wslc/stack-runner";
 import { useWslc } from "@/lib/wslc/store";
 import type { Container, ContainerGroup } from "@/lib/wslc/types";
+
+function replaceGroupContainers(group: ContainerGroup, items: Container[]) {
+  useWslc.setState((state) => ({
+    containers: [
+      ...state.containers.filter((c) => c.groupId !== group.id),
+      ...items,
+    ],
+  }));
+}
 
 export function ContainersView() {
   const containers = useWslc((s) => s.containers);
@@ -20,10 +29,6 @@ export function ContainersView() {
   const inspectOpen = useWslc((s) => s.inspectOpen);
   const selectContainer = useWslc((s) => s.selectContainer);
   const setInspectOpen = useWslc((s) => s.setInspectOpen);
-  const startContainer = useWslc((s) => s.startContainer);
-  const stopContainer = useWslc((s) => s.stopContainer);
-  const startGroup = useWslc((s) => s.startGroup);
-  const stopGroup = useWslc((s) => s.stopGroup);
   const setGroupAutoStart = useWslc((s) => s.setGroupAutoStart);
   const setRunOpen = useWslc((s) => s.setRunOpen);
   const now = useWslc((s) => s.now);
@@ -112,49 +117,35 @@ export function ContainersView() {
                     inspectOpen={inspectOpen}
                     now={now}
                     onSelect={selectContainer}
-                    onStart={(id) => {
-                      startContainer(id);
-                      const c = items.find((x) => x.id === id);
-                      toast(`Started ${c?.name ?? id}`);
+                    onStart={async () => {
+                      try {
+                        const fresh = await runNativeStack(group);
+                        replaceGroupContainers(group, fresh);
+                        toast.success(`${group.name} started`);
+                      } catch (error) {
+                        toast.error(error instanceof Error ? error.message : `Could not start ${group.name}`);
+                      }
                     }}
-                    onStop={(id) => {
-                      stopContainer(id);
-                      const c = items.find((x) => x.id === id);
-                      toast(`Stopped ${c?.name ?? id}`);
+                    onStop={async () => {
+                      try {
+                        const fresh = await stopNativeStack(group);
+                        replaceGroupContainers(group, fresh);
+                        toast.success(`${group.name} stopped`);
+                      } catch (error) {
+                        toast.error(error instanceof Error ? error.message : `Could not stop ${group.name}`);
+                      }
                     }}
-                    onStartGroup={() => {
-                      toast(`Starting ${group.name} on mcp-net…`);
-                      void runNativeStack(group)
-                        .then(() => {
-                          startGroup(group.id);
-                          toast.success(`${group.name} started`);
-                        })
-                        .catch((error) => {
-                          toast.error(
-                            error instanceof Error ? error.message : `Could not start ${group.name}`,
-                          );
-                        });
-                    }}
-                    onStopGroup={() => {
-                      toast(`Stopping ${group.name}…`);
-                      void stopNativeStack(group)
-                        .then(() => {
-                          stopGroup(group.id);
-                          toast.success(`${group.name} stopped`);
-                        })
-                        .catch((error) => {
-                          toast.error(
-                            error instanceof Error ? error.message : `Could not stop ${group.name}`,
-                          );
-                        });
+                    onRefresh={async () => {
+                      try {
+                        const fresh = await readNativeGroup(group);
+                        replaceGroupContainers(group, fresh);
+                      } catch (error) {
+                        toast.error(error instanceof Error ? error.message : `Could not refresh ${group.name}`);
+                      }
                     }}
                     onAuto={(on) => {
                       setGroupAutoStart(group.id, on);
-                      toast(
-                        on
-                          ? `${group.name} starts with the session`
-                          : `${group.name} auto-start off`,
-                      );
+                      toast(on ? `${group.name} starts with the session` : `${group.name} auto-start off`);
                     }}
                   />
                 ),
@@ -168,14 +159,6 @@ export function ContainersView() {
                       selected={selectedId === c.id && inspectOpen}
                       now={now}
                       onSelect={selectContainer}
-                      onStart={() => {
-                        startContainer(c.id);
-                        toast(`Started ${c.name}`);
-                      }}
-                      onStop={() => {
-                        stopContainer(c.id);
-                        toast(`Stopped ${c.name}`);
-                      }}
                     />
                   ))}
                 </ul>
@@ -187,10 +170,7 @@ export function ContainersView() {
 
       {selected && inspectOpen ? (
         <div className="fixed inset-0 z-40 flex h-dvh flex-col bg-background md:static md:z-0 md:h-auto md:w-[min(100%,24rem)] md:shrink-0 lg:w-[28rem]">
-          <ContainerInspect
-            container={selected}
-            onClose={() => setInspectOpen(false)}
-          />
+          <ContainerInspect container={selected} onClose={() => setInspectOpen(false)} />
         </div>
       ) : null}
     </div>
@@ -206,8 +186,7 @@ function GroupBlock({
   onSelect,
   onStart,
   onStop,
-  onStartGroup,
-  onStopGroup,
+  onRefresh,
   onAuto,
 }: {
   group: ContainerGroup;
@@ -216,10 +195,9 @@ function GroupBlock({
   inspectOpen: boolean;
   now: number;
   onSelect: (id: string) => void;
-  onStart: (id: string) => void;
-  onStop: (id: string) => void;
-  onStartGroup: () => void;
-  onStopGroup: () => void;
+  onStart: () => void;
+  onStop: () => void;
+  onRefresh: () => void;
   onAuto: (on: boolean) => void;
 }) {
   const running = items.filter((c) => c.status === "running").length;
@@ -237,12 +215,9 @@ function GroupBlock({
           <Switch checked={group.autoStart} onCheckedChange={onAuto} />
           Auto
         </label>
-        <Button size="sm" variant="secondary" onClick={onStopGroup}>
-          Stop
-        </Button>
-        <Button size="sm" onClick={onStartGroup}>
-          Start
-        </Button>
+        <Button size="sm" variant="ghost" onClick={onRefresh}>Refresh</Button>
+        <Button size="sm" variant="secondary" onClick={onStop}>Stop</Button>
+        <Button size="sm" onClick={onStart}>Start</Button>
       </header>
       <ul className="divide-y divide-border">
         {items.map((c) => (
@@ -252,8 +227,6 @@ function GroupBlock({
             selected={selectedId === c.id && inspectOpen}
             now={now}
             onSelect={onSelect}
-            onStart={() => onStart(c.id)}
-            onStop={() => onStop(c.id)}
           />
         ))}
       </ul>
@@ -266,74 +239,34 @@ function ContainerRow({
   selected,
   now,
   onSelect,
-  onStart,
-  onStop,
 }: {
   c: Container;
   selected: boolean;
   now: number;
   onSelect: (id: string) => void;
-  onStart: () => void;
-  onStop: () => void;
 }) {
   return (
     <li>
-      <div
-        className={cn(
-          "flex items-center gap-3 px-4 py-3",
-          selected ? "bg-elevated" : "hover:bg-elevated/60",
-        )}
-      >
-        <button
-          type="button"
-          className="min-w-0 flex-1 text-left"
-          onClick={() => onSelect(c.id)}
-        >
+      <div className={cn("flex items-center gap-3 px-4 py-3", selected ? "bg-elevated" : "hover:bg-elevated/60")}> 
+        <button type="button" className="min-w-0 flex-1 text-left" onClick={() => onSelect(c.id)}>
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-medium">{c.name}</span>
             <StatusPill status={c.status} />
             {c.gpu ? (
-              <Badge variant="gpu">
-                <Gpu className="mr-1 size-3" />
-                GPU
-              </Badge>
+              <Badge variant="gpu"><Gpu className="mr-1 size-3" />GPU</Badge>
             ) : null}
           </div>
           <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">
             {c.id} · {c.image}
           </p>
           <p className="mt-1 font-mono text-xs text-subtle">
-            {c.ports.length
-              ? c.ports.map((p) => `${p.host}:${p.container}`).join("  ")
-              : "no ports"}
+            {c.ports.length ? c.ports.map((p) => `${p.host}:${p.container}`).join("  ") : "no ports"}
             {" · "}
-            {c.status === "running"
-              ? formatUptime(c.startedAt, now)
-              : c.exitCode !== undefined
-                ? `exit ${c.exitCode}`
-                : "created"}
+            {c.status === "running" ? formatUptime(c.startedAt, now) : "exited"}
           </p>
         </button>
         <div className="flex shrink-0 gap-1">
-          {c.status === "running" ? (
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              aria-label={`Stop ${c.name}`}
-              onClick={onStop}
-            >
-              <Square className="size-4" />
-            </Button>
-          ) : (
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              aria-label={`Start ${c.name}`}
-              onClick={onStart}
-            >
-              <Play className="size-4" />
-            </Button>
-          )}
+          {c.status === "running" ? <Square className="size-4 text-muted-foreground" /> : <Play className="size-4 text-muted-foreground" />}
         </div>
       </div>
     </li>
