@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   Box,
   Boxes,
@@ -25,6 +25,7 @@ import { SessionView } from "@/components/views/session-view";
 import { TerminalView } from "@/components/views/terminal-view";
 import { cn, formatBytes } from "@/lib/utils";
 import { useWslc } from "@/lib/wslc/store";
+import { loadWslcStatsSummary, type WslcStatsSummary } from "@/lib/wslc/stats";
 import type { ViewId } from "@/lib/wslc/types";
 import { windowAction } from "@/lib/tauri";
 
@@ -36,6 +37,10 @@ const NAV: Array<{ id: ViewId; label: string; icon: typeof Box }> = [
   { id: "images", label: "Images", icon: Layers },
   { id: "session", label: "Session", icon: Cpu },
 ];
+
+function wslcVersionLabel(version: string) {
+  return version.replace(/^wslc\s*/i, "").trim() || "—";
+}
 
 export function AppShell() {
   const view = useWslc((s) => s.view);
@@ -87,7 +92,7 @@ export function AppShell() {
                 {running} running
               </p>
               <p className="mt-0.5 font-mono text-xs text-subtle">
-                {session.filesystem} · {session.networking}
+                WSLC {wslcVersionLabel(session.version)}
               </p>
             </div>
           </nav>
@@ -255,22 +260,46 @@ function StatusBar() {
   const containers = useWslc((s) => s.containers);
   const last = useWslc((s) => s.calls[0]);
   const running = containers.filter((c) => c.status === "running").length;
-  const mem = containers
-    .filter((c) => c.status === "running")
-    .reduce((a, c) => a + c.memoryMB, 0);
+  const [stats, setStats] = useState<WslcStatsSummary | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (running === 0) {
+      setStats({ cpuPercent: 0, memoryMB: 0, running: 0 });
+      return;
+    }
+
+    const refreshStats = async () => {
+      const next = await loadWslcStatsSummary();
+      if (!cancelled) setStats(next);
+    };
+
+    void refreshStats();
+    const id = window.setInterval(() => {
+      void refreshStats();
+    }, 2000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [running]);
+
+  const liveCount = stats?.running ?? running;
+  const usage = liveCount === 0
+    ? "idle"
+    : stats
+      ? `${stats.cpuPercent.toFixed(1)}% CPU · ${formatBytes(stats.memoryMB)} RAM`
+      : "stats unavailable";
 
   return (
     <footer className="hidden h-8 shrink-0 items-center gap-4 border-t border-border bg-card px-3 font-mono text-xs text-muted-foreground md:flex">
       <span className={session.running ? "text-ok" : "text-warn"}>
-        {session.running ? "WSLC" : "DOWN"} {session.wslVersion}
+        {session.running ? "WSLC" : "DOWN"} {wslcVersionLabel(session.version)}
       </span>
-      <span>
-        {running} ctr · {formatBytes(mem)}
-      </span>
-      <span className="truncate">
-        {session.cpuCount} CPU · {session.filesystem} · {session.networking}
-        {session.gpu ? " · GPU" : ""}
-      </span>
+      <span>{liveCount} ctr</span>
+      <span className="truncate">{usage}</span>
       <span className="ml-auto truncate text-subtle">
         {last ? last.method : "idle"}
       </span>
