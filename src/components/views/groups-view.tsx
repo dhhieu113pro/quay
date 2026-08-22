@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Boxes, Network, Pencil, Play, Plus, Square, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -161,8 +161,12 @@ function GroupDialog({
   onSave: (group: ContainerGroup) => void;
 }) {
   const [draft, setDraft] = useState<ContainerGroup | null>(group);
+  const creating = Boolean(group && !group.name.trim());
 
-  if (group && (!draft || draft.id !== group.id)) setDraft({ ...group });
+  useEffect(() => {
+    setDraft(group ? { ...group } : null);
+  }, [group]);
+
   if (!group || !draft) return null;
 
   const patch = (value: Partial<ContainerGroup>) => setDraft((current) => current ? { ...current, ...value } : current);
@@ -186,10 +190,11 @@ function GroupDialog({
               disabled={draft.builtIn}
               onChange={(event) => {
                 const name = event.target.value;
-                if (draft.name || draft.builtIn) patch({ name });
-                else {
+                if (creating) {
                   const id = slugGroupName(name);
                   patch({ name, id, network: defaultGroupNetwork(id) });
+                } else {
+                  patch({ name });
                 }
               }}
               placeholder="My development stack"
@@ -226,7 +231,7 @@ function GroupDialog({
             onClick={() => {
               const name = draft.name.trim();
               if (!name) return;
-              const id = draft.builtIn ? draft.id : slugGroupName(name);
+              const id = draft.id;
               onSave({
                 ...draft,
                 id,
