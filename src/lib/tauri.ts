@@ -17,6 +17,18 @@ export type WslcProbe = {
   version: string | null;
 };
 
+export type WslcInvokeResult = {
+  ok: boolean;
+  output?: string;
+  error?: string;
+};
+
+export async function invokeWslcHost(payload: Record<string, unknown>): Promise<WslcInvokeResult> {
+  if (!isTauri()) return { ok: true, output: "browser lab" };
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<WslcInvokeResult>("wslc_invoke", { payload });
+}
+
 export async function probeWslc(): Promise<WslcProbe> {
   if (!isTauri()) {
     return { wslc: false, sidecar: false, version: null };
