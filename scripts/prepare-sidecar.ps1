@@ -14,7 +14,7 @@ $bin = Join-Path $root "src-tauri/binaries"
 $triple = if ($Rid -eq "win-arm64") { "aarch64-pc-windows-msvc" } else { "x86_64-pc-windows-msvc" }
 
 Write-Host "Publishing Quay.Host ($Rid, self-contained)"
-dotnet publish (Join-Path $root "host/Quay.Host.csproj") `
+& dotnet publish (Join-Path $root "host/Quay.Host.csproj") `
   -c Release `
   -r $Rid `
   --self-contained true `
@@ -22,6 +22,10 @@ dotnet publish (Join-Path $root "host/Quay.Host.csproj") `
   -p:IncludeNativeLibrariesForSelfExtract=true `
   -p:DebugType=none `
   -o $out
+
+if ($LASTEXITCODE -ne 0) {
+    throw "dotnet publish failed with exit code $LASTEXITCODE"
+}
 
 New-Item -ItemType Directory -Force -Path $bin | Out-Null
 $exe = Join-Path $out "quay-host.exe"
