@@ -48,30 +48,21 @@ try {
 
         Write-Host "node   : $(node --version)"
         Write-Host "npm    : $(npm --version)"
-        Write-Host "dotnet : $(dotnet --version)"
+        Write-Host "dotnet : $(dotnet --version)  (only used to restore the native WSLC NuGet package if not cached)"
         Write-Host "cargo  : $(cargo --version)"
         wsl --version
 
-        if (Get-Command wslc -ErrorAction SilentlyContinue) {
-            wslc version
-        } else {
-            Write-Host "wslc CLI not on PATH; Microsoft.WSL.Containers SDK smoke test remains authoritative."
-        }
-
+        if (Get-Command wslc -ErrorAction SilentlyContinue) { wslc version }
         if ([string]::IsNullOrWhiteSpace($NgrokAuthtoken)) {
             throw "NGROK_AUTHTOKEN is required. Set it first: `$env:NGROK_AUTHTOKEN = 'your-token'"
         }
+        $env:NGROK_AUTHTOKEN = $NgrokAuthtoken
     }
 
     Run-Step "Frontend dependencies" {
         if ($SkipInstall) {
-            if (-not (Test-Path "node_modules")) {
-                throw "-SkipInstall was supplied but node_modules does not exist."
-            }
-            Write-Host "Skipping npm install because -SkipInstall was supplied."
-        } elseif (Test-Path "node_modules") {
-            Write-Host "node_modules exists; using current installed dependencies."
-        } else {
+            if (-not (Test-Path "node_modules")) { throw "-SkipInstall was supplied but node_modules does not exist." }
+        } elseif (-not (Test-Path "node_modules")) {
             npm ci
             if ($LASTEXITCODE -ne 0) { throw "npm ci failed with exit code $LASTEXITCODE" }
         }
@@ -82,56 +73,35 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "npm run typecheck failed with exit code $LASTEXITCODE" }
     }
 
-    Run-Step "C# Quay.Host compile" {
-        dotnet build host/Quay.Host.csproj -c Release
-        if ($LASTEXITCODE -ne 0) { throw "Quay.Host build failed with exit code $LASTEXITCODE" }
+    Run-Step "Stage Microsoft native WSLC SDK" {
+        & ./scripts/prepare-wslc-sdk.ps1 -Rid win-x64
+        if ($LASTEXITCODE -ne 0) { throw "prepare-wslc-sdk.ps1 failed with exit code $LASTEXITCODE" }
+        $env:QUAY_WSLC_SDK_DLL = (Resolve-Path "src-tauri/binaries/wslcsdk.dll").Path
     }
 
-    Run-Step "Rust/Tauri compile check" {
+    Run-Step "Rust/Tauri native backend compile check" {
         cargo check --manifest-path src-tauri/Cargo.toml
         if ($LASTEXITCODE -ne 0) { throw "cargo check failed with exit code $LASTEXITCODE" }
     }
 
-    Run-Step "Direct Microsoft.WSL.Containers SDK smoke" {
-        dotnet run --project tests/Wslc.Smoke/Wslc.Smoke.csproj -c Release
-        if ($LASTEXITCODE -ne 0) { throw "WSLC SDK smoke failed with exit code $LASTEXITCODE" }
-    }
-
-    Run-Step "Publish real Quay.Host sidecar" {
-        & ./scripts/prepare-sidecar.ps1 -Rid win-x64
-        if ($LASTEXITCODE -ne 0) { throw "prepare-sidecar.ps1 failed with exit code $LASTEXITCODE" }
-    }
-
     Run-Step "Rust native WSLC + nginx HTTP smoke" {
-        $sdkDll = (Resolve-Path "host/publish/win-x64/wslcsdk.dll").Path
-        $oldSdkDll = $env:QUAY_WSLC_SDK_DLL
-        try {
-            $env:QUAY_WSLC_SDK_DLL = $sdkDll
-            cargo run --manifest-path src-tauri/Cargo.toml --bin wslc-native-smoke
-            if ($LASTEXITCODE -ne 0) { throw "Rust native WSLC smoke failed with exit code $LASTEXITCODE" }
-        }
-        finally {
-            $env:QUAY_WSLC_SDK_DLL = $oldSdkDll
-        }
+        cargo run --manifest-path src-tauri/Cargo.toml --bin wslc-native-smoke
+        if ($LASTEXITCODE -ne 0) { throw "native nginx smoke failed with exit code $LASTEXITCODE" }
     }
 
-    Run-Step "Quay.Host + nginx + local-coding Group E2E" {
-        & ./tests/host-smoke.ps1 `
-            -HostExe host/publish/win-x64/quay-host.exe `
-            -NgrokAuthtoken $NgrokAuthtoken
-        if ($LASTEXITCODE -ne 0) { throw "host-smoke.ps1 failed with exit code $LASTEXITCODE" }
+    Run-Step "Rust native local-coding Group E2E" {
+        cargo run --manifest-path src-tauri/Cargo.toml --bin wslc-native-group-smoke
+        if ($LASTEXITCODE -ne 0) { throw "native local-coding Group smoke failed with exit code $LASTEXITCODE" }
     }
 }
 finally {
     Write-Host ""
     Write-Host "===================== TEST SUMMARY =====================" -ForegroundColor Cyan
-    if ($results.Count -gt 0) {
-        $results | Format-Table -AutoSize
-    }
+    if ($results.Count -gt 0) { $results | Format-Table -AutoSize }
     $elapsed = (Get-Date) - $startedAt
     $failed = @($results | Where-Object { $_.Result -eq "FAIL" }).Count
     if ($failed -eq 0 -and $results.Count -gt 0) {
-        Write-Host "ALL TESTS PASSED in $([math]::Round($elapsed.TotalMinutes, 1)) minute(s)." -ForegroundColor Green
+        Write-Host "ALL NATIVE RUST TESTS PASSED in $([math]::Round($elapsed.TotalMinutes, 1)) minute(s)." -ForegroundColor Green
     } elseif ($failed -gt 0) {
         Write-Host "$failed TEST(S) FAILED after $([math]::Round($elapsed.TotalMinutes, 1)) minute(s)." -ForegroundColor Red
     }
