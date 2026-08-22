@@ -1,5 +1,6 @@
 param(
-    [string]$HostExe = "host/publish/win-x64/quay-host.exe"
+    [string]$HostExe = "host/publish/win-x64/quay-host.exe",
+    [string]$NgrokAuthtoken = $env:NGROK_AUTHTOKEN
 )
 
 $ErrorActionPreference = "Stop"
@@ -7,13 +8,16 @@ $ErrorActionPreference = "Stop"
 if (-not (Test-Path $HostExe)) {
     throw "Quay.Host executable not found: $HostExe"
 }
+if ([string]::IsNullOrWhiteSpace($NgrokAuthtoken)) {
+    throw "NGROK_AUTHTOKEN is required for the full local-coding Group smoke test. Add it as a GitHub Actions repository secret."
+}
 
 $sessionName = "Quay-Host-CI-$PID-$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())"
-$dataPath = Join-Path $env:RUNNER_TEMP $sessionName
-if (-not $env:RUNNER_TEMP) {
-    $dataPath = Join-Path $env:TEMP $sessionName
-}
+$runnerTemp = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { $env:TEMP }
+$dataPath = Join-Path $runnerTemp $sessionName
+$workspacePath = Join-Path $runnerTemp "$sessionName-workspace"
 New-Item -ItemType Directory -Force -Path $dataPath | Out-Null
+New-Item -ItemType Directory -Force -Path $workspacePath | Out-Null
 
 $psi = [System.Diagnostics.ProcessStartInfo]::new()
 $psi.FileName = (Resolve-Path $HostExe).Path
@@ -25,7 +29,7 @@ $psi.CreateNoWindow = $true
 $psi.ArgumentList.Add($sessionName)
 $psi.ArgumentList.Add($dataPath)
 $psi.ArgumentList.Add("2")
-$psi.ArgumentList.Add("2048")
+$psi.ArgumentList.Add("3072")
 
 $process = [System.Diagnostics.Process]::new()
 $process.StartInfo = $psi
@@ -35,6 +39,7 @@ if (-not $process.Start()) {
 
 function Invoke-Host([hashtable]$Payload) {
     $json = $Payload | ConvertTo-Json -Compress -Depth 10
+    Write-Host "quay-host => $json"
     $process.StandardInput.WriteLine($json)
     $process.StandardInput.Flush()
 
@@ -48,74 +53,141 @@ function Invoke-Host([hashtable]$Payload) {
     return $line | ConvertFrom-Json
 }
 
+function Assert-Run([hashtable]$Payload, [string]$Name) {
+    $run = Invoke-Host $Payload
+    if (-not $run.ok) {
+        throw "$Name start failed: $($run.error)"
+    }
+    if ($run.container.status -notmatch "running") {
+        throw "$Name was created but status is '$($run.container.status)'"
+    }
+    return $run
+}
+
+function Wait-Http([string]$Url, [scriptblock]$Validate, [int]$TimeoutSeconds = 60) {
+    $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
+    $lastError = $null
+    while ([DateTimeOffset]::UtcNow -lt $deadline) {
+        try {
+            $response = Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 5
+            if (& $Validate $response) {
+                return $response
+            }
+            $lastError = "Unexpected response: HTTP $($response.StatusCode) $($response.Content)"
+        } catch {
+            $lastError = $_.Exception.Message
+        }
+        Start-Sleep -Milliseconds 500
+    }
+    throw "Timed out waiting for $Url. Last error: $lastError"
+}
+
+function Remove-Container([string]$Name) {
+    try {
+        $rm = Invoke-Host @{ cmd = "rm"; id = $Name }
+        if (-not $rm.ok) { Write-Warning "Cleanup $Name failed: $($rm.error)" }
+    } catch {
+        Write-Warning "Cleanup $Name failed: $($_.Exception.Message)"
+    }
+}
+
 try {
     $health = Invoke-Host @{ cmd = "health" }
     if (-not $health.ok) {
         throw "Quay.Host health failed: $($health.error)"
     }
 
-    $run = Invoke-Host @{
+    # 1) Real nginx smoke test: not just state, prove host->container networking works.
+    Assert-Run @{
         cmd = "run"
-        image = "docker.io/library/alpine:latest"
-        name = "quay-host-smoke"
-        command = "/bin/sh -c 'echo QUAY_HOST_SMOKE_OK; sleep 30'"
-        ports = ""
+        image = "docker.io/library/nginx:latest"
+        name = "quay-nginx-smoke"
+        command = "/usr/sbin/nginx -g 'daemon off;'"
+        ports = "18080:80"
         env = ""
         mounts = ""
         gpu = $false
         remove = $false
         workdir = "/"
-    }
+    } "nginx" | Out-Null
 
-    if (-not $run.ok) {
-        throw "Quay.Host run failed: $($run.error)"
-    }
-    if ($run.container.status -notmatch "running") {
-        throw "Quay.Host created container but status is '$($run.container.status)'"
-    }
+    $nginx = Wait-Http "http://127.0.0.1:18080/" { param($r) $r.StatusCode -eq 200 -and $r.Content -match "Welcome to nginx" }
+    Write-Host "nginx smoke passed: HTTP $($nginx.StatusCode), default page returned."
+    Remove-Container "quay-nginx-smoke"
 
-    $deadline = [DateTimeOffset]::UtcNow.AddSeconds(20)
-    $foundMarker = $false
-    while ([DateTimeOffset]::UtcNow -lt $deadline) {
-        Start-Sleep -Milliseconds 250
-        $ps = Invoke-Host @{ cmd = "ps" }
-        if (-not $ps.ok) {
-            throw "Quay.Host ps failed: $($ps.error)"
+    # 2) Start the real local-coding MCP image with the same SDK init command Quay uses.
+    Assert-Run @{
+        cmd = "run"
+        image = "ghcr.io/dhhieu113pro/local-coding-mcp:latest"
+        name = "local-coding-mcp"
+        command = "/usr/bin/dotnet /app/LocalCodingMcp.dll"
+        ports = "15000:5000"
+        env = "ASPNETCORE_URLS=http://0.0.0.0:5000`nASPNETCORE_ENVIRONMENT=Production`nAllowedRoots__0=/workspace`nCommandTimeoutSeconds=60"
+        mounts = "$workspacePath`:/workspace:rw"
+        gpu = $false
+        remove = $false
+        workdir = "/app"
+    } "local-coding-mcp" | Out-Null
+
+    $mcp = Wait-Http "http://127.0.0.1:15000/health" { param($r) $r.StatusCode -eq 200 } 90
+    Write-Host "local-coding-mcp smoke passed: /health returned HTTP $($mcp.StatusCode)."
+
+    # 3) Complete the real Group with ngrok. Quay.Host resolves local-coding-mcp
+    # in this command to the managed container's bridge IP, matching production behavior.
+    Assert-Run @{
+        cmd = "run"
+        image = "ngrok/ngrok:latest"
+        name = "local-coding-mcp-ngrok"
+        command = "ngrok http local-coding-mcp:5000 --log=stdout"
+        ports = "14040:4040"
+        env = "NGROK_AUTHTOKEN=$NgrokAuthtoken"
+        mounts = ""
+        gpu = $false
+        remove = $false
+        workdir = "/"
+    } "local-coding-mcp-ngrok" | Out-Null
+
+    $ngrokApi = Wait-Http "http://127.0.0.1:14040/api/tunnels" {
+        param($r)
+        if ($r.StatusCode -ne 200) { return $false }
+        try {
+            $body = $r.Content | ConvertFrom-Json
+            return @($body.tunnels).Count -gt 0
+        } catch {
+            return $false
         }
+    } 90
 
-        $container = @($ps.containers) | Where-Object { $_.name -eq "quay-host-smoke" } | Select-Object -First 1
-        if ($null -eq $container) {
-            throw "quay-host-smoke disappeared from Quay.Host state"
+    $tunnels = ($ngrokApi.Content | ConvertFrom-Json).tunnels
+    Write-Host "ngrok smoke passed: $(@($tunnels).Count) tunnel(s) active."
+
+    $ps = Invoke-Host @{ cmd = "ps" }
+    if (-not $ps.ok) { throw "Quay.Host ps failed: $($ps.error)" }
+    $runningNames = @($ps.containers | Where-Object { $_.status -match "running" } | ForEach-Object { $_.name })
+    foreach ($expected in @("local-coding-mcp", "local-coding-mcp-ngrok")) {
+        if ($runningNames -notcontains $expected) {
+            throw "Full local-coding Group check failed: $expected is not running. Running: $($runningNames -join ', ')"
         }
-
-        $text = (@($container.logs) | ForEach-Object { $_.text }) -join "`n"
-        if ($text -match "QUAY_HOST_SMOKE_OK") {
-            $foundMarker = $true
-            break
-        }
     }
 
-    if (-not $foundMarker) {
-        throw "Quay.Host container never emitted QUAY_HOST_SMOKE_OK"
-    }
-
-    $rm = Invoke-Host @{ cmd = "rm"; id = "quay-host-smoke" }
-    if (-not $rm.ok) {
-        throw "Quay.Host rm failed: $($rm.error)"
-    }
-
-    Write-Host "Quay.Host WSLC protocol smoke test passed."
+    Write-Host "Full local-coding Group smoke test passed: MCP healthy and ngrok tunnel active."
 }
 finally {
+    Remove-Container "local-coding-mcp-ngrok"
+    Remove-Container "local-coding-mcp"
+    Remove-Container "quay-nginx-smoke"
+
     try { $process.StandardInput.Close() } catch {}
     if (-not $process.WaitForExit(15000)) {
         try { $process.Kill($true) } catch {}
     }
     $process.Dispose()
 
-    try {
-        if (Test-Path $dataPath) { Remove-Item $dataPath -Recurse -Force }
-    } catch {
-        Write-Warning "Could not remove smoke session data immediately: $($_.Exception.Message)"
+    foreach ($path in @($dataPath, $workspacePath)) {
+        try {
+            if (Test-Path $path) { Remove-Item $path -Recurse -Force }
+        } catch {
+            Write-Warning "Could not remove smoke data immediately: $path - $($_.Exception.Message)"
+        }
     }
 }
