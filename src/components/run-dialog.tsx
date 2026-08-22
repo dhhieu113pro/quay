@@ -24,7 +24,6 @@ import {
 import { useWslc } from "@/lib/wslc/store";
 import { cliForRun } from "@/lib/wslc/csharp";
 import { catalogPresets, specFromPreset } from "@/lib/wslc/catalog";
-import { effectiveSpec } from "@/lib/wslc/groups";
 import type { RunSpec } from "@/lib/wslc/types";
 import { cn } from "@/lib/utils";
 
@@ -67,8 +66,8 @@ export function RunDialog() {
     env: joinEnvLines(envRows),
     mounts: joinMountLines(mountRows),
   };
-  const previewSpec = effectiveSpec(submittedSpec, selectedGroup);
-  const preview = cliForRun(previewSpec).replace(
+  const groupEnvCount = selectedGroup?.env.split("\n").filter((line) => line.trim()).length ?? 0;
+  const preview = cliForRun(submittedSpec).replace(
     "wslc run",
     selectedGroup ? `wslc run --network ${selectedGroup.network}` : "wslc run",
   );
@@ -134,7 +133,7 @@ export function RunDialog() {
             </select>
             {selectedGroup ? (
               <p className="text-xs text-subtle">
-                Network: <span className="font-mono">{selectedGroup.network}</span> · shared env: {selectedGroup.env.split("\n").filter((line) => line.trim()).length}
+                Network: <span className="font-mono">{selectedGroup.network}</span> · shared env: {groupEnvCount}
               </p>
             ) : (
               <p className="text-xs text-subtle">Standalone container with no Group network or shared environment.</p>
@@ -231,7 +230,7 @@ export function RunDialog() {
               </label>
             </div>
             <p className="truncate font-mono text-[11px] text-subtle">
-              {preview}
+              {preview}{selectedGroup && groupEnvCount ? `  + ${groupEnvCount} shared env` : ""}
             </p>
             <div className="flex justify-end gap-2">
               <Button type="button" variant="ghost" onClick={() => setRunOpen(false)}>
