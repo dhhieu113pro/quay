@@ -23,7 +23,8 @@ import {
 } from "@/components/kv-editor";
 import { useWslc } from "@/lib/wslc/store";
 import { cliForRun } from "@/lib/wslc/csharp";
-import { catalogPresets, mcpStack, specFromPreset } from "@/lib/wslc/catalog";
+import { catalogPresets, specFromPreset } from "@/lib/wslc/catalog";
+import { effectiveSpec } from "@/lib/wslc/groups";
 import type { RunSpec } from "@/lib/wslc/types";
 import { cn } from "@/lib/utils";
 
@@ -35,6 +36,7 @@ export function RunDialog() {
   const runContainer = useWslc((s) => s.runContainer);
   const catalog = useWslc((s) => s.catalog);
   const images = useWslc((s) => s.images);
+  const groups = useWslc((s) => s.groups);
   const [spec, setSpec] = useState<RunSpec>(defaultSpec);
   const [envRows, setEnvRows] = useState<KvPair[]>(() => parseEnvLines(defaultSpec.env));
   const [mountRows, setMountRows] = useState<MountRow[]>(() =>
@@ -59,6 +61,17 @@ export function RunDialog() {
   }
 
   const selectedPreset = catalogPresets.find((p) => p.image === spec.image);
+  const selectedGroup = spec.groupId ? groups.find((group) => group.id === spec.groupId) : undefined;
+  const submittedSpec = {
+    ...spec,
+    env: joinEnvLines(envRows),
+    mounts: joinMountLines(mountRows),
+  };
+  const previewSpec = effectiveSpec(submittedSpec, selectedGroup);
+  const preview = cliForRun(previewSpec).replace(
+    "wslc run",
+    selectedGroup ? `wslc run --network ${selectedGroup.network}` : "wslc run",
+  );
 
   return (
     <Dialog open={open} onOpenChange={setRunOpen}>
@@ -66,7 +79,7 @@ export function RunDialog() {
         <DialogHeader className="border-b border-border px-5 py-4">
           <DialogTitle>Run container</DialogTitle>
           <DialogDescription>
-            Each environment row is one variable. Name on the left, value on the right.
+            Pick a Group to share its WSLC network and environment variables with this container.
           </DialogDescription>
         </DialogHeader>
 
@@ -74,11 +87,7 @@ export function RunDialog() {
           className="flex min-h-0 flex-1 flex-col"
           onSubmit={(e) => {
             e.preventDefault();
-            runContainer({
-              ...spec,
-              env: joinEnvLines(envRows),
-              mounts: joinMountLines(mountRows),
-            });
+            runContainer(submittedSpec);
             toast(`Creating ${spec.name || spec.image}`);
             setRunOpen(false);
           }}
@@ -106,36 +115,30 @@ export function RunDialog() {
             {selectedPreset ? (
               <p className="text-xs text-subtle">{selectedPreset.hint}</p>
             ) : null}
-            <button
-              type="button"
-              onClick={() => {
-                const mcp = specFromPreset(mcpStack[0]!);
-                const ngrok = specFromPreset(mcpStack[1]!);
-                if (spec.image.includes("local-coding-mcp")) {
-                  runContainer({
-                    ...spec,
-                    env: joinEnvLines(envRows),
-                    mounts: joinMountLines(mountRows),
-                  });
-                  runContainer(ngrok);
-                } else if (spec.image.includes("ngrok")) {
-                  runContainer(mcp);
-                  runContainer({
-                    ...spec,
-                    env: joinEnvLines(envRows),
-                    mounts: joinMountLines(mountRows),
-                  });
-                } else {
-                  runContainer(mcp);
-                  runContainer(ngrok);
-                }
-                toast("Creating local-coding-mcp + ngrok");
-                setRunOpen(false);
-              }}
-              className="h-9 self-start rounded-md border border-border px-3 text-xs text-muted-foreground hover:bg-elevated/70 hover:text-foreground"
+          </div>
+
+          <div className="grid gap-1.5">
+            <Label htmlFor="group">Group</Label>
+            <select
+              id="group"
+              value={spec.groupId ?? ""}
+              onChange={(event) => patch({ groupId: event.target.value || undefined })}
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
             >
-              Run both (mcp + ngrok)
-            </button>
+              <option value="">No group</option>
+              {groups.map((group) => (
+                <option key={group.id} value={group.id}>
+                  {group.name}{group.builtIn ? " (Built-in)" : ""}
+                </option>
+              ))}
+            </select>
+            {selectedGroup ? (
+              <p className="text-xs text-subtle">
+                Network: <span className="font-mono">{selectedGroup.network}</span> · shared env: {selectedGroup.env.split("\n").filter((line) => line.trim()).length}
+              </p>
+            ) : (
+              <p className="text-xs text-subtle">Standalone container with no Group network or shared environment.</p>
+            )}
           </div>
 
           <div className="grid gap-1.5">
@@ -228,7 +231,7 @@ export function RunDialog() {
               </label>
             </div>
             <p className="truncate font-mono text-[11px] text-subtle">
-              {cliForRun({ ...spec, env: joinEnvLines(envRows), mounts: joinMountLines(mountRows) })}
+              {preview}
             </p>
             <div className="flex justify-end gap-2">
               <Button type="button" variant="ghost" onClick={() => setRunOpen(false)}>
