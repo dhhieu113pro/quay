@@ -9,6 +9,7 @@ import {
   type KvPair,
 } from "@/components/kv-editor";
 import { RunCubeDialog } from "@/components/run-cube-dialog";
+import { applyStackConfig } from "@/components/stack-config-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -151,6 +152,7 @@ export function CubesView() {
                   <Button
                     size="sm"
                     onClick={() => {
+                      if (cube.id === "local-coding") applyStackConfig(cube);
                       if (cube.specs.length) {
                         startGroup(cube.id);
                       } else {
