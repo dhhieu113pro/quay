@@ -42,7 +42,7 @@ jobs:
           key: release-${{ matrix.rust_target }}
 
       - name: Install frontend
-        run: npm ci
+        run: npm ci --legacy-peer-deps
 
       - name: Build and publish
         uses: tauri-apps/tauri-action@v1
