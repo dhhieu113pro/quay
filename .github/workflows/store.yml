@@ -44,7 +44,7 @@ jobs:
         run: ./scripts/prepare-sidecar.ps1
 
       - name: Install Tauri CLI
-        run: npm install -g @tauri-apps/cli@^2
+        run: npm install -g @tauri-apps/cli@2
 
       - name: Bundle for Store
         run: npm run tauri -- build --bundles nsis,msi --config src-tauri/tauri.store.conf.json
@@ -64,11 +64,7 @@ jobs:
           if-no-files-found: error
 
       - name: Submit to Partner Center
-        if: ${{ inputs.publish && secrets.STORE_PRODUCT_ID != '' }}
-        uses: microsoft/microsoft-store-apppublisher@v1.1
-
-      - name: Publish package
-        if: ${{ inputs.publish && secrets.STORE_PRODUCT_ID != '' }}
+        if: ${{ inputs.publish }}
         shell: pwsh
         env:
           TENANT: ${{ secrets.AZURE_AD_TENANT_ID }}
@@ -77,13 +73,12 @@ jobs:
           SECRET: ${{ secrets.AZURE_AD_APPLICATION_SECRET }}
           PRODUCT: ${{ secrets.STORE_PRODUCT_ID }}
         run: |
-          if (-not $env:TENANT -or -not $env:PRODUCT) {
-            Write-Host "Store secrets missing — artifact is ready for a manual Partner Center upload."
+          if (-not $env:TENANT -or -not $env:PRODUCT -or -not $env:CLIENT -or -not $env:SECRET) {
+            Write-Host "Store secrets missing — upload store/out to Partner Center by hand."
+            Write-Host "Silent install argument for NSIS: /S"
             exit 0
           }
-          msstore reconfigure --tenantId $env:TENANT --sellerId $env:SELLER --clientId $env:CLIENT --clientSecret $env:SECRET
-          $exe = Get-ChildItem store/out/*-setup.exe | Select-Object -First 1
-          if (-not $exe) { throw "NSIS installer not found" }
-          Write-Host "Built $($exe.Name). First listing is created in Partner Center; later updates can point at this GitHub Release asset."
-          Write-Host "Silent install argument: /S"
-          Write-Host "Product: $env:PRODUCT"
+          dotnet tool update -g Microsoft.OpenDevTools.StoreBroker | Out-Null
+          Write-Host "Product $env:PRODUCT — first listing is created in Partner Center."
+          Write-Host "Later updates: point the EXE/MSI package at the GitHub Release asset."
+          Write-Host "NSIS silent flag: /S"
