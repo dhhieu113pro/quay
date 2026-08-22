@@ -1,6 +1,6 @@
 [package]
 name = "quay"
-version = "0.1.3"
+version = "0.1.4"
 default-run = "quay"
 description = "A dock for WSL containers"
 authors = ["Hieu Dam"]
