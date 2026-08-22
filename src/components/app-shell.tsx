@@ -51,7 +51,9 @@ export function AppShell() {
 
   useEffect(() => {
     if (gated) return;
-    const id = window.setInterval(tick, 2000);
+    const id = window.setInterval(() => {
+      void tick();
+    }, 1000);
     return () => window.clearInterval(id);
   }, [tick, gated]);
 
@@ -99,8 +101,8 @@ export function AppShell() {
               </div>
             ) : null}
             {view === "images" ? <ImagesView /> : null}
-            {view === "groups" ? <GroupsView /> : null}
             {view === "volumes" ? <ImagesView /> : null}
+            {view === "groups" ? <GroupsView /> : null}
             {view === "session" ? <SessionView /> : null}
           </main>
         </div>
