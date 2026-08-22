@@ -44,7 +44,7 @@ async function runCli(args: string[]) {
   const result = await invokeWslcHost({ cmd: "run_cli", args });
   return {
     ...result,
-    command: `wslc ${args.join(" ")}`,
+    command: `wslc --session Quay ${args.join(" ")}`,
   };
 }
 
@@ -133,16 +133,17 @@ async function stopByName(name: string) {
   }
 }
 
-async function removeByName(name: string) {
-  // Stop first if it is running. Already-exited/missing containers are fine.
-  await stopByName(name);
+async function removeExistingByName(name: string) {
+  // This is only called after `container list --all` proved the container exists.
+  // Stop is best-effort because an exited container may return a non-zero status.
+  try {
+    await stopByName(name);
+  } catch {
+    // Continue to rm: WSLC can report different wording for already-exited containers.
+  }
 
   const result = await runCli(["container", "rm", name]);
-  if (
-    !result.ok &&
-    !result.error?.toLowerCase().includes("not found") &&
-    !result.error?.toLowerCase().includes("no such")
-  ) {
+  if (!result.ok) {
     throw new Error(`${result.command}\n${result.error || `Could not remove ${name}`}`);
   }
 }
@@ -159,14 +160,19 @@ export async function runNativeStack(group: ContainerGroup): Promise<Container[]
     throw new Error(networkResult.error || `Could not create network ${network}`);
   }
 
-  // Recreate Group containers every Start so changed mounts/env/network/ports are applied.
-  // This also prevents old exited containers from blocking --name reuse.
+  // Recreate only containers that really exist. Previously we called stop/rm for
+  // missing names and depended on matching WSLC's error wording, which could abort
+  // Group Start before the first `wslc run` was ever reached.
   const staleNames = [...new Set([
     ...group.specs.map((spec) => nativeName(group, spec)),
     ...(group.id === "local-coding" ? ["ngrok"] : []),
   ])].filter(Boolean);
+  const existingOutput = await listCli(true);
+  const existingLines = existingOutput.split(/\r?\n/).filter(Boolean);
   for (const name of staleNames) {
-    await removeByName(name);
+    if (existingLines.some((line) => matchesName(line, name))) {
+      await removeExistingByName(name);
+    }
   }
 
   for (const spec of group.specs) {
@@ -199,8 +205,12 @@ export async function stopNativeStack(group: ContainerGroup): Promise<Container[
 
   if (group.id === "local-coding") names.push("ngrok");
 
+  const existingOutput = await listCli(true);
+  const existingLines = existingOutput.split(/\r?\n/).filter(Boolean);
   for (const name of [...new Set(names)].filter(Boolean)) {
-    await stopByName(name);
+    if (existingLines.some((line) => matchesName(line, name))) {
+      await stopByName(name);
+    }
   }
 
   return readNativeGroup(group);
