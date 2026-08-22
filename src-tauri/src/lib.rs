@@ -4,7 +4,7 @@
 
 use serde_json::Value;
 use std::io::{BufRead, BufReader, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::Mutex;
 use tauri::menu::{Menu, MenuItem};
@@ -52,32 +52,88 @@ impl Sidecar {
     }
 }
 
-fn host_binary(app: &AppHandle) -> PathBuf {
+#[cfg(all(windows, target_arch = "x86_64"))]
+const SIDECAR_FILE: &str = "quay-host-x86_64-pc-windows-msvc.exe";
+#[cfg(all(windows, target_arch = "aarch64"))]
+const SIDECAR_FILE: &str = "quay-host-aarch64-pc-windows-msvc.exe";
+#[cfg(not(windows))]
+const SIDECAR_FILE: &str = "quay-host";
+
+fn add_candidate(candidates: &mut Vec<PathBuf>, path: PathBuf) {
+    if !candidates.iter().any(|p| p == &path) {
+        candidates.push(path);
+    }
+}
+
+fn host_binary(app: &AppHandle) -> Result<PathBuf, String> {
+    let mut candidates = Vec::new();
+
     #[cfg(debug_assertions)]
     {
-        let mut dev = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        dev.pop();
-        dev.push("host");
-        dev.push("publish");
-        dev.push("quay-host.exe");
-        if dev.exists() {
-            return dev;
-        }
-        dev.set_file_name("quay-host");
-        if dev.exists() {
-            return dev;
+        let mut root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        root.pop();
+
+        add_candidate(&mut candidates, root.join("host").join("publish").join("quay-host.exe"));
+        add_candidate(
+            &mut candidates,
+            root.join("src-tauri").join("binaries").join(SIDECAR_FILE),
+        );
+
+        #[cfg(all(windows, target_arch = "x86_64"))]
+        add_candidate(
+            &mut candidates,
+            root.join("host")
+                .join("publish")
+                .join("win-x64")
+                .join("quay-host.exe"),
+        );
+        #[cfg(all(windows, target_arch = "aarch64"))]
+        add_candidate(
+            &mut candidates,
+            root.join("host")
+                .join("publish")
+                .join("win-arm64")
+                .join("quay-host.exe"),
+        );
+    }
+
+    if let Ok(exe_dir) = app.path().executable_dir() {
+        add_candidate(&mut candidates, exe_dir.join("quay-host.exe"));
+        add_candidate(&mut candidates, exe_dir.join(SIDECAR_FILE));
+    }
+
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        add_candidate(&mut candidates, resource_dir.join("quay-host.exe"));
+        add_candidate(&mut candidates, resource_dir.join(SIDECAR_FILE));
+        add_candidate(
+            &mut candidates,
+            resource_dir.join("binaries").join("quay-host.exe"),
+        );
+        add_candidate(
+            &mut candidates,
+            resource_dir.join("binaries").join(SIDECAR_FILE),
+        );
+    }
+
+    if let Ok(current_exe) = std::env::current_exe() {
+        if let Some(parent) = current_exe.parent() {
+            add_candidate(&mut candidates, parent.join("quay-host.exe"));
+            add_candidate(&mut candidates, parent.join(SIDECAR_FILE));
         }
     }
 
-    let exe_dir = app
-        .path()
-        .executable_dir()
-        .unwrap_or_else(|_| PathBuf::from("."));
-    let win = exe_dir.join("quay-host.exe");
-    if win.exists() {
-        return win;
+    if let Some(found) = candidates.iter().find(|path| Path::new(path).is_file()) {
+        return Ok(found.clone());
     }
-    exe_dir.join("quay-host")
+
+    Err(format!(
+        "Quay.Host executable not found. Tried:\n{}",
+        candidates
+            .iter()
+            .map(|p| format!("- {}", p.display()))
+            .collect::<Vec<_>>()
+            .join("\n")
+    ))
 }
 
 fn show_main(app: &AppHandle) {
@@ -264,12 +320,17 @@ fn autostart_set(enabled: bool) -> Result<bool, String> {
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
-            let bin = host_binary(app.handle());
-            let sidecar = match Sidecar::spawn(bin.clone()) {
-                Ok(s) => s,
+            let sidecar = match host_binary(app.handle()) {
+                Ok(bin) => match Sidecar::spawn(bin.clone()) {
+                    Ok(s) => s,
+                    Err(err) => {
+                        eprintln!("quay-host: {err}");
+                        Sidecar::empty(bin, err)
+                    }
+                },
                 Err(err) => {
                     eprintln!("quay-host: {err}");
-                    Sidecar::empty(bin, err)
+                    Sidecar::empty(PathBuf::from("quay-host"), err)
                 }
             };
             app.manage(sidecar);
