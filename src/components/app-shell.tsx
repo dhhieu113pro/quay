@@ -28,7 +28,7 @@ import { useWslc } from "@/lib/wslc/store";
 import type { ViewId } from "@/lib/wslc/types";
 import { windowAction } from "@/lib/tauri";
 
-const QUAY_VERSION = "0.1.3";
+const QUAY_VERSION = "0.1.4";
 
 const NAV: Array<{ id: ViewId; label: string; icon: typeof Box }> = [
   { id: "dashboard", label: "Overview", icon: LayoutGrid },
