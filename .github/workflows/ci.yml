@@ -3,7 +3,6 @@ name: CI
 # Every push / PR: typecheck + Windows x64 and ARM64 installers as artifacts.
 # Real WSLC runtime verification is local-only via `npm run test:windows` because
 # GitHub-hosted Windows runners do not reliably provide the required WSLC runtime.
-# Does not cut a GitHub Release — that's the Release workflow on tags.
 on:
   push:
     branches: [main]
@@ -32,11 +31,11 @@ jobs:
         include:
           - os: windows-latest
             rust_target: x86_64-pc-windows-msvc
-            sidecar_rid: win-x64
+            sdk_rid: win-x64
             name: x64
           - os: windows-11-arm
             rust_target: aarch64-pc-windows-msvc
-            sidecar_rid: win-arm64
+            sdk_rid: win-arm64
             name: arm64
     runs-on: ${{ matrix.os }}
     steps:
@@ -63,9 +62,9 @@ jobs:
       - name: Install frontend
         run: npm ci
 
-      - name: Publish C# sidecar
+      - name: Stage Microsoft native WSLC SDK
         shell: pwsh
-        run: ./scripts/prepare-sidecar.ps1 -Rid ${{ matrix.sidecar_rid }}
+        run: ./scripts/prepare-wslc-sdk.ps1 -Rid ${{ matrix.sdk_rid }}
 
       - name: Build
         uses: tauri-apps/tauri-action@v1
