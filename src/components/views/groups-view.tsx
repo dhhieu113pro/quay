@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Boxes, Network, Pencil, Play, Plus, Square, Trash2 } from "lucide-react";
+import { Boxes, LoaderCircle, Network, Pencil, Play, Plus, Square, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { CubeContainerDialog } from "@/components/cube-container-dialog";
 import {
@@ -10,7 +10,7 @@ import {
   type KvPair,
 } from "@/components/kv-editor";
 import { RunCubeDialog } from "@/components/run-cube-dialog";
-import { applyStackConfig } from "@/components/stack-config-dialog";
+import { applyStackConfig, loadStackConfig } from "@/components/stack-config-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -21,9 +21,9 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { defaultGroupNetwork, slugGroupName } from "@/lib/wslc/groups";
+import { defaultGroupNetwork, effectiveSpec, slugGroupName } from "@/lib/wslc/groups";
 import { useWslc } from "@/lib/wslc/store";
-import type { Container, ContainerGroup, RunSpec } from "@/lib/wslc/types";
+import type { Container, ContainerGroup, ImageRecord, RunSpec } from "@/lib/wslc/types";
 
 function emptyCube(): ContainerGroup {
   const id = `cube-${Date.now()}`;
@@ -84,8 +84,24 @@ function cubeMembers(cube: ContainerGroup, containers: Container[]): CubeMember[
   return rows;
 }
 
+function envValue(env: string, key: string) {
+  const prefix = `${key}=`;
+  return env.split("\n").map((line) => line.trim()).find((line) => line.startsWith(prefix))?.slice(prefix.length).trim() ?? "";
+}
+
+function memberNeedsConfig(cube: ContainerGroup, member: CubeMember) {
+  if (cube.id !== "local-coding" || member.name !== "local-coding-mcp-ngrok" || !member.spec) return false;
+  const configured = envValue(effectiveSpec(member.spec, cube).env, "NGROK_AUTHTOKEN");
+  return !configured && !loadStackConfig(cube.id).ngrokToken.trim();
+}
+
+function imagePulled(images: ImageRecord[], reference: string) {
+  const normalized = reference.includes(":") ? reference : `${reference}:latest`;
+  return images.some((image) => `${image.repository}:${image.tag}` === normalized || image.id === reference);
+}
+
 function cubeState(total: number, running: number) {
-  if (total === 0) return { label: "Empty", className: "bg-elevated text-muted-foreground" };
+  if (total === 0) return { label: "Needs config", className: "bg-warn/15 text-warn" };
   if (running === total) return { label: "Running", className: "bg-ok/15 text-ok" };
   if (running > 0) return { label: "Partial", className: "bg-warn/15 text-warn" };
   return { label: "Stopped", className: "bg-elevated text-muted-foreground" };
@@ -94,6 +110,8 @@ function cubeState(total: number, running: number) {
 export function CubesView() {
   const groups = useWslc((s) => s.groups);
   const containers = useWslc((s) => s.containers);
+  const images = useWslc((s) => s.images);
+  const operations = useWslc((s) => s.operations);
   const saveGroup = useWslc((s) => s.saveGroup);
   const deleteGroup = useWslc((s) => s.deleteGroup);
   const startGroup = useWslc((s) => s.startGroup);
@@ -106,12 +124,14 @@ export function CubesView() {
   const [runOpen, setRunOpen] = useState(false);
 
   const counts = useMemo(() => {
-    const result = new Map<string, { total: number; running: number }>();
+    const result = new Map<string, { total: number; running: number; needsConfig: number }>();
     for (const cube of groups) {
       const members = cubeMembers(cube, containers);
+      const runnable = members.filter((member) => !memberNeedsConfig(cube, member));
       result.set(cube.id, {
-        total: members.length,
-        running: members.filter((member) => member.container?.status === "running").length,
+        total: runnable.length,
+        running: runnable.filter((member) => member.container?.status === "running").length,
+        needsConfig: members.length - runnable.length,
       });
     }
     return result;
@@ -123,9 +143,7 @@ export function CubesView() {
       startGroup(cube.id);
     } else {
       for (const member of members) {
-        if (member.container && member.container.status !== "running") {
-          startContainer(member.container.id);
-        }
+        if (member.container && member.container.status !== "running") startContainer(member.container.id);
       }
     }
     toast(`Starting ${cube.name}`);
@@ -158,7 +176,7 @@ export function CubesView() {
           <div>
             <h1 className="text-xl font-semibold">Cubes</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Define Cube containers here. They share one WSLC network and shared environment variables.
+              Define related containers here. Cube members share one WSLC network and shared environment variables.
             </p>
           </div>
           <div className="flex flex-wrap justify-end gap-2">
@@ -176,12 +194,13 @@ export function CubesView() {
         <div className="grid gap-3 lg:grid-cols-2">
           {groups.map((cube) => {
             const members = cubeMembers(cube, containers);
-            const count = counts.get(cube.id) ?? { total: 0, running: 0 };
+            const count = counts.get(cube.id) ?? { total: 0, running: 0, needsConfig: 0 };
             const envCount = cube.env.split("\n").map((line) => line.trim()).filter(Boolean).length;
             const state = cubeState(count.total, count.running);
             const fullyRunning = count.total > 0 && count.running === count.total;
             const partiallyRunning = count.running > 0 && !fullyRunning;
             const canAddContainer = count.running === 0;
+            const cubeBusy = Boolean(operations[`cube:${cube.id}`]);
 
             return (
               <section key={cube.id} className="overflow-hidden rounded-xl border border-border bg-card">
@@ -194,7 +213,7 @@ export function CubesView() {
                       <div className="flex flex-wrap items-center gap-2">
                         <h2 className="font-medium">{cube.name}</h2>
                         <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${state.className}`}>
-                          {state.label}
+                          {cubeBusy ? "Working" : state.label}
                         </span>
                         {cube.builtIn ? (
                           <span className="rounded bg-elevated px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -207,12 +226,18 @@ export function CubesView() {
                           <Network className="size-3" /> {cube.network}
                         </span>
                         <span className={count.running > 0 ? "font-medium text-foreground" : ""}>
-                          {count.running} running · {count.total} total
+                          {count.running} running · {members.length} members
                         </span>
+                        {count.needsConfig ? <span className="text-warn">{count.needsConfig} needs config</span> : null}
                         <span>{envCount} shared env</span>
                       </div>
                     </div>
                   </div>
+                  {cube.id === "local-coding" ? (
+                    <p className="mt-3 rounded-lg bg-elevated px-3 py-2 text-xs text-muted-foreground">
+                      First run creates <span className="font-mono text-foreground">D:\wslc\workspaces</span> automatically. ngrok is optional; add an auth token only if you need a public endpoint.
+                    </p>
+                  ) : null}
                 </div>
 
                 <div className="border-y border-border bg-background/35">
@@ -221,30 +246,51 @@ export function CubesView() {
                       {members.map((member) => {
                         const status = member.container?.status ?? "missing";
                         const running = status === "running";
-                        const canStart = Boolean(member.container || member.spec);
-                        const actionLabel = running
-                          ? `Stop ${member.name}`
-                          : canStart
-                            ? `Start ${member.name}`
-                            : `${member.name} cannot be started`;
+                        const needsConfig = memberNeedsConfig(cube, member);
+                        const pulled = Boolean(member.container) || imagePulled(images, member.image);
+                        const memberBusy = cubeBusy || Boolean(operations[`container:${member.name}`]);
+                        const canStart = Boolean(member.container || member.spec) && !needsConfig;
+                        const actionLabel = memberBusy
+                          ? `Working on ${member.name}`
+                          : running
+                            ? `Stop ${member.name}`
+                            : needsConfig
+                              ? `Configure ${member.name} first`
+                              : pulled
+                                ? `Start ${member.name}`
+                                : `Pull and start ${member.name}`;
+                        const statusLabel = memberBusy
+                          ? "Working…"
+                          : running
+                            ? "Running"
+                            : needsConfig
+                              ? "Needs token"
+                              : status === "missing" && !pulled
+                                ? "Image not pulled"
+                                : status === "missing"
+                                  ? "Not created"
+                                  : status === "created"
+                                    ? "Created"
+                                    : "Stopped";
+
                         return (
                           <li key={member.name} className="flex items-center gap-3 px-4 py-2.5">
                             <span
-                              className={`size-2 shrink-0 rounded-full ${running ? "bg-ok" : status === "created" ? "bg-warn" : "bg-subtle"}`}
+                              className={`size-2 shrink-0 rounded-full ${running ? "bg-ok" : needsConfig ? "bg-warn" : status === "created" ? "bg-warn" : "bg-subtle"}`}
                               aria-hidden
                             />
                             <div className="min-w-0 flex-1">
                               <p className="truncate text-sm font-medium">{member.name}</p>
                               <p className="truncate font-mono text-[11px] text-subtle">{member.image}</p>
                             </div>
-                            <span className={running ? "text-xs font-medium text-ok" : "text-xs text-muted-foreground"}>
-                              {running ? "Running" : status === "missing" ? "Not created" : status === "created" ? "Created" : "Stopped"}
+                            <span className={running ? "text-xs font-medium text-ok" : needsConfig ? "text-xs text-warn" : "text-xs text-muted-foreground"}>
+                              {statusLabel}
                             </span>
                             <Button
                               type="button"
                               size="icon-sm"
                               variant="ghost"
-                              disabled={running ? !member.container : !canStart}
+                              disabled={memberBusy || (running ? !member.container : !canStart)}
                               aria-label={actionLabel}
                               title={actionLabel}
                               onClick={() => {
@@ -252,15 +298,16 @@ export function CubesView() {
                                   stopContainer(member.container.id);
                                   toast(`Stopping ${member.name}`);
                                 } else if (member.spec) {
+                                  if (cube.id === "local-coding") applyStackConfig(cube);
                                   startGroupContainer(cube.id, member.name);
-                                  toast(`Starting ${member.name}`);
+                                  toast(pulled ? `Starting ${member.name}` : `Pulling and starting ${member.name}`);
                                 } else if (member.container) {
                                   startContainer(member.container.id);
                                   toast(`Starting ${member.name}`);
                                 }
                               }}
                             >
-                              {running ? <Square className="size-3.5" /> : <Play className="size-3.5" />}
+                              {memberBusy ? <LoaderCircle className="size-3.5 animate-spin" /> : running ? <Square className="size-3.5" /> : <Play className="size-3.5" />}
                             </Button>
                           </li>
                         );
@@ -278,21 +325,23 @@ export function CubesView() {
                     <Button
                       size="sm"
                       variant="secondary"
+                      disabled={cubeBusy}
                       onClick={() => {
                         stopGroup(cube.id);
                         toast(`Stopping ${cube.name}`);
                       }}
                     >
-                      <Square className="mr-1.5 size-3.5" /> Stop Cube
+                      {cubeBusy ? <LoaderCircle className="mr-1.5 size-3.5 animate-spin" /> : <Square className="mr-1.5 size-3.5" />}
+                      {cubeBusy ? "Working…" : "Stop Cube"}
                     </Button>
                   ) : (
                     <Button
                       size="sm"
-                      disabled={count.total === 0}
+                      disabled={count.total === 0 || cubeBusy}
                       onClick={() => startCube(cube, members)}
                     >
-                      <Play className="mr-1.5 size-3.5" />
-                      {partiallyRunning ? "Start missing" : "Start Cube"}
+                      {cubeBusy ? <LoaderCircle className="mr-1.5 size-3.5 animate-spin" /> : <Play className="mr-1.5 size-3.5" />}
+                      {cubeBusy ? "Working…" : partiallyRunning ? "Start missing" : "Start Cube"}
                     </Button>
                   )}
 
@@ -300,6 +349,7 @@ export function CubesView() {
                     <Button
                       size="sm"
                       variant="secondary"
+                      disabled={cubeBusy}
                       onClick={() => {
                         stopGroup(cube.id);
                         toast(`Stopping ${cube.name}`);
@@ -312,13 +362,13 @@ export function CubesView() {
                   <Button
                     size="sm"
                     variant="outline"
-                    disabled={!canAddContainer}
+                    disabled={!canAddContainer || cubeBusy}
                     title={canAddContainer ? "Add Container" : "Stop the Cube before adding a container"}
                     onClick={() => setAddingTo(cube)}
                   >
                     <Plus className="mr-1.5 size-3.5" /> Add Container
                   </Button>
-                  <Button size="sm" variant="ghost" onClick={() => setEditing({ ...cube })}>
+                  <Button size="sm" variant="ghost" disabled={cubeBusy} onClick={() => setEditing({ ...cube })}>
                     <Pencil className="mr-1.5 size-3.5" /> Configure
                   </Button>
                   {!cube.builtIn ? (
@@ -326,6 +376,7 @@ export function CubesView() {
                       size="sm"
                       variant="ghost"
                       className="ml-auto"
+                      disabled={cubeBusy}
                       onClick={() => {
                         deleteGroup(cube.id);
                         toast(`Deleted ${cube.name}`);
