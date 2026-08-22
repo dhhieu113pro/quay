@@ -10,6 +10,7 @@ param(
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $out = Join-Path $root "host/publish/$Rid"
+$devOut = Join-Path $root "host/publish"
 $bin = Join-Path $root "src-tauri/binaries"
 $triple = if ($Rid -eq "win-arm64") { "aarch64-pc-windows-msvc" } else { "x86_64-pc-windows-msvc" }
 
@@ -28,10 +29,20 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 New-Item -ItemType Directory -Force -Path $bin | Out-Null
+New-Item -ItemType Directory -Force -Path $devOut | Out-Null
 $exe = Join-Path $out "quay-host.exe"
 if (-not (Test-Path $exe)) {
     throw "dotnet publish did not produce quay-host.exe"
 }
+
+# Tauri bundles the target-specific external binary from src-tauri/binaries.
 $dest = Join-Path $bin "quay-host-$triple.exe"
 Copy-Item $exe $dest -Force
+
+# In debug mode src-tauri/src/lib.rs first looks here. Keep a plain-name copy
+# so `npm run tauri dev` always launches the freshly-built sidecar.
+$devDest = Join-Path $devOut "quay-host.exe"
+Copy-Item $exe $devDest -Force
+
 Write-Host "Sidecar -> $dest"
+Write-Host "Dev sidecar -> $devDest"
