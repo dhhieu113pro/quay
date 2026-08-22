@@ -55,6 +55,7 @@ export interface Container {
   user: string;
   exitCode?: number;
   logs: LogLine[];
+  groupId?: string;
 }
 
 export interface ImageRecord {
@@ -125,6 +126,14 @@ export interface RunSpec {
   remove: boolean;
   detach: boolean;
   workdir: string;
+  groupId?: string;
+}
+
+export interface ContainerGroup {
+  id: string;
+  name: string;
+  autoStart: boolean;
+  specs: RunSpec[];
 }
 
 export interface MetricsPoint {

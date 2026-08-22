@@ -9,10 +9,12 @@ import {
   cliForRun,
 } from "./csharp";
 import { checkHost } from "./probe";
+import { loadPrefs, savePrefs } from "./prefs";
 import { parseMountsRaw } from "./spec-parse";
 import {
   catalogImages,
   seedContainers,
+  seedGroups,
   seedImages,
   seedSession,
   seedVolumes,
@@ -20,6 +22,7 @@ import {
 import type {
   ApiCall,
   Container,
+  ContainerGroup,
   HostGate,
   ImageRecord,
   MetricsPoint,
@@ -126,6 +129,8 @@ interface WslcState {
   metrics: MetricsPoint[];
   now: number;
   catalog: string[];
+  groups: ContainerGroup[];
+  launchAtSignIn: boolean;
   setView: (view: ViewId) => void;
   selectContainer: (id: string | null) => void;
   setRunOpen: (open: boolean) => void;
@@ -147,6 +152,11 @@ interface WslcState {
   resetLab: () => void;
   enterLab: () => void;
   retryProbe: () => Promise<void>;
+  setGroupAutoStart: (id: string, autoStart: boolean) => void;
+  startGroup: (id: string) => void;
+  stopGroup: (id: string) => void;
+  startAutoGroups: () => void;
+  setLaunchAtSignIn: (enabled: boolean) => void;
 }
 
 function pushCall(
@@ -207,7 +217,10 @@ function labState(): Pick<
   | "metrics"
   | "now"
   | "catalog"
+  | "groups"
+  | "launchAtSignIn"
 > {
+  const prefs = loadPrefs();
   return {
     view: "dashboard",
     gate: "lab",
@@ -236,10 +249,16 @@ function labState(): Pick<
     metrics: emptyMetrics(),
     now: Date.now(),
     catalog: catalogImages,
+    groups: seedGroups.map((g) => ({
+      ...g,
+      autoStart: prefs.groupAuto[g.id] ?? g.autoStart,
+    })),
+    launchAtSignIn: prefs.launchAtSignIn,
   };
 }
 
 function initial(): ReturnType<typeof labState> {
+  const prefs = loadPrefs();
   return {
     view: "dashboard",
     gate: "checking",
@@ -258,6 +277,11 @@ function initial(): ReturnType<typeof labState> {
     metrics: idleMetrics(),
     now: Date.now(),
     catalog: catalogImages,
+    groups: seedGroups.map((g) => ({
+      ...g,
+      autoStart: prefs.groupAuto[g.id] ?? g.autoStart,
+    })),
+    launchAtSignIn: prefs.launchAtSignIn,
   };
 }
 
@@ -352,6 +376,7 @@ export const useWslc = create<WslcState>((set, get) => ({
         ok: true,
       }),
     }));
+    get().startAutoGroups();
   },
 
   stopSession: () => {
@@ -503,15 +528,17 @@ export const useWslc = create<WslcState>((set, get) => ({
       spec.name.trim() ||
       spec.image.split("/").pop()?.split(":")[0] ||
       "container";
-    const unique = get().containers.some((c) => c.name === name)
-      ? `${name}-${rid().slice(0, 4)}`
-      : name;
+    const existing = get().containers.find((c) => c.name === name);
+    if (existing) {
+      if (existing.status !== "running") get().startContainer(existing.id);
+      return;
+    }
     const command = spec.command.trim()
       ? spec.command.trim().split(/\s+/)
       : ["/bin/sh"];
     const container: Container = {
       id: rid(),
-      name: unique,
+      name,
       image: spec.image,
       status: "created",
       createdAt: Date.now(),
@@ -526,6 +553,7 @@ export const useWslc = create<WslcState>((set, get) => ({
       workdir: spec.workdir || "/",
       user: "root",
       logs: [],
+      groupId: spec.groupId,
     };
     set((s) => ({
       containers: [container, ...s.containers],
@@ -540,9 +568,9 @@ export const useWslc = create<WslcState>((set, get) => ({
       ),
       calls: pushCall(s.calls, {
         method: "Session.CreateContainer",
-        csharp: csharpCreateAndStart({ ...spec, name: unique }),
-        cli: cliForRun({ ...spec, name: unique }),
-        result: `created ${unique} (${container.id})`,
+        csharp: csharpCreateAndStart({ ...spec, name }),
+        cli: cliForRun({ ...spec, name }),
+        result: `created ${name} (${container.id})`,
         ok: true,
       }),
     }));
@@ -772,6 +800,7 @@ export const useWslc = create<WslcState>((set, get) => ({
         metrics: idleMetrics(),
         now: Date.now(),
       });
+      get().startAutoGroups();
       return;
     }
     set({
@@ -781,6 +810,64 @@ export const useWslc = create<WslcState>((set, get) => ({
       sidecarUp: result.sidecar,
       session: emptySession(result.missing),
     });
+  },
+
+  setGroupAutoStart: (id, autoStart) => {
+    set((s) => ({
+      groups: s.groups.map((g) => (g.id === id ? { ...g, autoStart } : g)),
+    }));
+    const s = get();
+    savePrefs({
+      launchAtSignIn: s.launchAtSignIn,
+      groupAuto: Object.fromEntries(s.groups.map((g) => [g.id, g.autoStart])),
+    });
+  },
+
+  startGroup: (id) => {
+    const group = get().groups.find((g) => g.id === id);
+    if (!group) return;
+    if (!get().session.running) {
+      set((s) => ({
+        calls: pushCall(s.calls, {
+          method: "Group.Start",
+          csharp: "// start grouped containers",
+          cli: `quay group start ${group.name}`,
+          result: "session is not running",
+          ok: false,
+        }),
+      }));
+      return;
+    }
+    for (const spec of group.specs) {
+      get().runContainer({ ...spec, groupId: group.id });
+    }
+  },
+
+  stopGroup: (id) => {
+    const group = get().groups.find((g) => g.id === id);
+    if (!group) return;
+    const names = new Set(group.specs.map((s) => s.name));
+    for (const c of get().containers) {
+      if ((c.groupId === id || names.has(c.name)) && c.status === "running") {
+        get().stopContainer(c.id);
+      }
+    }
+  },
+
+  startAutoGroups: () => {
+    for (const g of get().groups) {
+      if (g.autoStart) get().startGroup(g.id);
+    }
+  },
+
+  setLaunchAtSignIn: (enabled) => {
+    set({ launchAtSignIn: enabled });
+    const s = get();
+    savePrefs({
+      launchAtSignIn: enabled,
+      groupAuto: Object.fromEntries(s.groups.map((g) => [g.id, g.autoStart])),
+    });
+    void import("@/lib/tauri").then((m) => m.setLaunchAtSignIn(enabled));
   },
 }));
 

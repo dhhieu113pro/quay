@@ -1,5 +1,6 @@
 import type {
   Container,
+  ContainerGroup,
   ImageRecord,
   LogLine,
   RunSpec,
@@ -174,6 +175,7 @@ export const seedContainers: Container[] = [
     command: ["dotnet", "LocalCodingMcp.dll"],
     workdir: "/app",
     user: "root",
+    groupId: "local-coding",
     logs: logs([
       [1.1 * hour, "stdout", "LocalCodingMcp listening on http://0.0.0.0:5000"],
       [1.05 * hour, "stdout", "AllowedRoots: /workspace"],
@@ -198,6 +200,7 @@ export const seedContainers: Container[] = [
     command: ["http", "local-coding-mcp:5000", "--log=stdout"],
     workdir: "/",
     user: "root",
+    groupId: "local-coding",
     logs: logs([
       [1.05 * hour, "stdout", "ngrok forwarding http://local-coding-mcp:5000"],
       [1 * hour, "stdout", "inspector on :4040"],
@@ -382,6 +385,7 @@ export interface CatalogPreset {
   workdir: string;
   command?: string;
   gpu?: boolean;
+  groupId?: string;
 }
 
 export const catalogPresets: CatalogPreset[] = [
@@ -399,6 +403,7 @@ export const catalogPresets: CatalogPreset[] = [
     ].join("\n"),
     mounts: "D:\\wslc\\workspaces:/workspace:rw",
     workdir: "/workspace",
+    groupId: "local-coding",
   },
   {
     image: "ngrok/ngrok:latest",
@@ -410,6 +415,7 @@ export const catalogPresets: CatalogPreset[] = [
     mounts: "",
     workdir: "/",
     command: "http local-coding-mcp:5000 --log=stdout",
+    groupId: "local-coding",
   },
   {
     image: "nginx:latest",
@@ -457,8 +463,18 @@ export function specFromPreset(p: CatalogPreset): RunSpec {
     remove: false,
     detach: true,
     workdir: p.workdir,
+    groupId: p.groupId,
   };
 }
+
+export const seedGroups: ContainerGroup[] = [
+  {
+    id: "local-coding",
+    name: "local-coding",
+    autoStart: true,
+    specs: mcpStack.map((p) => specFromPreset(p)),
+  },
+];
 
 export const catalogImages = [
   ...catalogPresets.map((p) => p.image),

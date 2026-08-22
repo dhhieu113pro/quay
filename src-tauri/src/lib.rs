@@ -174,6 +174,78 @@ fn sidecar_up(sidecar: State<Sidecar>) -> bool {
     sidecar.stdin.lock().ok().is_some_and(|g| g.is_some())
 }
 
+const AUTOSTART_VALUE: &str = "Quay";
+
+#[cfg(windows)]
+fn run_key() -> &'static str {
+    r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run"
+}
+
+#[tauri::command]
+fn autostart_enabled() -> bool {
+    #[cfg(windows)]
+    {
+        let mut cmd = Command::new("reg");
+        cmd.args(["query", run_key(), "/v", AUTOSTART_VALUE])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            cmd.creation_flags(CREATE_NO_WINDOW);
+        }
+        cmd.status().map(|s| s.success()).unwrap_or(false)
+    }
+    #[cfg(not(windows))]
+    {
+        false
+    }
+}
+
+#[tauri::command]
+fn autostart_set(enabled: bool) -> Result<bool, String> {
+    #[cfg(windows)]
+    {
+        let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+        let quoted = format!("\"{}\"", exe.display());
+        let mut cmd = Command::new("reg");
+        if enabled {
+            cmd.args([
+                "add",
+                run_key(),
+                "/v",
+                AUTOSTART_VALUE,
+                "/t",
+                "REG_SZ",
+                "/d",
+                &quoted,
+                "/f",
+            ]);
+        } else {
+            cmd.args(["delete", run_key(), "/v", AUTOSTART_VALUE, "/f"]);
+        }
+        cmd.stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            cmd.creation_flags(CREATE_NO_WINDOW);
+        }
+        let status = cmd.status().map_err(|e| e.to_string())?;
+        if enabled && !status.success() {
+            return Err("could not write HKCU Run key".into());
+        }
+        Ok(enabled)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = enabled;
+        Err("Windows sign-in start is only available on Windows".into())
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -198,7 +270,13 @@ pub fn run() {
                 let _ = window.hide();
             }
         })
-        .invoke_handler(tauri::generate_handler![wslc_invoke, sidecar_up, wslc_probe])
+        .invoke_handler(tauri::generate_handler![
+            wslc_invoke,
+            sidecar_up,
+            wslc_probe,
+            autostart_enabled,
+            autostart_set
+        ])
         .run(tauri::generate_context!())
         .expect("error while running Quay");
 }

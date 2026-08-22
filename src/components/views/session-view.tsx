@@ -16,6 +16,10 @@ export function SessionView() {
   const stopSession = useWslc((s) => s.stopSession);
   const updateSession = useWslc((s) => s.updateSession);
   const resetLab = useWslc((s) => s.resetLab);
+  const groups = useWslc((s) => s.groups);
+  const launchAtSignIn = useWslc((s) => s.launchAtSignIn);
+  const setLaunchAtSignIn = useWslc((s) => s.setLaunchAtSignIn);
+  const setGroupAutoStart = useWslc((s) => s.setGroupAutoStart);
   const now = useWslc((s) => s.now);
 
   return (
@@ -157,6 +161,46 @@ export function SessionView() {
             GPU / CDI
           </label>
         </div>
+      </section>
+
+      <section className="rounded-xl border border-border bg-card p-4">
+        <h2 className="text-sm font-medium">Windows</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Open Quay when you sign in to Windows. Groups marked Auto start with
+          the WSL container session.
+        </p>
+        <label className="mt-3 flex items-center gap-2 text-sm">
+          <Switch
+            checked={launchAtSignIn}
+            onCheckedChange={(on) => {
+              setLaunchAtSignIn(on);
+              toast(on ? "Quay will open at Windows sign-in" : "Removed from Windows startup");
+            }}
+          />
+          Open Quay at sign-in
+        </label>
+        <ul className="mt-4 grid gap-2">
+          {groups.map((g) => (
+            <li
+              key={g.id}
+              className="flex items-center justify-between gap-3 rounded-lg bg-elevated px-3 py-2"
+            >
+              <div>
+                <p className="text-sm">{g.name}</p>
+                <p className="font-mono text-xs text-subtle">
+                  {g.specs.map((s) => s.name).join(" + ")}
+                </p>
+              </div>
+              <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Switch
+                  checked={g.autoStart}
+                  onCheckedChange={(on) => setGroupAutoStart(g.id, on)}
+                />
+                Auto
+              </label>
+            </li>
+          ))}
+        </ul>
       </section>
 
       <section className="rounded-xl border border-border bg-card p-4">

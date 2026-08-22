@@ -10,6 +10,7 @@ import {
 } from "recharts";
 import { Box, Cpu, Layers, MemoryStick } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { StatusPill } from "@/components/status-pill";
 import { formatBytes, formatUptime } from "@/lib/utils";
 import { useWslc } from "@/lib/wslc/store";
@@ -24,6 +25,9 @@ export function DashboardView() {
   const setView = useWslc((s) => s.setView);
   const selectContainer = useWslc((s) => s.selectContainer);
   const setRunOpen = useWslc((s) => s.setRunOpen);
+  const groups = useWslc((s) => s.groups);
+  const startGroup = useWslc((s) => s.startGroup);
+  const setGroupAutoStart = useWslc((s) => s.setGroupAutoStart);
 
   const running = containers.filter((c) => c.status === "running");
   const memUsed = running.reduce((a, c) => a + c.memoryMB, 0);
@@ -78,6 +82,47 @@ export function DashboardView() {
           hint={`of ${formatBytes(session.memoryMB)}`}
         />
       </div>
+
+      {groups.length > 0 ? (
+        <section className="rounded-xl border border-border bg-card p-4">
+          <h2 className="text-sm font-medium">Groups</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Auto groups start when the session comes up.
+          </p>
+          <ul className="mt-3 grid gap-2">
+            {groups.map((g) => {
+              const names = new Set(g.specs.map((s) => s.name));
+              const members = containers.filter(
+                (c) => c.groupId === g.id || names.has(c.name),
+              );
+              const up = members.filter((c) => c.status === "running").length;
+              return (
+                <li
+                  key={g.id}
+                  className="flex flex-wrap items-center gap-2 rounded-lg bg-elevated px-3 py-2"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm">{g.name}</p>
+                    <p className="font-mono text-xs text-subtle">
+                      {g.specs.map((s) => s.name).join(" + ")} · {up}/{members.length || g.specs.length} up
+                    </p>
+                  </div>
+                  <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Switch
+                      checked={g.autoStart}
+                      onCheckedChange={(on) => setGroupAutoStart(g.id, on)}
+                    />
+                    Auto
+                  </label>
+                  <Button size="sm" onClick={() => startGroup(g.id)}>
+                    Start
+                  </Button>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ) : null}
 
       <section className="rounded-xl border border-border bg-card p-4">
         <div className="mb-3 flex items-center justify-between">
