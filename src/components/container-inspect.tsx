@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusPill } from "@/components/status-pill";
 import { formatBytes, formatUptime } from "@/lib/utils";
-import { execCommand } from "@/lib/wslc/terminal";
+import { execInContainer } from "@/lib/wslc/terminal";
 import { useWslc } from "@/lib/wslc/store";
 import type { Container } from "@/lib/wslc/types";
 
@@ -22,7 +22,6 @@ export function ContainerInspect({
   const stopContainer = useWslc((s) => s.stopContainer);
   const restartContainer = useWslc((s) => s.restartContainer);
   const deleteContainer = useWslc((s) => s.deleteContainer);
-  const appendExec = useWslc((s) => s.appendExec);
   const now = useWslc((s) => s.now);
 
   return (
@@ -103,7 +102,7 @@ export function ContainerInspect({
           <LogPane container={container} />
         </TabsContent>
         <TabsContent value="exec" className="min-h-0 flex-1">
-          <ExecPane container={container} onExec={appendExec} />
+          <ExecPane container={container} />
         </TabsContent>
         <TabsContent value="inspect" className="min-h-0 flex-1 overflow-y-auto">
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-xs">
@@ -134,10 +133,7 @@ export function ContainerInspect({
               }
               mono
             />
-            <Row
-              k="CPU"
-              v={`${container.cpuPercent.toFixed(1)}%`}
-            />
+            <Row k="CPU" v={`${container.cpuPercent.toFixed(1)}%`} />
             <Row
               k="Memory"
               v={`${formatBytes(container.memoryMB)} / ${formatBytes(container.memoryLimitMB)}`}
@@ -190,39 +186,55 @@ function LogPane({ container }: { container: Container }) {
   );
 }
 
-function ExecPane({
-  container,
-  onExec,
-}: {
-  container: Container;
-  onExec: (id: string, command: string, output: string) => void;
-}) {
+function ExecPane({ container }: { container: Container }) {
   const [cmd, setCmd] = useState("");
+  const [busy, setBusy] = useState(false);
   const [lines, setLines] = useState<string[]>([
-    `Attached to ${container.name}. Type help · GPU ${container.gpu ? "on" : "off"}.`,
+    `Connected to ${container.name} through wslc exec.`,
   ]);
   const end = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     end.current?.scrollIntoView({ block: "end" });
-  }, [lines.length]);
+  }, [lines.length, busy]);
 
-  function run() {
+  async function run() {
     const value = cmd.trim();
-    if (!value) return;
-    if (container.status !== "running") {
-      setLines((l) => [...l, `# ${value}`, "container is not running"]);
+    if (!value || busy) return;
+
+    if (value === "clear") {
+      setLines([]);
       setCmd("");
       return;
     }
-    const out = execCommand(container, value);
-    if (out === "__CLEAR__") {
-      setLines([]);
-    } else {
-      setLines((l) => [...l, `${container.user}@${container.name}:${container.workdir}# ${value}`, out]);
-      onExec(container.id, value, out);
+
+    if (container.status !== "running") {
+      setLines((current) => [...current, `# ${value}`, "container is not running"]);
+      setCmd("");
+      return;
     }
+
+    const prompt = `${container.user || "root"}@${container.name}:${container.workdir || "/"}# ${value}`;
+    setLines((current) => [...current, prompt]);
     setCmd("");
+    setBusy(true);
+
+    try {
+      const result = await execInContainer(container, value);
+      if (result.output) {
+        setLines((current) => [...current, result.output]);
+      }
+      if (!result.ok && result.exitCode != null) {
+        setLines((current) => [...current, `[exit ${result.exitCode}]`]);
+      }
+    } catch (error) {
+      setLines((current) => [
+        ...current,
+        error instanceof Error ? error.message : String(error),
+      ]);
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -233,28 +245,30 @@ function ExecPane({
             {line}
           </div>
         ))}
+        {busy ? <div className="animate-pulse text-subtle">running…</div> : null}
         <div ref={end} />
       </div>
       <form
         className="flex gap-2 border-t border-border p-2"
         onSubmit={(e) => {
           e.preventDefault();
-          run();
+          void run();
         }}
       >
-        <span className="hidden items-center px-1 font-mono text-xs text-accent sm:flex">
-          #
-        </span>
+        <span className="hidden items-center px-1 font-mono text-xs text-accent sm:flex">#</span>
         <Input
           value={cmd}
           onChange={(e) => setCmd(e.target.value)}
           placeholder={
-            container.status === "running" ? "ls · env · nvidia-smi" : "start the container first"
+            container.status === "running"
+              ? "Run a shell command"
+              : "start the container first"
           }
           className="h-10 font-mono text-xs"
           autoComplete="off"
+          disabled={busy}
         />
-        <Button type="submit" size="sm" className="h-10">
+        <Button type="submit" size="sm" className="h-10" disabled={busy || !cmd.trim()}>
           Run
         </Button>
       </form>
