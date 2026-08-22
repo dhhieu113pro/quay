@@ -2,6 +2,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { parseMountLine } from "@/lib/wslc/spec-parse";
 
 export type KvPair = { id: string; key: string; value: string };
 
@@ -59,7 +60,7 @@ export function EnvEditor({
         <span>Value</span>
         <span className="sr-only">Remove</span>
       </div>
-      <ul className="grid gap-2">
+      <ul className="grid max-h-56 gap-2 overflow-y-auto pr-1">
         {rows.map((row) => (
           <li
             key={row.id}
@@ -110,15 +111,7 @@ export function parseMountLines(raw: string): MountRow[] {
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean)
-    .map((line) => {
-      const [source = "", destination = "", mode] = line.split(":");
-      return {
-        id: rid(),
-        source,
-        destination: destination || source,
-        mode: mode === "ro" ? ("ro" as const) : ("rw" as const),
-      };
-    });
+    .map((line) => ({ id: rid(), ...parseMountLine(line) }));
   return rows.length ? rows : [{ id: rid(), source: "", destination: "", mode: "rw" }];
 }
 

@@ -62,8 +62,8 @@ export function RunDialog() {
 
   return (
     <Dialog open={open} onOpenChange={setRunOpen}>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
+      <DialogContent className="flex max-h-[90dvh] max-w-2xl flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="border-b border-border px-5 py-4">
           <DialogTitle>Run container</DialogTitle>
           <DialogDescription>
             Each environment row is one variable. Name on the left, value on the right.
@@ -71,7 +71,7 @@ export function RunDialog() {
         </DialogHeader>
 
         <form
-          className="grid gap-4"
+          className="flex min-h-0 flex-1 flex-col"
           onSubmit={(e) => {
             e.preventDefault();
             runContainer({
@@ -80,8 +80,10 @@ export function RunDialog() {
               mounts: joinMountLines(mountRows),
             });
             toast(`Creating ${spec.name || spec.image}`);
+            setRunOpen(false);
           }}
         >
+          <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto px-5 py-4">
           <div className="grid gap-1.5">
             <Label>Quick pick</Label>
             <div className="flex flex-wrap gap-1.5">
@@ -169,40 +171,41 @@ export function RunDialog() {
               patch({ mounts: joinMountLines(rows) });
             }}
           />
-
-          <div className="flex flex-wrap items-center gap-5">
-            <label className="flex items-center gap-2 text-sm">
-              <Switch
-                checked={spec.gpu}
-                onCheckedChange={(gpu) => patch({ gpu })}
-              />
-              GPU
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <Switch
-                checked={spec.detach}
-                onCheckedChange={(detach) => patch({ detach })}
-              />
-              Detach
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <Switch
-                checked={spec.remove}
-                onCheckedChange={(remove) => patch({ remove })}
-              />
-              Auto-remove
-            </label>
           </div>
 
-          <p className="truncate font-mono text-[11px] text-subtle">
-            {cliForRun({ ...spec, env: joinEnvLines(envRows), mounts: joinMountLines(mountRows) })}
-          </p>
-
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="ghost" onClick={() => setRunOpen(false)}>
-              Cancel
-            </Button>
-            <Button type="submit">Create & start</Button>
+          <div className="grid gap-3 border-t border-border px-5 py-3">
+            <div className="flex flex-wrap items-center gap-5">
+              <label className="flex items-center gap-2 text-sm">
+                <Switch
+                  checked={spec.gpu}
+                  onCheckedChange={(gpu) => patch({ gpu })}
+                />
+                GPU
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <Switch
+                  checked={spec.detach}
+                  onCheckedChange={(detach) => patch({ detach })}
+                />
+                Detach
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <Switch
+                  checked={spec.remove}
+                  onCheckedChange={(remove) => patch({ remove })}
+                />
+                Auto-remove
+              </label>
+            </div>
+            <p className="truncate font-mono text-[11px] text-subtle">
+              {cliForRun({ ...spec, env: joinEnvLines(envRows), mounts: joinMountLines(mountRows) })}
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="ghost" onClick={() => setRunOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit">Create & start</Button>
+            </div>
           </div>
         </form>
       </DialogContent>

@@ -9,6 +9,7 @@ import {
   cliForRun,
 } from "./csharp";
 import { checkHost } from "./probe";
+import { parseMountsRaw } from "./spec-parse";
 import {
   catalogImages,
   seedContainers,
@@ -55,18 +56,7 @@ function parsePorts(raw: string): Container["ports"] {
 }
 
 function parseMounts(raw: string): Container["mounts"] {
-  return raw
-    .split("\n")
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const [source, destination, mode] = line.split(":");
-      return {
-        source: source ?? "",
-        destination: destination ?? source ?? "",
-        mode: mode === "ro" ? ("ro" as const) : ("rw" as const),
-      };
-    });
+  return parseMountsRaw(raw);
 }
 
 function parseEnv(raw: string): Record<string, string> {
