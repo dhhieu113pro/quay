@@ -138,8 +138,8 @@ public sealed class QuayHost
 
     private static (bool Ok, string Output) ExecWslc(IEnumerable<string> args)
     {
-        using var process = new Process();
-        process.StartInfo = new ProcessStartInfo
+        using var process = new System.Diagnostics.Process();
+        process.StartInfo = new System.Diagnostics.ProcessStartInfo
         {
             FileName = "wslc",
             UseShellExecute = false,
