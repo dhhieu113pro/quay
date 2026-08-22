@@ -8,9 +8,9 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Box, Cpu, Layers, MemoryStick } from "lucide-react";
+import { Box, Boxes, Cpu, Layers, MemoryStick } from "lucide-react";
+import { RunCubeDialog } from "@/components/run-cube-dialog";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
 import { StatusPill } from "@/components/status-pill";
 import { invokeWslcHost } from "@/lib/tauri";
 import { formatBytes, formatUptime } from "@/lib/utils";
@@ -43,9 +43,8 @@ export function DashboardView() {
   const setView = useWslc((s) => s.setView);
   const selectContainer = useWslc((s) => s.selectContainer);
   const setRunOpen = useWslc((s) => s.setRunOpen);
-  const groups = useWslc((s) => s.groups);
-  const startGroup = useWslc((s) => s.startGroup);
-  const setGroupAutoStart = useWslc((s) => s.setGroupAutoStart);
+  const cubes = useWslc((s) => s.groups);
+  const [cubeRunOpen, setCubeRunOpen] = useState(false);
   const [host, setHost] = useState<HostStats>(EMPTY_HOST);
   const [hostHistory, setHostHistory] = useState<HostPoint[]>([]);
 
@@ -84,6 +83,31 @@ export function DashboardView() {
 
   const running = containers.filter((c) => c.status === "running");
 
+  const runningCubes = useMemo(
+    () =>
+      cubes
+        .map((cube) => {
+          const names = new Set(cube.specs.map((spec) => spec.name));
+          const members = containers.filter(
+            (container) => container.groupId === cube.id || names.has(container.name),
+          );
+          const runningMembers = members.filter((container) => container.status === "running");
+          return {
+            cube,
+            members: runningMembers,
+            total: Math.max(cube.specs.length, members.length),
+          };
+        })
+        .filter((item) => item.members.length > 0),
+    [containers, cubes],
+  );
+
+  const cubeContainerIds = useMemo(
+    () => new Set(runningCubes.flatMap((item) => item.members.map((container) => container.id))),
+    [runningCubes],
+  );
+  const standaloneRunning = running.filter((container) => !cubeContainerIds.has(container.id));
+
   const chart = useMemo(
     () =>
       hostHistory.map((m) => ({
@@ -95,170 +119,216 @@ export function DashboardView() {
   );
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 p-4 md:p-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="text-xs uppercase tracking-widest text-subtle">Session</p>
-          <h1 className="mt-1 text-2xl font-medium tracking-tight">{session.name}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Tauri WebView running the installed{" "}
-            <span className="font-mono text-foreground/80">wslc.exe</span> CLI
-          </p>
-        </div>
-        <Button onClick={() => setRunOpen(true)}>Run container</Button>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat
-          icon={<Box className="size-4" />}
-          label="Running"
-          value={`${running.length}`}
-          hint={`${containers.length} total`}
-        />
-        <Stat
-          icon={<Layers className="size-4" />}
-          label="Images"
-          value={`${images.length}`}
-          hint={formatBytes(images.reduce((a, i) => a + i.sizeMB, 0))}
-        />
-        <Stat
-          icon={<Cpu className="size-4" />}
-          label="Logical CPU"
-          value={host.cpuCount ? `${host.cpuCount}` : "—"}
-          hint={host.cpuCount ? `${Math.round(host.cpuPercent)}% host load` : "reading Windows host"}
-        />
-        <Stat
-          icon={<MemoryStick className="size-4" />}
-          label="Memory"
-          value={host.memoryTotalMB ? formatBytes(host.memoryUsedMB) : "—"}
-          hint={host.memoryTotalMB
-            ? `of ${formatBytes(host.memoryTotalMB)} · ${Math.round(host.memoryPercent)}%`
-            : "reading Windows host"}
-        />
-      </div>
-
-      {groups.length > 0 ? (
-        <section className="rounded-xl border border-border bg-card p-4">
-          <h2 className="text-sm font-medium">Cubes</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Auto Cubes start when the session comes up.
-          </p>
-          <ul className="mt-3 grid gap-2">
-            {groups.map((g) => {
-              const names = new Set(g.specs.map((s) => s.name));
-              const members = containers.filter(
-                (c) => c.groupId === g.id || names.has(c.name),
-              );
-              const up = members.filter((c) => c.status === "running").length;
-              return (
-                <li
-                  key={g.id}
-                  className="flex flex-wrap items-center gap-2 rounded-lg bg-elevated px-3 py-2"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm">{g.name}</p>
-                    <p className="font-mono text-xs text-subtle">
-                      {g.specs.map((s) => s.name).join(" + ")} · {up}/{members.length || g.specs.length} up
-                    </p>
-                  </div>
-                  <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <Switch
-                      checked={g.autoStart}
-                      onCheckedChange={(on) => setGroupAutoStart(g.id, on)}
-                    />
-                    Auto
-                  </label>
-                  <Button size="sm" onClick={() => startGroup(g.id)}>
-                    Start
-                  </Button>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      ) : null}
-
-      <section className="rounded-xl border border-border bg-card p-4">
-        <div className="mb-3 flex items-center justify-between">
+    <>
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 p-4 md:p-6">
+        <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h2 className="text-sm font-medium">Windows host load</h2>
-            <p className="mt-0.5 text-xs text-subtle">Live host CPU and physical memory, sampled every second.</p>
+            <p className="text-xs uppercase tracking-widest text-subtle">Session</p>
+            <h1 className="mt-1 text-2xl font-medium tracking-tight">{session.name}</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Tauri WebView running the installed{" "}
+              <span className="font-mono text-foreground/80">wslc.exe</span> CLI
+            </p>
           </div>
-          <p className="font-mono text-xs tabular-nums text-muted-foreground">
-            CPU {Math.round(host.cpuPercent)}% · MEM {Math.round(host.memoryPercent)}%
-          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" onClick={() => setCubeRunOpen(true)}>
+              <Boxes className="size-4" />
+              Run Cube
+            </Button>
+            <Button onClick={() => setRunOpen(true)}>
+              <Box className="size-4" />
+              Run Container
+            </Button>
+          </div>
         </div>
-        <div className="h-36">
-          <HostChart data={chart} />
-        </div>
-      </section>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <Stat
+            icon={<Box className="size-4" />}
+            label="Running"
+            value={`${running.length}`}
+            hint={`${containers.length} total`}
+          />
+          <Stat
+            icon={<Layers className="size-4" />}
+            label="Images"
+            value={`${images.length}`}
+            hint={formatBytes(images.reduce((a, i) => a + i.sizeMB, 0))}
+          />
+          <Stat
+            icon={<Cpu className="size-4" />}
+            label="Logical CPU"
+            value={host.cpuCount ? `${host.cpuCount}` : "—"}
+            hint={host.cpuCount ? `${Math.round(host.cpuPercent)}% host load` : "reading Windows host"}
+          />
+          <Stat
+            icon={<MemoryStick className="size-4" />}
+            label="Memory"
+            value={host.memoryTotalMB ? formatBytes(host.memoryUsedMB) : "—"}
+            hint={host.memoryTotalMB
+              ? `of ${formatBytes(host.memoryTotalMB)} · ${Math.round(host.memoryPercent)}%`
+              : "reading Windows host"}
+          />
+        </div>
+
         <section className="rounded-xl border border-border bg-card">
-          <div className="flex items-center justify-between px-4 py-3">
-            <h2 className="text-sm font-medium">Containers</h2>
+          <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+            <div>
+              <h2 className="text-sm font-medium">Running Cubes</h2>
+              <p className="mt-0.5 text-xs text-subtle">
+                Active containers grouped by Cube.
+              </p>
+            </div>
             <button
               type="button"
               className="text-xs text-accent hover:underline"
-              onClick={() => setView("containers")}
+              onClick={() => setView("groups")}
             >
-              All
+              All Cubes
             </button>
           </div>
-          <ul className="divide-y divide-border">
-            {containers.slice(0, 5).map((c) => (
-              <li key={c.id}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setView("containers");
-                    selectContainer(c.id);
-                  }}
-                  className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-elevated"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm">{c.name}</p>
-                    <p className="truncate font-mono text-xs text-muted-foreground">
-                      {c.image}
-                    </p>
+
+          {runningCubes.length ? (
+            <div className="divide-y divide-border">
+              {runningCubes.map(({ cube, members, total }) => (
+                <div key={cube.id}>
+                  <div className="flex flex-wrap items-center gap-3 bg-elevated/40 px-4 py-2.5">
+                    <Boxes className="size-4 text-muted-foreground" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium">{cube.name}</p>
+                      <p className="font-mono text-xs text-subtle">
+                        {cube.network} · {members.length}/{total} running
+                      </p>
+                    </div>
                   </div>
-                  <p className="hidden font-mono text-xs tabular-nums text-subtle sm:block">
-                    {c.status === "running" ? formatUptime(c.startedAt, now) : "—"}
-                  </p>
-                  <StatusPill status={c.status} />
-                </button>
-              </li>
-            ))}
-          </ul>
+                  <ul className="divide-y divide-border/70">
+                    {members.map((container) => (
+                      <li key={container.id}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setView("containers");
+                            selectContainer(container.id);
+                          }}
+                          className="flex w-full items-center gap-3 px-4 py-2.5 pl-10 text-left hover:bg-elevated/60"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm">{container.name}</p>
+                            <p className="truncate font-mono text-xs text-muted-foreground">
+                              {container.image}
+                            </p>
+                          </div>
+                          <p className="hidden font-mono text-xs tabular-nums text-subtle sm:block">
+                            {formatUptime(container.startedAt, now)}
+                          </p>
+                          <StatusPill status={container.status} />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-6">
+              <p className="text-sm text-muted-foreground">No Cubes are running.</p>
+              <Button size="sm" variant="secondary" onClick={() => setCubeRunOpen(true)}>
+                Run Cube
+              </Button>
+            </div>
+          )}
         </section>
 
-        <section className="rounded-xl border border-border bg-card">
-          <div className="flex items-center justify-between px-4 py-3">
-            <h2 className="text-sm font-medium">CLI activity</h2>
-            <button
-              type="button"
-              className="text-xs text-accent hover:underline"
-              onClick={() => setView("session")}
-            >
-              Session
-            </button>
+        <section className="rounded-xl border border-border bg-card p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <div>
+              <h2 className="text-sm font-medium">Windows host load</h2>
+              <p className="mt-0.5 text-xs text-subtle">Live host CPU and physical memory, sampled every second.</p>
+            </div>
+            <p className="font-mono text-xs tabular-nums text-muted-foreground">
+              CPU {Math.round(host.cpuPercent)}% · MEM {Math.round(host.memoryPercent)}%
+            </p>
           </div>
-          <ul className="divide-y divide-border">
-            {calls.slice(0, 5).map((c) => (
-              <li key={c.id} className="px-4 py-3">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="font-mono text-xs text-accent">{c.method}</p>
-                  <span className={c.ok ? "text-ok text-xs" : "text-destructive text-xs"}>
-                    {c.ok ? "ok" : "err"}
-                  </span>
-                </div>
-                <p className="mt-1 truncate text-xs text-muted-foreground">{c.result}</p>
-              </li>
-            ))}
-          </ul>
+          <div className="h-36">
+            <HostChart data={chart} />
+          </div>
         </section>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <section className="rounded-xl border border-border bg-card">
+            <div className="flex items-center justify-between px-4 py-3">
+              <h2 className="text-sm font-medium">Standalone containers</h2>
+              <button
+                type="button"
+                className="text-xs text-accent hover:underline"
+                onClick={() => setView("containers")}
+              >
+                All Containers
+              </button>
+            </div>
+            {standaloneRunning.length ? (
+              <ul className="divide-y divide-border">
+                {standaloneRunning.slice(0, 5).map((c) => (
+                  <li key={c.id}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setView("containers");
+                        selectContainer(c.id);
+                      }}
+                      className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-elevated"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm">{c.name}</p>
+                        <p className="truncate font-mono text-xs text-muted-foreground">
+                          {c.image}
+                        </p>
+                      </div>
+                      <p className="hidden font-mono text-xs tabular-nums text-subtle sm:block">
+                        {formatUptime(c.startedAt, now)}
+                      </p>
+                      <StatusPill status={c.status} />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="px-4 pb-4 text-sm text-muted-foreground">
+                No standalone containers are running.
+              </p>
+            )}
+          </section>
+
+          <section className="rounded-xl border border-border bg-card">
+            <div className="flex items-center justify-between px-4 py-3">
+              <h2 className="text-sm font-medium">CLI activity</h2>
+              <button
+                type="button"
+                className="text-xs text-accent hover:underline"
+                onClick={() => setView("session")}
+              >
+                Session
+              </button>
+            </div>
+            <ul className="divide-y divide-border">
+              {calls.slice(0, 5).map((c) => (
+                <li key={c.id} className="px-4 py-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-mono text-xs text-accent">{c.method}</p>
+                    <span className={c.ok ? "text-ok text-xs" : "text-destructive text-xs"}>
+                      {c.ok ? "ok" : "err"}
+                    </span>
+                  </div>
+                  <p className="mt-1 truncate text-xs text-muted-foreground">{c.result}</p>
+                </li>
+              ))}
+            </ul>
+          </section>
+        </div>
       </div>
-    </div>
+
+      <RunCubeDialog open={cubeRunOpen} onOpenChange={setCubeRunOpen} />
+    </>
   );
 }
 
