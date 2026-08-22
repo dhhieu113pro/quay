@@ -1,7 +1,8 @@
 name: CI
 
-# Every push / PR: typecheck + Windows x64 and ARM64 installers as artifacts.
-# Real WSLC runtime verification is local-only via `npm run test:windows`.
+# GitHub-hosted runners are used only to build/package Quay.
+# WSLC runtime tests are local-only because hosted runners do not reliably
+# provide the WSL Containers runtime (`wslc`).
 on:
   push:
     branches: [main]
@@ -11,19 +12,7 @@ permissions:
   contents: read
 
 jobs:
-  typecheck:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npm run typecheck
-
   windows:
-    needs: typecheck
     strategy:
       fail-fast: false
       matrix:
@@ -52,17 +41,18 @@ jobs:
           workspaces: src-tauri -> target
           key: ci-${{ matrix.rust_target }}
 
-      - name: Install frontend
+      - name: Install frontend dependencies
         run: npm ci
 
-      - name: Build
+      - name: Build Windows installer
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           args: --target ${{ matrix.rust_target }} --bundles nsis,msi
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload Windows installers
+        uses: actions/upload-artifact@v4
         with:
           name: quay-${{ matrix.name }}
           path: |
