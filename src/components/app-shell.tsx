@@ -10,7 +10,7 @@ import {
   SquareTerminal,
   X,
 } from "lucide-react";
-import { Toaster } from "sonner";
+import { toast, Toaster } from "sonner";
 import { AppearanceProvider, useAppearance } from "@/components/appearance-provider";
 import { AppearanceToggle } from "@/components/appearance-toggle";
 import { Mark } from "@/components/mark";
@@ -51,6 +51,8 @@ export function AppShell() {
   const containers = useWslc((s) => s.containers);
   const gate = useWslc((s) => s.gate);
   const retryProbe = useWslc((s) => s.retryProbe);
+  const lastError = useWslc((s) => s.lastError);
+  const clearError = useWslc((s) => s.clearError);
   const running = containers.filter((c) => c.status === "running").length;
   const gated = gate === "checking" || gate === "missing";
 
@@ -59,10 +61,16 @@ export function AppShell() {
   }, [retryProbe]);
 
   useEffect(() => {
+    if (!lastError) return;
+    toast.error(lastError);
+    clearError();
+  }, [lastError, clearError]);
+
+  useEffect(() => {
     if (gated) return;
     const id = window.setInterval(() => {
       void tick();
-    }, 1000);
+    }, 3000);
     return () => window.clearInterval(id);
   }, [tick, gated]);
 
