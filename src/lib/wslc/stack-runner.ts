@@ -3,8 +3,7 @@ import { invokeWslcHost } from "@/lib/tauri";
 import type { ContainerGroup, RunSpec } from "./types";
 
 function argsForSpec(spec: RunSpec, network: string): string[] {
-  const args = ["run"];
-  if (spec.remove) args.push("--rm");
+  const args = ["run", "--rm"];
   if (spec.detach) args.push("-d");
   if (spec.name) args.push("--name", spec.name);
   if (network) args.push("--network", network);
@@ -45,6 +44,18 @@ export async function runNativeStack(group: ContainerGroup) {
     });
     if (!result.ok) {
       throw new Error(result.error || `Could not start ${spec.name}`);
+    }
+  }
+}
+
+export async function stopNativeStack(group: ContainerGroup) {
+  for (const spec of [...group.specs].reverse()) {
+    const result = await invokeWslcHost({
+      cmd: "run_cli",
+      args: ["container", "stop", spec.name],
+    });
+    if (!result.ok && !result.error?.toLowerCase().includes("not found")) {
+      throw new Error(result.error || `Could not stop ${spec.name}`);
     }
   }
 }
