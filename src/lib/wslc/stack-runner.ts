@@ -44,14 +44,20 @@ async function runCli(args: string[]) {
   const result = await invokeWslcHost({ cmd: "run_cli", args });
   return {
     ...result,
-    command: `wslc --session Quay ${args.join(" ")}`,
+    command: result.command ?? `wslc --session Quay ${args.join(" ")}`,
   };
+}
+
+function cliFailure(result: Awaited<ReturnType<typeof runCli>>, fallback: string) {
+  const exit = result.exitCode === undefined ? "" : `\nexit code: ${result.exitCode}`;
+  const detail = result.error || result.stderr || result.stdout || fallback;
+  return `${result.command}${exit}\n${detail}`;
 }
 
 async function listCli(all = true) {
   const result = await runCli(all ? ["container", "list", "--all"] : ["container", "list"]);
   if (!result.ok) {
-    throw new Error(`${result.command}\n${result.error || "Could not list WSLC containers"}`);
+    throw new Error(cliFailure(result, "Could not list WSLC containers"));
   }
   return result.output ?? "";
 }
@@ -129,13 +135,11 @@ function ignorableStopError(message: string) {
 async function stopByName(name: string) {
   const result = await runCli(["container", "stop", name]);
   if (!result.ok && !ignorableStopError(result.error ?? "")) {
-    throw new Error(`${result.command}\n${result.error || `Could not stop ${name}`}`);
+    throw new Error(cliFailure(result, `Could not stop ${name}`));
   }
 }
 
 async function removeExistingByName(name: string) {
-  // This is only called after `container list --all` proved the container exists.
-  // Stop is best-effort because an exited container may return a non-zero status.
   try {
     await stopByName(name);
   } catch {
@@ -144,7 +148,7 @@ async function removeExistingByName(name: string) {
 
   const result = await runCli(["container", "rm", name]);
   if (!result.ok) {
-    throw new Error(`${result.command}\n${result.error || `Could not remove ${name}`}`);
+    throw new Error(cliFailure(result, `Could not remove ${name}`));
   }
 }
 
@@ -157,12 +161,11 @@ export async function runNativeStack(group: ContainerGroup): Promise<Container[]
     name: network,
   });
   if (!networkResult.ok) {
-    throw new Error(networkResult.error || `Could not create network ${network}`);
+    const command = networkResult.command ?? `wslc --session Quay network create ${network}`;
+    const exit = networkResult.exitCode === undefined ? "" : `\nexit code: ${networkResult.exitCode}`;
+    throw new Error(`${command}${exit}\n${networkResult.error || `Could not create network ${network}`}`);
   }
 
-  // Recreate only containers that really exist. Previously we called stop/rm for
-  // missing names and depended on matching WSLC's error wording, which could abort
-  // Group Start before the first `wslc run` was ever reached.
   const staleNames = [...new Set([
     ...group.specs.map((spec) => nativeName(group, spec)),
     ...(group.id === "local-coding" ? ["ngrok"] : []),
@@ -180,7 +183,7 @@ export async function runNativeStack(group: ContainerGroup): Promise<Container[]
     const args = argsForSpec(group, spec, network);
     const result = await runCli(args);
     if (!result.ok) {
-      throw new Error(`${result.command}\n${result.error || `Could not start ${name}`}`);
+      throw new Error(cliFailure(result, `Could not start ${name}`));
     }
 
     const running = await listCli(false);
