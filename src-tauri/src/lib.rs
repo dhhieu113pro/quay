@@ -91,6 +91,9 @@ fn run_capture(program: &str, args: &[&str]) -> Option<String> {
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
     let out = cmd.output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
     let combined = format!(
         "{}{}",
         String::from_utf8_lossy(&out.stdout),
@@ -102,12 +105,25 @@ fn run_capture(program: &str, args: &[&str]) -> Option<String> {
 
 #[tauri::command]
 fn wslc_probe() -> Value {
+    let wsl_version = run_capture("wsl", &["--version"]);
     let version = run_capture("wslc", &["version"]);
-    let up = version.is_some();
     serde_json::json!({
-        "wslc": up,
+        "wsl": wsl_version.is_some(),
+        "wslVersion": wsl_version,
+        "wslc": version.is_some(),
         "version": version,
     })
+}
+
+#[tauri::command]
+fn ensure_host_directory(path: String) -> Result<bool, String> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Err("directory path is empty".into());
+    }
+    std::fs::create_dir_all(trimmed)
+        .map(|_| true)
+        .map_err(|e| format!("could not create {trimmed}: {e}"))
 }
 
 const AUTOSTART_VALUE: &str = "Quay";
@@ -197,6 +213,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             wslc_invoke,
             wslc_probe,
+            ensure_host_directory,
             autostart_enabled,
             autostart_set
         ])
