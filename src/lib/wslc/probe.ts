@@ -20,23 +20,29 @@ export async function checkHost(): Promise<ProbeResult> {
   }
   try {
     const probe = await probeWslc();
-    const missing = probe.wslc ? [] : ["wslc"];
+    const ready = probe.wslc && probe.sidecar;
+    const missing = [
+      ...(probe.wslc ? [] : ["wslc"]),
+      ...(probe.sidecar ? [] : ["quay-host"]),
+    ];
     return {
-      wslc: probe.wslc,
+      wslc: ready,
       sidecar: probe.sidecar,
       version: probe.version,
       missing,
-      note: probe.wslc
-        ? probe.version ?? "wslc on PATH"
-        : "wslc.exe is not on PATH. Install WSL 2.9.3+ (pre-release).",
+      note: !probe.wslc
+        ? "wslc.exe is not on PATH. Install WSL 2.9.3+ (pre-release)."
+        : !probe.sidecar
+          ? "Quay.Host sidecar is not running. Rebuild the sidecar and fully restart Quay."
+          : probe.version ?? "wslc on PATH",
     };
   } catch (err) {
     return {
       wslc: false,
       sidecar: false,
       version: null,
-      missing: ["wslc"],
-      note: err instanceof Error ? err.message : "Could not probe wslc",
+      missing: ["wslc", "quay-host"],
+      note: err instanceof Error ? err.message : "Could not probe Quay runtime",
     };
   }
 }
