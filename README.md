@@ -11,6 +11,23 @@ A **quay** is a dock — the stone edge where ships tie up. Linux containers on 
 
 Microsoft shipped `wslc.exe` (and the alias `container.exe`) in WSL 2.9.3. Same muscle memory as Docker (`run`, `pull`, `ps`, `stop`), but the runtime is a dedicated Hyper-V VM — virtiofs, consomme networking, CDI GPU — not Docker Desktop. Windows apps can drive that VM through a NuGet package. Quay is that API with a UI.
 
+<p align="center">
+  <img src="docs/shots/overview.jpg" alt="Overview — session stats, running containers, live C# invoke log" width="920">
+</p>
+<p align="center">
+  <img src="docs/shots/containers.jpg" alt="Container list with start, stop, and inspect" width="450">
+  &nbsp;
+  <img src="docs/shots/run.jpg" alt="Run container dialog" width="450">
+</p>
+<p align="center">
+  <img src="docs/shots/images.jpg" alt="Image catalog with pull" width="450">
+  &nbsp;
+  <img src="docs/shots/session.jpg" alt="Session vCPU, memory, and data path" width="450">
+</p>
+<p align="center">
+  <img src="docs/shots/host.jpg" alt="C# host — Microsoft.WSL.Containers invoke log and sidecar source" width="920">
+</p>
+
 ```
 ┌─────────────────────┐     JSON over stdin      ┌──────────────────────────┐
 │  Tauri WebView      │ ───────────────────────► │  Quay.Host (C#)          │
@@ -131,6 +148,7 @@ npm run tauri -- build --bundles nsis,msi
 | `.github/workflows/store.yml` | Store bundle + optional Partner Center submit |
 | `docs/store.md` | Partner Center steps, silent flags, secrets |
 | `docs/logo.png` | App mark — isometric containers and a gantry on a quay |
+| `docs/shots/` | Product screenshots used above |
 
 ## License
 
