@@ -1,4 +1,4 @@
-import { Gpu, Play, Search, Square } from "lucide-react";
+import { Gpu, Play, RefreshCw, Search, Square } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { ContainerInspect } from "@/components/container-inspect";
@@ -9,18 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { StatusPill } from "@/components/status-pill";
 import { cn, formatUptime } from "@/lib/utils";
-import { readNativeGroup, runNativeStack, stopNativeStack } from "@/lib/wslc/stack-runner";
 import { useWslc } from "@/lib/wslc/store";
 import type { Container, ContainerGroup } from "@/lib/wslc/types";
-
-function replaceGroupContainers(group: ContainerGroup, items: Container[]) {
-  useWslc.setState((state) => ({
-    containers: [
-      ...state.containers.filter((c) => c.groupId !== group.id),
-      ...items,
-    ],
-  }));
-}
 
 export function ContainersView() {
   const containers = useWslc((s) => s.containers);
@@ -30,6 +20,9 @@ export function ContainersView() {
   const selectContainer = useWslc((s) => s.selectContainer);
   const setInspectOpen = useWslc((s) => s.setInspectOpen);
   const setGroupAutoStart = useWslc((s) => s.setGroupAutoStart);
+  const startGroup = useWslc((s) => s.startGroup);
+  const stopGroup = useWslc((s) => s.stopGroup);
+  const tick = useWslc((s) => s.tick);
   const setRunOpen = useWslc((s) => s.setRunOpen);
   const now = useWslc((s) => s.now);
   const [q, setQ] = useState("");
@@ -117,31 +110,16 @@ export function ContainersView() {
                     inspectOpen={inspectOpen}
                     now={now}
                     onSelect={selectContainer}
-                    onStart={async () => {
-                      try {
-                        const fresh = await runNativeStack(group);
-                        replaceGroupContainers(group, fresh);
-                        toast.success(`${group.name} started`);
-                      } catch (error) {
-                        toast.error(error instanceof Error ? error.message : `Could not start ${group.name}`);
-                      }
+                    onStart={() => {
+                      startGroup(group.id);
+                      toast(`Starting ${group.name}`);
                     }}
-                    onStop={async () => {
-                      try {
-                        const fresh = await stopNativeStack(group);
-                        replaceGroupContainers(group, fresh);
-                        toast.success(`${group.name} stopped`);
-                      } catch (error) {
-                        toast.error(error instanceof Error ? error.message : `Could not stop ${group.name}`);
-                      }
+                    onStop={() => {
+                      stopGroup(group.id);
+                      toast(`Stopping ${group.name}`);
                     }}
-                    onRefresh={async () => {
-                      try {
-                        const fresh = await readNativeGroup(group);
-                        replaceGroupContainers(group, fresh);
-                      } catch (error) {
-                        toast.error(error instanceof Error ? error.message : `Could not refresh ${group.name}`);
-                      }
+                    onRefresh={() => {
+                      void tick();
                     }}
                     onAuto={(on) => {
                       setGroupAutoStart(group.id, on);
@@ -215,7 +193,15 @@ function GroupBlock({
           <Switch checked={group.autoStart} onCheckedChange={onAuto} />
           Auto
         </label>
-        <Button size="sm" variant="ghost" onClick={onRefresh}>Refresh</Button>
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          onClick={onRefresh}
+          title="Refresh now"
+          aria-label={`Refresh ${group.name}`}
+        >
+          <RefreshCw />
+        </Button>
         <Button size="sm" variant="secondary" onClick={onStop}>Stop</Button>
         <Button size="sm" onClick={onStart}>Start</Button>
       </header>
