@@ -1,6 +1,7 @@
 import { useEffect, type ReactNode } from "react";
 import {
   Box,
+  Boxes,
   Cpu,
   LayoutGrid,
   Layers,
@@ -17,6 +18,7 @@ import { SetupScreen } from "@/components/setup-screen";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ContainersView } from "@/components/views/containers-view";
 import { DashboardView } from "@/components/views/dashboard-view";
+import { GroupsView } from "@/components/views/groups-view";
 import { ImagesView } from "@/components/views/images-view";
 import { SessionView } from "@/components/views/session-view";
 import { cn, formatBytes } from "@/lib/utils";
@@ -28,6 +30,7 @@ const NAV: Array<{ id: ViewId; label: string; icon: typeof Box }> = [
   { id: "dashboard", label: "Overview", icon: LayoutGrid },
   { id: "containers", label: "Containers", icon: Box },
   { id: "images", label: "Images", icon: Layers },
+  { id: "groups", label: "Groups", icon: Boxes },
   { id: "session", label: "Session", icon: Cpu },
 ];
 
@@ -96,6 +99,7 @@ export function AppShell() {
               </div>
             ) : null}
             {view === "images" ? <ImagesView /> : null}
+            {view === "groups" ? <GroupsView /> : null}
             {view === "volumes" ? <ImagesView /> : null}
             {view === "session" ? <SessionView /> : null}
           </main>
