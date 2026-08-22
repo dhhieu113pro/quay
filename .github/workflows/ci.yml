@@ -1,6 +1,6 @@
 name: CI
 
-# Every push / PR: typecheck + Windows x64 and ARM64 installers as artifacts.
+# Every push / PR: typecheck, real WSLC runtime smoke tests, and Windows installers.
 # Does not cut a GitHub Release — that's the Release workflow on tags.
 on:
   push:
@@ -21,6 +21,43 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck
+
+  # This is intentionally a real runtime test, not a compile-only check.
+  # It creates a temporary Microsoft.WSL.Containers session, pulls Alpine,
+  # starts a container, verifies state/output, then exercises quay-host.exe
+  # through the same JSON stdin/stdout protocol used by the Tauri frontend.
+  wslc-runtime:
+    needs: typecheck
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+
+      - name: Show WSL environment
+        shell: pwsh
+        run: |
+          wsl --version
+          if (Get-Command wslc -ErrorAction SilentlyContinue) {
+            wslc version
+          } else {
+            Write-Host "wslc CLI is not on PATH; SDK smoke test will validate runtime prerequisites."
+          }
+
+      - name: WSLC SDK smoke test
+        shell: pwsh
+        run: dotnet run --project tests/Wslc.Smoke/Wslc.Smoke.csproj -c Release
+
+      - name: Publish Quay.Host
+        shell: pwsh
+        run: ./scripts/prepare-sidecar.ps1 -Rid win-x64
+
+      - name: Quay.Host WSLC protocol smoke test
+        shell: pwsh
+        run: ./tests/host-smoke.ps1 -HostExe host/publish/win-x64/quay-host.exe
 
   windows:
     needs: typecheck
