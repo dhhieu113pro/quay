@@ -90,6 +90,7 @@ export function CubesView() {
   const deleteGroup = useWslc((s) => s.deleteGroup);
   const startGroup = useWslc((s) => s.startGroup);
   const startContainer = useWslc((s) => s.startContainer);
+  const stopContainer = useWslc((s) => s.stopContainer);
   const stopGroup = useWslc((s) => s.stopGroup);
   const [editing, setEditing] = useState<ContainerGroup | null>(null);
   const [addingTo, setAddingTo] = useState<ContainerGroup | null>(null);
@@ -122,6 +123,14 @@ export function CubesView() {
   };
 
   const addContainer = (cube: ContainerGroup, spec: RunSpec) => {
+    const running = cubeMembers(cube, containers).some(
+      (member) => member.container?.status === "running",
+    );
+    if (running) {
+      toast.error(`Stop ${cube.name} before adding a container`);
+      return false;
+    }
+
     saveGroup({
       ...cube,
       specs: [
@@ -130,6 +139,7 @@ export function CubesView() {
       ],
     });
     toast(`Added ${spec.name} to ${cube.name}`);
+    return true;
   };
 
   return (
@@ -162,6 +172,7 @@ export function CubesView() {
             const state = cubeState(count.total, count.running);
             const fullyRunning = count.total > 0 && count.running === count.total;
             const partiallyRunning = count.running > 0 && !fullyRunning;
+            const canAddContainer = count.running === 0;
 
             return (
               <section key={cube.id} className="overflow-hidden rounded-xl border border-border bg-card">
@@ -201,6 +212,11 @@ export function CubesView() {
                       {members.map((member) => {
                         const status = member.container?.status ?? "missing";
                         const running = status === "running";
+                        const actionLabel = running
+                          ? `Stop ${member.name}`
+                          : member.container
+                            ? `Start ${member.name}`
+                            : `${member.name} is not created`;
                         return (
                           <li key={member.name} className="flex items-center gap-3 px-4 py-2.5">
                             <span
@@ -214,6 +230,26 @@ export function CubesView() {
                             <span className={running ? "text-xs font-medium text-ok" : "text-xs text-muted-foreground"}>
                               {running ? "Running" : status === "missing" ? "Not created" : status === "created" ? "Created" : "Stopped"}
                             </span>
+                            <Button
+                              type="button"
+                              size="icon-sm"
+                              variant="ghost"
+                              disabled={!member.container}
+                              aria-label={actionLabel}
+                              title={actionLabel}
+                              onClick={() => {
+                                if (!member.container) return;
+                                if (running) {
+                                  stopContainer(member.container.id);
+                                  toast(`Stopping ${member.name}`);
+                                } else {
+                                  startContainer(member.container.id);
+                                  toast(`Starting ${member.name}`);
+                                }
+                              }}
+                            >
+                              {running ? <Square className="size-3.5" /> : <Play className="size-3.5" />}
+                            </Button>
                           </li>
                         );
                       })}
@@ -261,7 +297,13 @@ export function CubesView() {
                     </Button>
                   ) : null}
 
-                  <Button size="sm" variant="outline" onClick={() => setAddingTo(cube)}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={!canAddContainer}
+                    title={canAddContainer ? "Add Container" : "Stop the Cube before adding a container"}
+                    onClick={() => setAddingTo(cube)}
+                  >
                     <Plus className="mr-1.5 size-3.5" /> Add Container
                   </Button>
                   <Button size="sm" variant="ghost" onClick={() => setEditing({ ...cube })}>
@@ -304,8 +346,7 @@ export function CubesView() {
         onOpenChange={(open) => { if (!open) setAddingTo(null); }}
         onSave={(spec) => {
           if (!addingTo) return;
-          addContainer(addingTo, spec);
-          setAddingTo(null);
+          if (addContainer(addingTo, spec)) setAddingTo(null);
         }}
       />
     </>
