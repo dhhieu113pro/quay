@@ -1,142 +1,30 @@
-//! Thin Tauri bridge. Each UI action is JSON over stdin to `quay-host.exe`,
-//! which calls `Microsoft.WSL.Containers`. Close hides to the tray; Quit on
-//! the tray menu actually exits.
+//! Native Tauri bridge for Microsoft WSL Containers.
+//! Quay talks directly to the official WSLC flat C API from Rust; there is no
+//! child C# process or stdio IPC. Close hides to tray; Quit actually exits.
 
 #[cfg(windows)]
 pub mod wslc_native;
+#[cfg(windows)]
+mod wslc_runtime;
 
 use serde_json::Value;
-use std::io::{BufRead, BufReader, Write};
-use std::path::{Path, PathBuf};
-use std::process::{ChildStdin, ChildStdout, Command, Stdio};
-use std::sync::Mutex;
+use std::process::{Command, Stdio};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager, State, WindowEvent};
 
-pub struct Sidecar {
-    stdin: Mutex<Option<ChildStdin>>,
-    stdout: Mutex<Option<BufReader<ChildStdout>>>,
-    path: String,
-    startup_error: Option<String>,
+pub struct Backend {
+    #[cfg(windows)]
+    worker: wslc_runtime::NativeWorker,
 }
 
-impl Sidecar {
-    fn empty(path: PathBuf, error: String) -> Self {
+impl Backend {
+    fn new() -> Self {
         Self {
-            stdin: Mutex::new(None),
-            stdout: Mutex::new(None),
-            path: path.display().to_string(),
-            startup_error: Some(error),
+            #[cfg(windows)]
+            worker: wslc_runtime::NativeWorker::spawn(),
         }
     }
-
-    fn spawn(bin: PathBuf) -> Result<Self, String> {
-        let path = bin.display().to_string();
-        let mut cmd = Command::new(&bin);
-        cmd.stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null());
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-            cmd.creation_flags(CREATE_NO_WINDOW);
-        }
-        let mut child = cmd
-            .spawn()
-            .map_err(|e| format!("spawn {}: {e}", bin.display()))?;
-        Ok(Self {
-            stdin: Mutex::new(child.stdin.take()),
-            stdout: Mutex::new(child.stdout.take().map(BufReader::new)),
-            path,
-            startup_error: None,
-        })
-    }
-}
-
-#[cfg(all(windows, target_arch = "x86_64"))]
-const SIDECAR_FILE: &str = "quay-host-x86_64-pc-windows-msvc.exe";
-#[cfg(all(windows, target_arch = "aarch64"))]
-const SIDECAR_FILE: &str = "quay-host-aarch64-pc-windows-msvc.exe";
-#[cfg(not(windows))]
-const SIDECAR_FILE: &str = "quay-host";
-
-fn add_candidate(candidates: &mut Vec<PathBuf>, path: PathBuf) {
-    if !candidates.iter().any(|p| p == &path) {
-        candidates.push(path);
-    }
-}
-
-fn host_binary(app: &AppHandle) -> Result<PathBuf, String> {
-    let mut candidates = Vec::new();
-
-    #[cfg(debug_assertions)]
-    {
-        let mut root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        root.pop();
-
-        add_candidate(&mut candidates, root.join("host").join("publish").join("quay-host.exe"));
-        add_candidate(
-            &mut candidates,
-            root.join("src-tauri").join("binaries").join(SIDECAR_FILE),
-        );
-
-        #[cfg(all(windows, target_arch = "x86_64"))]
-        add_candidate(
-            &mut candidates,
-            root.join("host")
-                .join("publish")
-                .join("win-x64")
-                .join("quay-host.exe"),
-        );
-        #[cfg(all(windows, target_arch = "aarch64"))]
-        add_candidate(
-            &mut candidates,
-            root.join("host")
-                .join("publish")
-                .join("win-arm64")
-                .join("quay-host.exe"),
-        );
-    }
-
-    if let Ok(exe_dir) = app.path().executable_dir() {
-        add_candidate(&mut candidates, exe_dir.join("quay-host.exe"));
-        add_candidate(&mut candidates, exe_dir.join(SIDECAR_FILE));
-    }
-
-    if let Ok(resource_dir) = app.path().resource_dir() {
-        add_candidate(&mut candidates, resource_dir.join("quay-host.exe"));
-        add_candidate(&mut candidates, resource_dir.join(SIDECAR_FILE));
-        add_candidate(
-            &mut candidates,
-            resource_dir.join("binaries").join("quay-host.exe"),
-        );
-        add_candidate(
-            &mut candidates,
-            resource_dir.join("binaries").join(SIDECAR_FILE),
-        );
-    }
-
-    if let Ok(current_exe) = std::env::current_exe() {
-        if let Some(parent) = current_exe.parent() {
-            add_candidate(&mut candidates, parent.join("quay-host.exe"));
-            add_candidate(&mut candidates, parent.join(SIDECAR_FILE));
-        }
-    }
-
-    if let Some(found) = candidates.iter().find(|path| Path::new(path).is_file()) {
-        return Ok(found.clone());
-    }
-
-    Err(format!(
-        "Quay.Host executable not found. Tried:\n{}",
-        candidates
-            .iter()
-            .map(|p| format!("- {}", p.display()))
-            .collect::<Vec<_>>()
-            .join("\n")
-    ))
 }
 
 fn show_main(app: &AppHandle) {
@@ -179,29 +67,17 @@ fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
 }
 
 #[tauri::command]
-fn wslc_invoke(sidecar: State<Sidecar>, payload: Value) -> Result<Value, String> {
-    let line = serde_json::to_string(&payload).map_err(|e| e.to_string())?;
+fn wslc_invoke(backend: State<Backend>, payload: Value) -> Result<Value, String> {
+    #[cfg(windows)]
     {
-        let mut stdin = sidecar.stdin.lock().map_err(|e| e.to_string())?;
-        let stdin = stdin.as_mut().ok_or_else(|| {
-            sidecar
-                .startup_error
-                .clone()
-                .unwrap_or_else(|| "C# sidecar is not running".into())
-        })?;
-        writeln!(stdin, "{line}").map_err(|e| e.to_string())?;
-        stdin.flush().map_err(|e| e.to_string())?;
+        backend.worker.invoke(payload)
     }
-    let mut reply = String::new();
-    sidecar
-        .stdout
-        .lock()
-        .map_err(|e| e.to_string())?
-        .as_mut()
-        .ok_or("C# sidecar is not running")?
-        .read_line(&mut reply)
-        .map_err(|e| e.to_string())?;
-    serde_json::from_str(reply.trim()).map_err(|e| e.to_string())
+    #[cfg(not(windows))]
+    {
+        let _ = backend;
+        let _ = payload;
+        Err("native WSLC is only available on Windows".into())
+    }
 }
 
 fn run_capture(program: &str, args: &[&str]) -> Option<String> {
@@ -217,34 +93,50 @@ fn run_capture(program: &str, args: &[&str]) -> Option<String> {
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
     let out = cmd.output().ok()?;
-    let text = String::from_utf8_lossy(&out.stdout);
-    let err = String::from_utf8_lossy(&out.stderr);
-    let combined = format!("{text}{err}");
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
     let trimmed = combined.trim();
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed.lines().next().unwrap_or(trimmed).to_string())
-    }
+    (!trimmed.is_empty()).then(|| trimmed.lines().next().unwrap_or(trimmed).to_string())
 }
 
 #[tauri::command]
-fn wslc_probe(sidecar: State<Sidecar>) -> Value {
+fn wslc_probe(backend: State<Backend>) -> Value {
     let version = run_capture("wslc", &["version"])
         .or_else(|| run_capture("container", &["version"]));
-    let sidecar_up = sidecar.stdin.lock().ok().is_some_and(|g| g.is_some());
+    #[cfg(windows)]
+    let health = backend.worker.invoke(serde_json::json!({"cmd":"health"})).ok();
+    #[cfg(not(windows))]
+    let health: Option<Value> = None;
+    let native_up = health.as_ref().and_then(|x| x.get("ok")).and_then(Value::as_bool).unwrap_or(false);
+    let native_error = health.as_ref().and_then(|x| x.get("error")).cloned();
     serde_json::json!({
-        "wslc": version.is_some(),
-        "sidecar": sidecar_up,
+        "wslc": native_up,
+        "native": native_up,
+        // Kept temporarily for frontend compatibility; no sidecar process exists.
+        "sidecar": native_up,
         "version": version,
-        "sidecarPath": sidecar.path,
-        "sidecarError": sidecar.startup_error,
+        "sidecarPath": null,
+        "sidecarError": native_error,
     })
 }
 
 #[tauri::command]
-fn sidecar_up(sidecar: State<Sidecar>) -> bool {
-    sidecar.stdin.lock().ok().is_some_and(|g| g.is_some())
+fn sidecar_up(backend: State<Backend>) -> bool {
+    #[cfg(windows)]
+    {
+        backend.worker.invoke(serde_json::json!({"cmd":"health"}))
+            .ok()
+            .and_then(|x| x.get("ok").and_then(Value::as_bool))
+            .unwrap_or(false)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = backend;
+        false
+    }
 }
 
 const AUTOSTART_VALUE: &str = "Quay";
@@ -263,11 +155,9 @@ fn autostart_enabled() -> bool {
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null());
-        {
-            use std::os::windows::process::CommandExt;
-            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-            cmd.creation_flags(CREATE_NO_WINDOW);
-        }
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
         cmd.status().map(|s| s.success()).unwrap_or(false)
     }
     #[cfg(not(windows))]
@@ -284,28 +174,14 @@ fn autostart_set(enabled: bool) -> Result<bool, String> {
         let quoted = format!("\"{}\"", exe.display());
         let mut cmd = Command::new("reg");
         if enabled {
-            cmd.args([
-                "add",
-                run_key(),
-                "/v",
-                AUTOSTART_VALUE,
-                "/t",
-                "REG_SZ",
-                "/d",
-                &quoted,
-                "/f",
-            ]);
+            cmd.args(["add", run_key(), "/v", AUTOSTART_VALUE, "/t", "REG_SZ", "/d", &quoted, "/f"]);
         } else {
             cmd.args(["delete", run_key(), "/v", AUTOSTART_VALUE, "/f"]);
         }
-        cmd.stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
-        {
-            use std::os::windows::process::CommandExt;
-            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-            cmd.creation_flags(CREATE_NO_WINDOW);
-        }
+        cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
         let status = cmd.status().map_err(|e| e.to_string())?;
         if enabled && !status.success() {
             return Err("could not write HKCU Run key".into());
@@ -323,20 +199,14 @@ fn autostart_set(enabled: bool) -> Result<bool, String> {
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
-            let sidecar = match host_binary(app.handle()) {
-                Ok(bin) => match Sidecar::spawn(bin.clone()) {
-                    Ok(s) => s,
-                    Err(err) => {
-                        eprintln!("quay-host: {err}");
-                        Sidecar::empty(bin, err)
-                    }
-                },
-                Err(err) => {
-                    eprintln!("quay-host: {err}");
-                    Sidecar::empty(PathBuf::from("quay-host"), err)
+            #[cfg(windows)]
+            if let Ok(resource_dir) = app.path().resource_dir() {
+                let dll = resource_dir.join("binaries").join("wslcsdk.dll");
+                if dll.is_file() {
+                    std::env::set_var("QUAY_WSLC_SDK_DLL", dll);
                 }
-            };
-            app.manage(sidecar);
+            }
+            app.manage(Backend::new());
             if let Err(err) = setup_tray(app.handle()) {
                 eprintln!("tray: {err}");
             }
