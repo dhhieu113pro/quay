@@ -70,14 +70,14 @@ public sealed class QuayHost
                 "stop" => Stop(root.GetProperty("id").GetString()!),
                 "rm" => Delete(root.GetProperty("id").GetString()!),
                 "ps" => ListContainers(),
-                "ensure_network" => EnsureNetwork(root.GetProperty("name").GetString()!),
-                "run_cli" => RunCli(root.GetProperty("args")),
+                "ensure_network" => await EnsureNetwork(root.GetProperty("name").GetString()!),
+                "run_cli" => await RunCli(root.GetProperty("args")),
                 _ => """{"ok":false,"error":"unknown command"}"""
             };
         }
         catch (Exception ex)
         {
-            return JsonSerializer.Serialize(new { ok = false, error = ex.Message });
+            return JsonSerializer.Serialize(new { ok = false, error = ex.ToString() });
         }
     }
 
@@ -119,26 +119,51 @@ public sealed class QuayHost
         return JsonSerializer.Serialize(new { ok = true, id });
     }
 
-    private string EnsureNetwork(string name)
+    private async Task<string> EnsureNetwork(string name)
     {
-        var list = ExecWslc(["network", "list"]);
+        var list = await ExecWslc(["network", "list"]);
         if (list.Ok && list.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries)
                 .Any(line => line.Contains(name, StringComparison.OrdinalIgnoreCase)))
-            return JsonSerializer.Serialize(new { ok = true, output = $"network {name} exists" });
+        {
+            return JsonSerializer.Serialize(new
+            {
+                ok = true,
+                output = $"network {name} exists",
+                command = list.Command,
+                exitCode = list.ExitCode,
+                stdout = list.Stdout,
+                stderr = list.Stderr
+            });
+        }
 
-        var create = ExecWslc(["network", "create", name]);
-        return JsonSerializer.Serialize(new { ok = create.Ok, output = create.Output, error = create.Ok ? null : create.Output });
+        var create = await ExecWslc(["network", "create", name]);
+        return SerializeCliResult(create);
     }
 
-    private string RunCli(JsonElement argsElement)
+    private async Task<string> RunCli(JsonElement argsElement)
     {
         var args = argsElement.EnumerateArray().Select(x => x.GetString() ?? "").ToArray();
-        var result = ExecWslc(args);
-        return JsonSerializer.Serialize(new { ok = result.Ok, output = result.Output, error = result.Ok ? null : result.Output });
+        var result = await ExecWslc(args);
+        return SerializeCliResult(result);
     }
 
-    private (bool Ok, string Output) ExecWslc(IEnumerable<string> args)
+    private static string SerializeCliResult(WslcCliResult result) =>
+        JsonSerializer.Serialize(new
+        {
+            ok = result.Ok,
+            output = result.Output,
+            error = result.Ok ? null : result.Output,
+            command = result.Command,
+            exitCode = result.ExitCode,
+            stdout = result.Stdout,
+            stderr = result.Stderr
+        });
+
+    private async Task<WslcCliResult> ExecWslc(IEnumerable<string> args)
     {
+        var fullArgs = new List<string> { "--session", _name };
+        fullArgs.AddRange(args);
+
         using var process = new System.Diagnostics.Process();
         process.StartInfo = new System.Diagnostics.ProcessStartInfo
         {
@@ -148,20 +173,38 @@ public sealed class QuayHost
             RedirectStandardError = true,
             CreateNoWindow = true
         };
-
-        // Quay creates a named Microsoft.WSL.Containers session. Plain `wslc ...`
-        // targets the user's default CLI session, which is a different VM. Always
-        // bind CLI operations to the same named session that Quay.Host created.
-        process.StartInfo.ArgumentList.Add("--session");
-        process.StartInfo.ArgumentList.Add(_name);
-        foreach (var arg in args) process.StartInfo.ArgumentList.Add(arg);
+        foreach (var arg in fullArgs) process.StartInfo.ArgumentList.Add(arg);
 
         process.Start();
-        var stdout = process.StandardOutput.ReadToEnd();
-        var stderr = process.StandardError.ReadToEnd();
-        process.WaitForExit();
-        var output = string.Join(Environment.NewLine, new[] { stdout.Trim(), stderr.Trim() }.Where(x => x.Length > 0));
-        return (process.ExitCode == 0, output);
+
+        // Read both redirected streams concurrently. `wslc run` can emit a lot of
+        // image-pull progress on stderr; reading stdout to EOF first can fill the
+        // stderr pipe and deadlock Quay.Host before the container is created.
+        var stdoutTask = process.StandardOutput.ReadToEndAsync();
+        var stderrTask = process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+        var stdout = (await stdoutTask).Trim();
+        var stderr = (await stderrTask).Trim();
+
+        var output = string.Join(
+            Environment.NewLine,
+            new[] { stdout, stderr }.Where(x => x.Length > 0));
+        var command = "wslc " + string.Join(" ", fullArgs.Select(QuoteArg));
+
+        return new WslcCliResult(
+            process.ExitCode == 0,
+            process.ExitCode,
+            stdout,
+            stderr,
+            output,
+            command);
+    }
+
+    private static string QuoteArg(string value)
+    {
+        if (value.Length == 0) return "\"\"";
+        if (!value.Any(char.IsWhiteSpace) && !value.Contains('"')) return value;
+        return $"\"{value.Replace("\"", "\\\"")}\"";
     }
 
     private string Stop(string id)
@@ -179,4 +222,12 @@ public sealed class QuayHost
 
     private string ListContainers() =>
         JsonSerializer.Serialize(new { ok = true, ids = _containers.Keys.ToArray() });
+
+    private sealed record WslcCliResult(
+        bool Ok,
+        int ExitCode,
+        string Stdout,
+        string Stderr,
+        string Output,
+        string Command);
 }
