@@ -1,0 +1,89 @@
+name: Microsoft Store
+
+# Builds the Store installer (offline WebView2). Optionally submits it to
+# Partner Center when STORE_PRODUCT_ID + Entra secrets are set.
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Submit to Partner Center after the build"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  store:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+
+      - name: Install frontend
+        run: npm ci
+
+      - name: Publish C# sidecar
+        shell: pwsh
+        run: ./scripts/prepare-sidecar.ps1
+
+      - name: Install Tauri CLI
+        run: npm install -g @tauri-apps/cli@^2
+
+      - name: Bundle for Store
+        run: npm run tauri -- build --bundles nsis,msi --config src-tauri/tauri.store.conf.json
+
+      - name: Collect installers
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path store/out | Out-Null
+          Get-ChildItem -Recurse src-tauri/target/release/bundle -Include *.exe,*.msi |
+            Copy-Item -Destination store/out -Force
+          Get-ChildItem store/out | Format-Table Name, Length
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: quay-microsoft-store
+          path: store/out/*
+          if-no-files-found: error
+
+      - name: Submit to Partner Center
+        if: ${{ inputs.publish && secrets.STORE_PRODUCT_ID != '' }}
+        uses: microsoft/microsoft-store-apppublisher@v1.1
+
+      - name: Publish package
+        if: ${{ inputs.publish && secrets.STORE_PRODUCT_ID != '' }}
+        shell: pwsh
+        env:
+          TENANT: ${{ secrets.AZURE_AD_TENANT_ID }}
+          SELLER: ${{ secrets.SELLER_ID }}
+          CLIENT: ${{ secrets.AZURE_AD_APPLICATION_CLIENT_ID }}
+          SECRET: ${{ secrets.AZURE_AD_APPLICATION_SECRET }}
+          PRODUCT: ${{ secrets.STORE_PRODUCT_ID }}
+        run: |
+          if (-not $env:TENANT -or -not $env:PRODUCT) {
+            Write-Host "Store secrets missing — artifact is ready for a manual Partner Center upload."
+            exit 0
+          }
+          msstore reconfigure --tenantId $env:TENANT --sellerId $env:SELLER --clientId $env:CLIENT --clientSecret $env:SECRET
+          $exe = Get-ChildItem store/out/*-setup.exe | Select-Object -First 1
+          if (-not $exe) { throw "NSIS installer not found" }
+          Write-Host "Built $($exe.Name). First listing is created in Partner Center; later updates can point at this GitHub Release asset."
+          Write-Host "Silent install argument: /S"
+          Write-Host "Product: $env:PRODUCT"

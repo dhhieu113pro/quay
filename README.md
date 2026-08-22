@@ -27,6 +27,20 @@ Microsoft shipped `wslc.exe` (and the alias `container.exe`) in WSL 2.9.3. Same 
 
 Rust stays a thin bridge (`src-tauri`). Every button in the UI is an `invoke` that becomes `Session.PullImageAsync`, `CreateContainer`, `Start`, `Stop`, or `CreateProcess`.
 
+## Install
+
+Windows x64. WSL **2.9.3+** (`wsl --update --pre-release`) and `wslc.exe` on PATH.
+
+**[Download the latest installer](https://github.com/dhhieu113pro/quay/releases/latest)**
+
+| File | Install |
+| --- | --- |
+| `Quay_*_x64-setup.exe` | Double-click. Silent: `Quay_*_x64-setup.exe /S` |
+| `Quay_*_x64_en-US.msi` | Double-click. Silent: `msiexec /i Quay_*.msi /quiet` |
+
+GitHub Actions cuts those on every `v*` tag. Microsoft Store uses the same NSIS build — Partner Center steps are in [`docs/store.md`](docs/store.md). Listing copy: [`store/listing.md`](store/listing.md).
+
+
 ## What you can do
 
 - **Session** — `WslcService.GetMissingComponents()`, then `SessionSettings` (vCPU, memory, data path) and `Session.Start()` / `Terminate()`
@@ -100,11 +114,22 @@ npm install
 npm run dev
 ```
 
+On Windows, with Node 22, Rust, and .NET 9:
+
+```powershell
+./scripts/prepare-sidecar.ps1
+npm run tauri -- build --bundles nsis,msi
+```
+
+
 | Path | Role |
 | --- | --- |
 | `src/` | React desktop (overview, containers, images, session, C# host) |
 | `host/` | `Quay.Host` — C# sidecar, `quay-host.exe` |
 | `src-tauri/` | Tauri 2 bridge: `wslc_invoke` → sidecar stdin |
+| `.github/workflows/release.yml` | Tag `v*` → GitHub Release (NSIS + MSI) |
+| `.github/workflows/store.yml` | Store bundle + optional Partner Center submit |
+| `docs/store.md` | Partner Center steps, silent flags, secrets |
 | `docs/logo.png` | App mark — isometric containers and a gantry on a quay |
 
 ## License

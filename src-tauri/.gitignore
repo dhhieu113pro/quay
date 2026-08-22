@@ -1,0 +1,6 @@
+target/
+gen/
+WixTools/
+binaries/*.exe
+binaries/*.pdb
+binaries/*.dll

@@ -1,0 +1,1 @@
+# CI copies quay-host-<triple>.exe here before `tauri build`.

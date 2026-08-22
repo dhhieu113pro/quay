@@ -1,5 +1,6 @@
 node_modules/
 dist/
+.output/
 .vercel/
 *.log
 screenshots/
@@ -9,4 +10,10 @@ bin/
 obj/
 host/bin/
 host/obj/
+host/publish/
 src-tauri/target/
+src-tauri/gen/
+src-tauri/binaries/*.exe
+src-tauri/binaries/*.pdb
+src-tauri/WixTools/
+store/out/

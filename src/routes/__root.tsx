@@ -1,6 +1,4 @@
 import { createRootRoute, HeadContent, Outlet, Scripts } from "@tanstack/react-router";
-import { AuthProvider } from "@/lib/auth/provider";
-import { PreviewHostBridge } from "@/components/preview-host-bridge";
 import appCss from "../styles.css?url";
 
 const APP_NAME = "Quay";
@@ -15,7 +13,7 @@ export const Route = createRootRoute({
       {
         name: "description",
         content:
-          "Tauri-style desktop for WSL containers. C# host on Microsoft.WSL.Containers.",
+          "A dock for WSL containers. Tauri WebView + C# sidecar on Microsoft.WSL.Containers.",
       },
     ],
     links: [
@@ -23,7 +21,6 @@ export const Route = createRootRoute({
       { rel: "icon", type: "image/png", sizes: "32x32", href: "/favicon-32.png" },
       { rel: "apple-touch-icon", href: "/apple-touch-icon.png" },
       { rel: "stylesheet", href: appCss },
-      { rel: "manifest", href: "/__grok/manifest.webmanifest" },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       {
         rel: "preconnect",
@@ -42,10 +39,7 @@ export const Route = createRootRoute({
         <HeadContent />
       </head>
       <body className="bg-background text-foreground">
-        <PreviewHostBridge />
-        <AuthProvider>
-          <Outlet />
-        </AuthProvider>
+        <Outlet />
         <Scripts />
       </body>
     </html>

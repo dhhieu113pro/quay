@@ -21,6 +21,7 @@ import { SessionView } from "@/components/views/session-view";
 import { cn, formatBytes } from "@/lib/utils";
 import { useWslc } from "@/lib/wslc/store";
 import type { ViewId } from "@/lib/wslc/types";
+import { windowAction } from "@/lib/tauri";
 
 const NAV: Array<{ id: ViewId; label: string; icon: typeof Box }> = [
   { id: "dashboard", label: "Overview", icon: LayoutGrid },
@@ -106,7 +107,10 @@ export function AppShell() {
 function Titlebar() {
   const session = useWslc((s) => s.session);
   return (
-    <header className="flex h-12 shrink-0 items-center border-b border-border bg-card pl-3 pr-1">
+    <header
+      data-tauri-drag-region
+      className="flex h-12 shrink-0 items-center border-b border-border bg-card pl-3 pr-1"
+    >
       <Mark className="size-6" />
       <div className="ml-2 min-w-0">
         <p className="truncate text-sm font-medium leading-none">Quay</p>
@@ -130,13 +134,13 @@ function Titlebar() {
           {session.running ? "session up" : "session down"}
         </span>
         <div className="hidden md:flex">
-          <CaptionBtn label="Minimize">
+          <CaptionBtn label="Minimize" onClick={() => void windowAction("minimize")}>
             <Minus className="size-3.5" />
           </CaptionBtn>
-          <CaptionBtn label="Maximize">
+          <CaptionBtn label="Maximize" onClick={() => void windowAction("toggleMaximize")}>
             <Square className="size-3" />
           </CaptionBtn>
-          <CaptionBtn label="Close" danger>
+          <CaptionBtn label="Close" danger onClick={() => void windowAction("close")}>
             <X className="size-3.5" />
           </CaptionBtn>
         </div>
@@ -149,15 +153,18 @@ function CaptionBtn({
   children,
   label,
   danger,
+  onClick,
 }: {
   children: ReactNode;
   label: string;
   danger?: boolean;
+  onClick?: () => void;
 }) {
   return (
     <button
       type="button"
       aria-label={label}
+      onClick={onClick}
       className={cn(
         "grid h-12 w-11 place-items-center text-muted-foreground hover:bg-elevated hover:text-foreground",
         danger && "hover:bg-destructive hover:text-destructive-foreground",
