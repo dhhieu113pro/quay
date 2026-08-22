@@ -102,6 +102,19 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "prepare-sidecar.ps1 failed with exit code $LASTEXITCODE" }
     }
 
+    Run-Step "Rust native WSLC + nginx HTTP smoke" {
+        $sdkDll = (Resolve-Path "host/publish/win-x64/wslcsdk.dll").Path
+        $oldSdkDll = $env:QUAY_WSLC_SDK_DLL
+        try {
+            $env:QUAY_WSLC_SDK_DLL = $sdkDll
+            cargo run --manifest-path src-tauri/Cargo.toml --bin wslc-native-smoke
+            if ($LASTEXITCODE -ne 0) { throw "Rust native WSLC smoke failed with exit code $LASTEXITCODE" }
+        }
+        finally {
+            $env:QUAY_WSLC_SDK_DLL = $oldSdkDll
+        }
+    }
+
     Run-Step "Quay.Host + nginx + local-coding Group E2E" {
         & ./tests/host-smoke.ps1 `
             -HostExe host/publish/win-x64/quay-host.exe `
