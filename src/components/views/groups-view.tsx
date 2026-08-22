@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { Boxes, Network, Pencil, Play, Plus, Square, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import {
+  EnvEditor,
+  joinEnvLines,
+  parseEnvLines,
+  type EnvSuggestion,
+  type KvPair,
+} from "@/components/kv-editor";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -11,13 +18,12 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { defaultGroupNetwork, slugGroupName } from "@/lib/wslc/groups";
 import { useWslc } from "@/lib/wslc/store";
 import type { ContainerGroup } from "@/lib/wslc/types";
 
-function emptyGroup(): ContainerGroup {
-  const id = `group-${Date.now()}`;
+function emptyCube(): ContainerGroup {
+  const id = `cube-${Date.now()}`;
   return {
     id,
     name: "",
@@ -29,7 +35,24 @@ function emptyGroup(): ContainerGroup {
   };
 }
 
-export function GroupsView() {
+function envSuggestions(cube: ContainerGroup): EnvSuggestion[] {
+  return cube.specs.flatMap((spec) =>
+    spec.env
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const at = line.indexOf("=");
+        return {
+          key: at < 0 ? line : line.slice(0, at),
+          value: at < 0 ? "" : line.slice(at + 1),
+          source: spec.name || spec.image,
+        };
+      }),
+  );
+}
+
+export function CubesView() {
   const groups = useWslc((s) => s.groups);
   const containers = useWslc((s) => s.containers);
   const saveGroup = useWslc((s) => s.saveGroup);
@@ -41,13 +64,13 @@ export function GroupsView() {
 
   const counts = useMemo(() => {
     const result = new Map<string, { total: number; running: number }>();
-    for (const group of groups) {
-      const memberNames = new Set(group.specs.map((spec) => spec.name));
+    for (const cube of groups) {
+      const memberNames = new Set(cube.specs.map((spec) => spec.name));
       const members = containers.filter((container) =>
-        container.groupId === group.id || memberNames.has(container.name),
+        container.groupId === cube.id || memberNames.has(container.name),
       );
-      result.set(group.id, {
-        total: members.length || group.specs.length,
+      result.set(cube.id, {
+        total: members.length || cube.specs.length,
         running: members.filter((container) => container.status === "running").length,
       });
     }
@@ -58,35 +81,35 @@ export function GroupsView() {
     <div className="mx-auto w-full max-w-6xl p-4 sm:p-6">
       <div className="mb-5 flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-xl font-semibold">Groups</h1>
+          <h1 className="text-xl font-semibold">Cubes</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Share a WSLC network and environment variables across related containers.
+            Bundle related containers with one shared WSLC network and shared environment variables.
           </p>
         </div>
-        <Button onClick={() => setEditing(emptyGroup())}>
+        <Button onClick={() => setEditing(emptyCube())}>
           <Plus className="mr-1.5 size-4" />
-          New group
+          New cube
         </Button>
       </div>
 
       <div className="grid gap-3 lg:grid-cols-2">
-        {groups.map((group) => {
-          const memberNames = new Set(group.specs.map((spec) => spec.name));
+        {groups.map((cube) => {
+          const memberNames = new Set(cube.specs.map((spec) => spec.name));
           const members = containers.filter((container) =>
-            container.groupId === group.id || memberNames.has(container.name),
+            container.groupId === cube.id || memberNames.has(container.name),
           );
-          const count = counts.get(group.id) ?? { total: 0, running: 0 };
-          const envCount = group.env.split("\n").map((line) => line.trim()).filter(Boolean).length;
+          const count = counts.get(cube.id) ?? { total: 0, running: 0 };
+          const envCount = cube.env.split("\n").map((line) => line.trim()).filter(Boolean).length;
           return (
-            <section key={group.id} className="rounded-lg border border-border bg-card p-4">
+            <section key={cube.id} className="rounded-lg border border-border bg-card p-4">
               <div className="flex items-start gap-3">
                 <div className="grid size-10 shrink-0 place-items-center rounded-md bg-elevated">
                   <Boxes className="size-5" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="font-medium">{group.name}</h2>
-                    {group.builtIn ? (
+                    <h2 className="font-medium">{cube.name}</h2>
+                    {cube.builtIn ? (
                       <span className="rounded bg-elevated px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                         Built-in
                       </span>
@@ -94,7 +117,7 @@ export function GroupsView() {
                   </div>
                   <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                     <span className="inline-flex items-center gap-1">
-                      <Network className="size-3" /> {group.network}
+                      <Network className="size-3" /> {cube.network}
                     </span>
                     <span>{count.running}/{count.total} running</span>
                     <span>{envCount} shared env</span>
@@ -102,9 +125,9 @@ export function GroupsView() {
                 </div>
               </div>
 
-              {group.env.trim() ? (
+              {cube.env.trim() ? (
                 <div className="mt-3 rounded-md border border-border bg-background/50 px-3 py-2 font-mono text-xs text-muted-foreground">
-                  {group.env.split("\n").filter(Boolean).slice(0, 4).map((line) => {
+                  {cube.env.split("\n").filter(Boolean).slice(0, 4).map((line) => {
                     const at = line.indexOf("=");
                     const key = at < 0 ? line : line.slice(0, at);
                     return <div key={key}>{key}=••••••</div>;
@@ -119,8 +142,8 @@ export function GroupsView() {
                 <Button
                   size="sm"
                   onClick={() => {
-                    if (group.specs.length) {
-                      startGroup(group.id);
+                    if (cube.specs.length) {
+                      startGroup(cube.id);
                     } else {
                       for (const container of members.filter((item) => item.status !== "running")) {
                         startContainer(container.id);
@@ -130,19 +153,19 @@ export function GroupsView() {
                 >
                   <Play className="mr-1.5 size-3.5" /> Start all
                 </Button>
-                <Button size="sm" variant="secondary" onClick={() => stopGroup(group.id)}>
+                <Button size="sm" variant="secondary" onClick={() => stopGroup(cube.id)}>
                   <Square className="mr-1.5 size-3.5" /> Stop all
                 </Button>
-                <Button size="sm" variant="ghost" onClick={() => setEditing({ ...group })}>
+                <Button size="sm" variant="ghost" onClick={() => setEditing({ ...cube })}>
                   <Pencil className="mr-1.5 size-3.5" /> Configure
                 </Button>
-                {!group.builtIn ? (
+                {!cube.builtIn ? (
                   <Button
                     size="sm"
                     variant="ghost"
                     onClick={() => {
-                      deleteGroup(group.id);
-                      toast(`Deleted ${group.name}`);
+                      deleteGroup(cube.id);
+                      toast(`Deleted ${cube.name}`);
                     }}
                   >
                     <Trash2 className="mr-1.5 size-3.5" /> Delete
@@ -154,12 +177,12 @@ export function GroupsView() {
         })}
       </div>
 
-      <GroupDialog
-        group={editing}
+      <CubeDialog
+        cube={editing}
         onClose={() => setEditing(null)}
-        onSave={(group) => {
-          saveGroup(group);
-          toast(`Saved ${group.name}`);
+        onSave={(cube) => {
+          saveGroup(cube);
+          toast(`Saved ${cube.name}`);
           setEditing(null);
         }}
       />
@@ -167,41 +190,47 @@ export function GroupsView() {
   );
 }
 
-function GroupDialog({
-  group,
+function CubeDialog({
+  cube,
   onClose,
   onSave,
 }: {
-  group: ContainerGroup | null;
+  cube: ContainerGroup | null;
   onClose: () => void;
-  onSave: (group: ContainerGroup) => void;
+  onSave: (cube: ContainerGroup) => void;
 }) {
-  const [draft, setDraft] = useState<ContainerGroup | null>(group);
-  const creating = Boolean(group && !group.name.trim());
+  const [draft, setDraft] = useState<ContainerGroup | null>(cube);
+  const [envRows, setEnvRows] = useState<KvPair[]>(() => parseEnvLines(cube?.env ?? ""));
+  const creating = Boolean(cube && !cube.name.trim());
 
   useEffect(() => {
-    setDraft(group ? { ...group } : null);
-  }, [group]);
+    setDraft(cube ? { ...cube } : null);
+    setEnvRows(parseEnvLines(cube?.env ?? ""));
+  }, [cube]);
 
-  if (!group || !draft) return null;
+  if (!cube || !draft) return null;
 
-  const patch = (value: Partial<ContainerGroup>) => setDraft((current) => current ? { ...current, ...value } : current);
+  const patch = (value: Partial<ContainerGroup>) =>
+    setDraft((current) => current ? { ...current, ...value } : current);
+  const suggestions = envSuggestions(draft);
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="max-w-xl">
+      <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{draft.builtIn ? `Configure ${draft.name}` : draft.name ? `Edit ${draft.name}` : "Create group"}</DialogTitle>
+          <DialogTitle>
+            {draft.builtIn ? `Configure ${draft.name}` : draft.name ? `Edit ${draft.name}` : "Create cube"}
+          </DialogTitle>
           <DialogDescription>
-            Group variables are merged into every container. Container-specific values override variables with the same name.
+            Cube variables are shared with every member container. Container-specific values override the Cube value when keys match.
           </DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-4">
           <div className="grid gap-1.5">
-            <Label htmlFor="group-name">Name</Label>
+            <Label htmlFor="cube-name">Name</Label>
             <Input
-              id="group-name"
+              id="cube-name"
               value={draft.name}
               disabled={draft.builtIn}
               onChange={(event) => {
@@ -213,32 +242,33 @@ function GroupDialog({
                   patch({ name });
                 }
               }}
-              placeholder="My development stack"
+              placeholder="My development cube"
             />
           </div>
 
           <div className="grid gap-1.5">
-            <Label htmlFor="group-network">WSLC network</Label>
+            <Label htmlFor="cube-network">WSLC network</Label>
             <Input
-              id="group-network"
+              id="cube-network"
               value={draft.network}
               onChange={(event) => patch({ network: event.target.value })}
-              placeholder="quay-my-development-stack"
+              placeholder="quay-my-development-cube"
               className="font-mono text-xs"
             />
           </div>
 
-          <div className="grid gap-1.5">
-            <Label htmlFor="group-env">Shared environment</Label>
-            <Textarea
-              id="group-env"
-              value={draft.env}
-              onChange={(event) => patch({ env: event.target.value })}
-              placeholder={"API_URL=http://service:5000\nTOKEN=..."}
-              className="min-h-36 font-mono text-xs"
-            />
-            <p className="text-xs text-subtle">One KEY=VALUE per line. Values are hidden on the Group card.</p>
-          </div>
+          <EnvEditor
+            label="Shared environment"
+            rows={envRows}
+            suggestions={suggestions}
+            onChange={(rows) => {
+              setEnvRows(rows);
+              patch({ env: joinEnvLines(rows) });
+            }}
+          />
+          <p className="-mt-2 text-xs text-subtle">
+            Suggestions come from the containers defined in this Cube. Click a suggestion to promote that variable into shared configuration.
+          </p>
         </div>
 
         <div className="flex justify-end gap-2">
@@ -252,11 +282,12 @@ function GroupDialog({
                 ...draft,
                 id,
                 name,
+                env: joinEnvLines(envRows),
                 network: draft.network.trim() || defaultGroupNetwork(id),
               });
             }}
           >
-            Save group
+            Save cube
           </Button>
         </div>
       </DialogContent>
