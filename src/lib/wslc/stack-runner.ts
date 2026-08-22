@@ -40,12 +40,19 @@ function matchesName(line: string, name: string) {
   return lower.includes(target) || lower.includes(target.slice(0, Math.min(16, target.length)));
 }
 
+async function runCli(args: string[]) {
+  const result = await invokeWslcHost({ cmd: "run_cli", args });
+  return {
+    ...result,
+    command: `wslc ${args.join(" ")}`,
+  };
+}
+
 async function listCli(all = true) {
-  const result = await invokeWslcHost({
-    cmd: "run_cli",
-    args: all ? ["container", "list", "--all"] : ["container", "list"],
-  });
-  if (!result.ok) throw new Error(result.error || "Could not list WSLC containers");
+  const result = await runCli(all ? ["container", "list", "--all"] : ["container", "list"]);
+  if (!result.ok) {
+    throw new Error(`${result.command}\n${result.error || "Could not list WSLC containers"}`);
+  }
   return result.output ?? "";
 }
 
@@ -109,18 +116,34 @@ export async function readNativeGroup(group: ContainerGroup): Promise<Container[
   });
 }
 
-async function stopByName(name: string) {
-  const result = await invokeWslcHost({
-    cmd: "run_cli",
-    args: ["container", "stop", name],
-  });
+function ignorableStopError(message: string) {
+  const value = message.toLowerCase();
+  return value.includes("not found") ||
+    value.includes("no such") ||
+    value.includes("not running") ||
+    value.includes("already stopped") ||
+    value.includes("is stopped") ||
+    value.includes("exited");
+}
 
+async function stopByName(name: string) {
+  const result = await runCli(["container", "stop", name]);
+  if (!result.ok && !ignorableStopError(result.error ?? "")) {
+    throw new Error(`${result.command}\n${result.error || `Could not stop ${name}`}`);
+  }
+}
+
+async function removeByName(name: string) {
+  // Stop first if it is running. Already-exited/missing containers are fine.
+  await stopByName(name);
+
+  const result = await runCli(["container", "rm", name]);
   if (
     !result.ok &&
     !result.error?.toLowerCase().includes("not found") &&
     !result.error?.toLowerCase().includes("no such")
   ) {
-    throw new Error(result.error || `Could not stop ${name}`);
+    throw new Error(`${result.command}\n${result.error || `Could not remove ${name}`}`);
   }
 }
 
@@ -136,16 +159,22 @@ export async function runNativeStack(group: ContainerGroup): Promise<Container[]
     throw new Error(networkResult.error || `Could not create network ${network}`);
   }
 
-  await stopNativeStack(group);
+  // Recreate Group containers every Start so changed mounts/env/network/ports are applied.
+  // This also prevents old exited containers from blocking --name reuse.
+  const staleNames = [...new Set([
+    ...group.specs.map((spec) => nativeName(group, spec)),
+    ...(group.id === "local-coding" ? ["ngrok"] : []),
+  ])].filter(Boolean);
+  for (const name of staleNames) {
+    await removeByName(name);
+  }
 
   for (const spec of group.specs) {
     const name = nativeName(group, spec);
-    const result = await invokeWslcHost({
-      cmd: "run_cli",
-      args: argsForSpec(group, spec, network),
-    });
+    const args = argsForSpec(group, spec, network);
+    const result = await runCli(args);
     if (!result.ok) {
-      throw new Error(result.error || `Could not start ${name}`);
+      throw new Error(`${result.command}\n${result.error || `Could not start ${name}`}`);
     }
 
     const running = await listCli(false);
@@ -154,8 +183,8 @@ export async function runNativeStack(group: ContainerGroup): Promise<Container[]
       const detail = all.split(/\r?\n/).find((line) => matchesName(line, name));
       throw new Error(
         detail
-          ? `${name} was created but is not running: ${detail}`
-          : `${name} did not appear in WSLC after start`,
+          ? `${result.command}\n${name} was created but is not running: ${detail}`
+          : `${result.command}\n${name} did not appear in WSLC after start`,
       );
     }
   }
