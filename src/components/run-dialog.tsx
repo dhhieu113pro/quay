@@ -33,6 +33,7 @@ export function RunDialog() {
   const open = useWslc((s) => s.runOpen);
   const setRunOpen = useWslc((s) => s.setRunOpen);
   const runContainer = useWslc((s) => s.runContainer);
+  const saveGroup = useWslc((s) => s.saveGroup);
   const catalog = useWslc((s) => s.catalog);
   const images = useWslc((s) => s.images);
   const groups = useWslc((s) => s.groups);
@@ -78,7 +79,7 @@ export function RunDialog() {
         <DialogHeader className="border-b border-border px-5 py-4">
           <DialogTitle>Run container</DialogTitle>
           <DialogDescription>
-            Pick a Group to share its WSLC network and environment variables with this container.
+            Pick a Cube to share its WSLC network and environment variables with this container.
           </DialogDescription>
         </DialogHeader>
 
@@ -86,6 +87,15 @@ export function RunDialog() {
           className="flex min-h-0 flex-1 flex-col"
           onSubmit={(e) => {
             e.preventDefault();
+            if (selectedGroup && submittedSpec.name.trim()) {
+              saveGroup({
+                ...selectedGroup,
+                specs: [
+                  ...selectedGroup.specs.filter((item) => item.name !== submittedSpec.name.trim()),
+                  { ...submittedSpec, name: submittedSpec.name.trim(), groupId: selectedGroup.id },
+                ],
+              });
+            }
             runContainer(submittedSpec);
             toast(`Creating ${spec.name || spec.image}`);
             setRunOpen(false);
@@ -117,17 +127,17 @@ export function RunDialog() {
           </div>
 
           <div className="grid gap-1.5">
-            <Label htmlFor="group">Group</Label>
+            <Label htmlFor="cube">Cube</Label>
             <select
-              id="group"
+              id="cube"
               value={spec.groupId ?? ""}
               onChange={(event) => patch({ groupId: event.target.value || undefined })}
               className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
             >
-              <option value="">No group</option>
-              {groups.map((group) => (
-                <option key={group.id} value={group.id}>
-                  {group.name}{group.builtIn ? " (Built-in)" : ""}
+              <option value="">No cube</option>
+              {groups.map((cube) => (
+                <option key={cube.id} value={cube.id}>
+                  {cube.name}{cube.builtIn ? " (Built-in)" : ""}
                 </option>
               ))}
             </select>
@@ -136,7 +146,7 @@ export function RunDialog() {
                 Network: <span className="font-mono">{selectedGroup.network}</span> · shared env: {groupEnvCount}
               </p>
             ) : (
-              <p className="text-xs text-subtle">Standalone container with no Group network or shared environment.</p>
+              <p className="text-xs text-subtle">Standalone container with no Cube network or shared environment.</p>
             )}
           </div>
 
