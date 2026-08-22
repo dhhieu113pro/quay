@@ -1,8 +1,15 @@
 import { create } from "zustand";
 import { invokeWslcHost } from "@/lib/tauri";
-import { cliForRun } from "./csharp";
 import { checkHost } from "./probe";
 import { loadPrefs, savePrefs } from "./prefs";
+import {
+  assignContainer,
+  deleteGroupDefinition,
+  effectiveSpec,
+  groupForContainer,
+  loadGroups,
+  saveGroup as persistGroup,
+} from "./groups";
 import type {
   ApiCall, Container, ContainerGroup, HostGate, ImageRecord, MetricsPoint,
   PullJob, RunSpec, SessionInfo, ViewId, VolumeRecord,
@@ -34,6 +41,8 @@ interface WslcState {
   appendExec: (id: string, command: string, output: string) => void;
   createVolume: (name: string) => void; deleteVolume: (name: string) => void;
   retryProbe: () => Promise<void>;
+  saveGroup: (group: ContainerGroup) => void;
+  deleteGroup: (id: string) => void;
   setGroupAutoStart: (id: string, autoStart: boolean) => void;
   startGroup: (id: string) => void; stopGroup: (id: string) => void;
   startAutoGroups: () => void; setLaunchAtSignIn: (enabled: boolean) => void;
@@ -82,6 +91,7 @@ function containersFrom(output?: string): Container[] {
     const status: Container["status"] = rawState === 2 || statusText.includes("running") || statusText === "up"
       ? "running" : statusText.includes("created") ? "created" : "exited";
     const id = text(value(r, "id", "containerid", "container_id"));
+    const name = text(value(r, "name", "names")) || id.slice(0, 12);
     const rawPorts = value(r, "ports");
     const ports: Container["ports"] = Array.isArray(rawPorts)
       ? rawPorts.flatMap((entry) => {
@@ -95,12 +105,13 @@ function containersFrom(output?: string): Container[] {
     const createdSeconds = Number(value(r, "createdat"));
     const changedSeconds = Number(value(r, "statechangedat"));
     return {
-      id, name: text(value(r, "name", "names")) || id.slice(0, 12),
+      id, name,
       image: text(value(r, "image")), status,
       createdAt: createdSeconds ? createdSeconds * 1000 : Date.now(),
       startedAt: status === "running" && changedSeconds ? changedSeconds * 1000 : undefined,
       ports, mounts: [], env: {}, gpu: false, cpuPercent: 0, memoryMB: 0,
       memoryLimitMB: 0, command: [], workdir: "/", user: "", logs: [],
+      groupId: groupForContainer(name),
     };
   });
 }
@@ -126,10 +137,11 @@ function volumesFrom(output?: string): VolumeRecord[] {
   }));
 }
 
-function runArgs(spec: RunSpec) {
+function runArgs(spec: RunSpec, network?: string) {
   const args = ["run"];
   if (spec.detach) args.push("-d"); if (spec.remove) args.push("--rm");
   if (spec.gpu) args.push("--gpus", "all"); if (spec.name.trim()) args.push("--name", spec.name.trim());
+  if (network) args.push("--network", network);
   if (spec.workdir.trim()) args.push("-w", spec.workdir.trim());
   for (const p of spec.ports.split(",").map((x) => x.trim()).filter(Boolean)) args.push("-p", p);
   for (const e of spec.env.split("\n").map((x) => x.trim()).filter(Boolean)) args.push("-e", e);
@@ -184,11 +196,25 @@ export const useWslc = create<WslcState>((set, get) => {
     await refresh();
     return result;
   };
+  const ensureNetwork = async (network: string) => {
+    if (!network.trim()) return;
+    const list = await call(["network", "list"]);
+    if (list.ok && (list.output ?? "").toLowerCase().includes(network.toLowerCase())) return;
+    const created = await mutate(["network", "create", network]);
+    if (!created.ok) throw new Error(created.error || `Could not create network ${network}`);
+  };
+  const runInGroup = async (spec: RunSpec) => {
+    const group = spec.groupId ? get().groups.find((item) => item.id === spec.groupId) : undefined;
+    const effective = effectiveSpec(spec, group);
+    if (group) await ensureNetwork(group.network);
+    if (effective.name.trim()) assignContainer(effective.name, group?.id);
+    return mutate(runArgs(effective, group?.network));
+  };
   return {
     view: "dashboard", gate: "checking", probeNote: "Looking for wslc.exe…", wslcOnPath: false,
     session: emptySession(["wslc"]), containers: [], images: [], volumes: [], calls: [], pulls: [],
     selectedId: null, runOpen: false, inspectOpen: false, metrics: [], now: Date.now(),
-    catalog: CATALOG, groups: [], launchAtSignIn: prefs.launchAtSignIn,
+    catalog: CATALOG, groups: loadGroups(), launchAtSignIn: prefs.launchAtSignIn,
     setView: (view) => set({ view }),
     selectContainer: (selectedId) => set({ selectedId, inspectOpen: Boolean(selectedId) }),
     setRunOpen: (runOpen) => set({ runOpen }),
@@ -199,16 +225,16 @@ export const useWslc = create<WslcState>((set, get) => {
     updateSession: (patch) => set((s) => ({ session: { ...s.session, ...patch } })),
     pullImage: (reference) => { const ref = reference.trim(); if (ref) void mutate(["pull", ref]); },
     removeImage: (id) => { const image = get().images.find((x) => x.id === id); if (image) void mutate(["image", "rm", `${image.repository}:${image.tag}`]); },
-    runContainer: (spec) => { void mutate(runArgs(spec)).then(() => set({ runOpen: false, view: "containers" })); },
+    runContainer: (spec) => { void runInGroup(spec).then(() => set({ runOpen: false, view: "containers" })); },
     startContainer: (id) => { const c = get().containers.find((x) => x.id === id); if (c) void mutate(["container", "start", c.name]); },
     stopContainer: (id) => { const c = get().containers.find((x) => x.id === id); if (c) void mutate(["container", "stop", c.name]); },
     restartContainer: (id) => { const c = get().containers.find((x) => x.id === id); if (c) void mutate(["container", "restart", c.name]); },
-    deleteContainer: (id) => { const c = get().containers.find((x) => x.id === id); if (c) void mutate(["container", "rm", c.name]); },
+    deleteContainer: (id) => { const c = get().containers.find((x) => x.id === id); if (c) { assignContainer(c.name); void mutate(["container", "rm", c.name]); } },
     appendExec: (id, command) => { const c = get().containers.find((x) => x.id === id); if (c) void mutate(["exec", c.name, ...command.trim().split(/\s+/)]); },
     createVolume: (name) => { const n = name.trim(); if (n) void mutate(["volume", "create", n]); },
     deleteVolume: (name) => { void mutate(["volume", "rm", name]); },
     retryProbe: async () => {
-      set({ gate: "checking", probeNote: "Looking for wslc.exe…", containers: [], images: [], volumes: [], groups: [], metrics: [] });
+      set({ gate: "checking", probeNote: "Looking for wslc.exe…", containers: [], images: [], volumes: [], metrics: [], groups: loadGroups() });
       const result = await checkHost();
       if (!result.wslc) {
         set({ gate: "missing", probeNote: result.note, wslcOnPath: false, session: emptySession(result.missing) });
@@ -218,7 +244,56 @@ export const useWslc = create<WslcState>((set, get) => {
         session: { ...emptySession(), running: true, version: result.version ?? "wslc", wslVersion: result.version ?? "—" } });
       await refresh();
     },
-    setGroupAutoStart: () => {}, startGroup: () => {}, stopGroup: () => {}, startAutoGroups: () => {},
+    saveGroup: (group) => {
+      persistGroup(group);
+      set({ groups: loadGroups() });
+    },
+    deleteGroup: (id) => {
+      deleteGroupDefinition(id);
+      set({ groups: loadGroups() });
+    },
+    setGroupAutoStart: (id, autoStart) => {
+      const group = get().groups.find((item) => item.id === id);
+      if (!group || group.builtIn) return;
+      persistGroup({ ...group, autoStart });
+      set({ groups: loadGroups() });
+    },
+    startGroup: (id) => {
+      const group = get().groups.find((item) => item.id === id);
+      if (!group) return;
+      void (async () => {
+        await ensureNetwork(group.network);
+        for (const spec of group.specs) {
+          const existing = get().containers.find((container) => container.name === spec.name);
+          if (existing?.status === "running") continue;
+          if (existing) {
+            assignContainer(existing.name, group.id);
+            await mutate(["container", "start", existing.name]);
+          } else {
+            await runInGroup({ ...spec, groupId: group.id });
+          }
+        }
+        await refresh();
+      })();
+    },
+    stopGroup: (id) => {
+      const group = get().groups.find((item) => item.id === id);
+      if (!group) return;
+      void (async () => {
+        const names = new Set([
+          ...group.specs.map((spec) => spec.name),
+          ...get().containers.filter((container) => container.groupId === id).map((container) => container.name),
+        ]);
+        for (const name of Array.from(names).reverse()) {
+          const existing = get().containers.find((container) => container.name === name && container.status === "running");
+          if (existing) await mutate(["container", "stop", name]);
+        }
+        await refresh();
+      })();
+    },
+    startAutoGroups: () => {
+      for (const group of get().groups.filter((item) => item.autoStart)) get().startGroup(group.id);
+    },
     setLaunchAtSignIn: (launchAtSignIn) => {
       set({ launchAtSignIn }); savePrefs({ launchAtSignIn, groupAuto: {} });
     },
