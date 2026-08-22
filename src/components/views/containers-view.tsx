@@ -1,4 +1,4 @@
-import { Gpu, Play, Search, Square } from "lucide-react";
+import { Gpu, LoaderCircle, Play, Search, Square } from "lucide-react";
 import { useMemo, useState } from "react";
 import { ContainerInspect } from "@/components/container-inspect";
 import { Badge } from "@/components/ui/badge";
@@ -12,6 +12,7 @@ import type { Container } from "@/lib/wslc/types";
 export function ContainersView() {
   const containers = useWslc((s) => s.containers);
   const cubes = useWslc((s) => s.groups);
+  const operations = useWslc((s) => s.operations);
   const selectedId = useWslc((s) => s.selectedId);
   const inspectOpen = useWslc((s) => s.inspectOpen);
   const selectContainer = useWslc((s) => s.selectContainer);
@@ -92,6 +93,7 @@ export function ContainersView() {
                   c={c}
                   selected={selectedId === c.id && inspectOpen}
                   now={now}
+                  busy={Boolean(operations[`container:${c.name}`])}
                   onSelect={selectContainer}
                   onStart={startContainer}
                   onStop={stopContainer}
@@ -115,6 +117,7 @@ function ContainerRow({
   c,
   selected,
   now,
+  busy,
   onSelect,
   onStart,
   onStop,
@@ -122,11 +125,13 @@ function ContainerRow({
   c: Container;
   selected: boolean;
   now: number;
+  busy: boolean;
   onSelect: (id: string) => void;
   onStart: (id: string) => void;
   onStop: (id: string) => void;
 }) {
   const running = c.status === "running";
+  const action = busy ? (running ? "Stopping…" : "Starting…") : running ? `Stop ${c.name}` : `Start ${c.name}`;
 
   return (
     <li>
@@ -135,9 +140,8 @@ function ContainerRow({
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-medium">{c.name}</span>
             <StatusPill status={c.status} />
-            {c.gpu ? (
-              <Badge variant="gpu"><Gpu className="mr-1 size-3" />GPU</Badge>
-            ) : null}
+            {busy ? <span className="text-xs text-muted-foreground">{action}</span> : null}
+            {c.gpu ? <Badge variant="gpu"><Gpu className="mr-1 size-3" />GPU</Badge> : null}
           </div>
           <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">
             {c.id} · {c.image}
@@ -152,12 +156,13 @@ function ContainerRow({
           type="button"
           variant="ghost"
           size="icon-sm"
+          disabled={busy}
           onClick={() => running ? onStop(c.id) : onStart(c.id)}
-          aria-label={running ? `Stop ${c.name}` : `Start ${c.name}`}
-          title={running ? `Stop ${c.name}` : `Start ${c.name}`}
+          aria-label={action}
+          title={action}
           className="shrink-0 text-muted-foreground hover:text-foreground"
         >
-          {running ? <Square className="size-4" /> : <Play className="size-4" />}
+          {busy ? <LoaderCircle className="size-4 animate-spin" /> : running ? <Square className="size-4" /> : <Play className="size-4" />}
         </Button>
       </div>
     </li>
