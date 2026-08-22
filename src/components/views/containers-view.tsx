@@ -17,6 +17,8 @@ export function ContainersView() {
   const selectContainer = useWslc((s) => s.selectContainer);
   const setInspectOpen = useWslc((s) => s.setInspectOpen);
   const setRunOpen = useWslc((s) => s.setRunOpen);
+  const startContainer = useWslc((s) => s.startContainer);
+  const stopContainer = useWslc((s) => s.stopContainer);
   const now = useWslc((s) => s.now);
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<"all" | "running" | "exited">("all");
@@ -91,6 +93,8 @@ export function ContainersView() {
                   selected={selectedId === c.id && inspectOpen}
                   now={now}
                   onSelect={selectContainer}
+                  onStart={startContainer}
+                  onStop={stopContainer}
                 />
               ))}
             </ul>
@@ -112,12 +116,18 @@ function ContainerRow({
   selected,
   now,
   onSelect,
+  onStart,
+  onStop,
 }: {
   c: Container;
   selected: boolean;
   now: number;
   onSelect: (id: string) => void;
+  onStart: (id: string) => void;
+  onStop: (id: string) => void;
 }) {
+  const running = c.status === "running";
+
   return (
     <li>
       <div className={cn("flex items-center gap-3 px-4 py-3", selected ? "bg-elevated" : "hover:bg-elevated/60")}>
@@ -135,12 +145,20 @@ function ContainerRow({
           <p className="mt-1 font-mono text-xs text-subtle">
             {c.ports.length ? c.ports.map((p) => `${p.host}:${p.container}`).join("  ") : "no ports"}
             {" · "}
-            {c.status === "running" ? formatUptime(c.startedAt, now) : "exited"}
+            {running ? formatUptime(c.startedAt, now) : "exited"}
           </p>
         </button>
-        <div className="flex shrink-0 gap-1">
-          {c.status === "running" ? <Square className="size-4 text-muted-foreground" /> : <Play className="size-4 text-muted-foreground" />}
-        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          onClick={() => running ? onStop(c.id) : onStart(c.id)}
+          aria-label={running ? `Stop ${c.name}` : `Start ${c.name}`}
+          title={running ? `Stop ${c.name}` : `Start ${c.name}`}
+          className="shrink-0 text-muted-foreground hover:text-foreground"
+        >
+          {running ? <Square className="size-4" /> : <Play className="size-4" />}
+        </Button>
       </div>
     </li>
   );
