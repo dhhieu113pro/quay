@@ -12,14 +12,32 @@ import { Box, Cpu, Layers, MemoryStick } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { StatusPill } from "@/components/status-pill";
+import { invokeWslcHost } from "@/lib/tauri";
 import { formatBytes, formatUptime } from "@/lib/utils";
 import { useWslc } from "@/lib/wslc/store";
+
+type HostStats = {
+  cpuCount: number;
+  cpuPercent: number;
+  memoryPercent: number;
+  memoryTotalMB: number;
+  memoryUsedMB: number;
+};
+
+type HostPoint = { t: number; cpu: number; mem: number };
+
+const EMPTY_HOST: HostStats = {
+  cpuCount: 0,
+  cpuPercent: 0,
+  memoryPercent: 0,
+  memoryTotalMB: 0,
+  memoryUsedMB: 0,
+};
 
 export function DashboardView() {
   const session = useWslc((s) => s.session);
   const containers = useWslc((s) => s.containers);
   const images = useWslc((s) => s.images);
-  const metrics = useWslc((s) => s.metrics);
   const calls = useWslc((s) => s.calls);
   const now = useWslc((s) => s.now);
   const setView = useWslc((s) => s.setView);
@@ -28,18 +46,52 @@ export function DashboardView() {
   const groups = useWslc((s) => s.groups);
   const startGroup = useWslc((s) => s.startGroup);
   const setGroupAutoStart = useWslc((s) => s.setGroupAutoStart);
+  const [host, setHost] = useState<HostStats>(EMPTY_HOST);
+  const [hostHistory, setHostHistory] = useState<HostPoint[]>([]);
+
+  useEffect(() => {
+    let disposed = false;
+
+    const sample = async () => {
+      try {
+        const stats = await invokeWslcHost({ cmd: "host_stats" });
+        if (disposed || !stats.ok) return;
+        const next: HostStats = {
+          cpuCount: Number(stats.cpuCount) || 0,
+          cpuPercent: Number(stats.cpuPercent) || 0,
+          memoryPercent: Number(stats.memoryPercent) || 0,
+          memoryTotalMB: Number(stats.memoryTotalMB) || 0,
+          memoryUsedMB: Number(stats.memoryUsedMB) || 0,
+        };
+        setHost(next);
+        setHostHistory((current) => [
+          ...current,
+          { t: Date.now(), cpu: next.cpuPercent, mem: next.memoryPercent },
+        ].slice(-60));
+      } catch {
+        // Keep the last good sample. Container operations must continue to work
+        // even if Windows host statistics are temporarily unavailable.
+      }
+    };
+
+    void sample();
+    const id = window.setInterval(() => void sample(), 1000);
+    return () => {
+      disposed = true;
+      window.clearInterval(id);
+    };
+  }, []);
 
   const running = containers.filter((c) => c.status === "running");
-  const memUsed = running.reduce((a, c) => a + c.memoryMB, 0);
 
   const chart = useMemo(
     () =>
-      metrics.map((m) => ({
+      hostHistory.map((m) => ({
         t: m.t,
         cpu: Math.round(m.cpu),
         mem: Math.round(m.mem),
       })),
-    [metrics],
+    [hostHistory],
   );
 
   return (
@@ -71,15 +123,17 @@ export function DashboardView() {
         />
         <Stat
           icon={<Cpu className="size-4" />}
-          label="vCPU"
-          value={`${session.cpuCount}`}
-          hint={session.running ? "session up" : "stopped"}
+          label="Logical CPU"
+          value={host.cpuCount ? `${host.cpuCount}` : "—"}
+          hint={host.cpuCount ? `${Math.round(host.cpuPercent)}% host load` : "reading Windows host"}
         />
         <Stat
           icon={<MemoryStick className="size-4" />}
           label="Memory"
-          value={formatBytes(memUsed)}
-          hint={`of ${formatBytes(session.memoryMB)}`}
+          value={host.memoryTotalMB ? formatBytes(host.memoryUsedMB) : "—"}
+          hint={host.memoryTotalMB
+            ? `of ${formatBytes(host.memoryTotalMB)} · ${Math.round(host.memoryPercent)}%`
+            : "reading Windows host"}
         />
       </div>
 
@@ -126,9 +180,12 @@ export function DashboardView() {
 
       <section className="rounded-xl border border-border bg-card p-4">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-medium">Host load</h2>
+          <div>
+            <h2 className="text-sm font-medium">Windows host load</h2>
+            <p className="mt-0.5 text-xs text-subtle">Live host CPU and physical memory, sampled every second.</p>
+          </div>
           <p className="font-mono text-xs tabular-nums text-muted-foreground">
-            CPU {chart.at(-1)?.cpu ?? 0}% · MEM {chart.at(-1)?.mem ?? 0}%
+            CPU {Math.round(host.cpuPercent)}% · MEM {Math.round(host.memoryPercent)}%
           </p>
         </div>
         <div className="h-36">
