@@ -4,6 +4,7 @@ export type ViewId =
   | "dashboard"
   | "containers"
   | "images"
+  | "groups"
   | "volumes"
   | "session";
 
@@ -131,6 +132,9 @@ export interface RunSpec {
 export interface ContainerGroup {
   id: string;
   name: string;
+  network: string;
+  env: string;
+  builtIn: boolean;
   autoStart: boolean;
   specs: RunSpec[];
 }
