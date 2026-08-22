@@ -6,21 +6,31 @@ param(
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $version = "2.9.3"
-$packageRoot = Join-Path $env:USERPROFILE ".nuget\packages\microsoft.wsl.containers\$version"
+$cacheRoot = Join-Path $root ".quay-cache\wslc-sdk\$version"
+$packageFile = Join-Path $cacheRoot "microsoft.wsl.containers.$version.nupkg"
+$extractRoot = Join-Path $cacheRoot "package"
 
-if (-not (Test-Path $packageRoot)) {
-    Write-Host "Restoring Microsoft.WSL.Containers $version"
-    & dotnet restore (Join-Path $root "host/Quay.Host.csproj")
-    if ($LASTEXITCODE -ne 0) { throw "dotnet restore failed with exit code $LASTEXITCODE" }
+if (-not (Test-Path $extractRoot)) {
+    New-Item -ItemType Directory -Force -Path $cacheRoot | Out-Null
+    if (-not (Test-Path $packageFile)) {
+        $url = "https://api.nuget.org/v3-flatcontainer/microsoft.wsl.containers/$version/microsoft.wsl.containers.$version.nupkg"
+        Write-Host "Downloading Microsoft.WSL.Containers $version"
+        Invoke-WebRequest -Uri $url -OutFile $packageFile -UseBasicParsing
+    }
+
+    if (Test-Path $extractRoot) { Remove-Item $extractRoot -Recurse -Force }
+    New-Item -ItemType Directory -Force -Path $extractRoot | Out-Null
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    [System.IO.Compression.ZipFile]::ExtractToDirectory($packageFile, $extractRoot)
 }
 
-$all = @(Get-ChildItem $packageRoot -Recurse -Filter "wslcsdk.dll" -File)
-if ($all.Count -eq 0) { throw "wslcsdk.dll was not found in $packageRoot" }
+$all = @(Get-ChildItem $extractRoot -Recurse -Filter "wslcsdk.dll" -File)
+if ($all.Count -eq 0) { throw "wslcsdk.dll was not found in Microsoft.WSL.Containers $version" }
 
 $archPattern = if ($Rid -eq "win-arm64") { "arm64" } else { "x64" }
 $dll = $all | Where-Object { $_.FullName -match $archPattern } | Select-Object -First 1
 if (-not $dll) {
-    Write-Host "Available native SDK files:"
+    Write-Host "Available WSLC DLLs:"
     $all | ForEach-Object { Write-Host "- $($_.FullName)" }
     throw "Could not find $Rid wslcsdk.dll in Microsoft.WSL.Containers $version"
 }
