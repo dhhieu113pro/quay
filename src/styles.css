@@ -1,0 +1,108 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@theme {
+  --color-background: #0c0d10;
+  --color-foreground: #e8eaee;
+  --color-card: #14161b;
+  --color-card-foreground: #e8eaee;
+  --color-popover: #1b1e25;
+  --color-popover-foreground: #e8eaee;
+  --color-primary: #d6dbe3;
+  --color-primary-foreground: #0c0d10;
+  --color-secondary: #1b1e25;
+  --color-secondary-foreground: #e8eaee;
+  --color-muted: #1b1e25;
+  --color-muted-foreground: #8b909b;
+  --color-accent: #8aa0b5;
+  --color-accent-foreground: #0c0d10;
+  --color-destructive: #c07a7a;
+  --color-destructive-foreground: #0c0d10;
+  --color-border: #2a2e36;
+  --color-input: #2a2e36;
+  --color-ring: #8aa0b5;
+  --color-elevated: #1b1e25;
+  --color-subtle: #5c616c;
+  --color-ok: #7d9d8a;
+  --color-warn: #c4a574;
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --radius: 0.75rem;
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --motion-stagger: 40ms;
+  --motion-micro: 80ms;
+  --motion-quick: 150ms;
+  --motion-fast: 250ms;
+  --motion-medium: 350ms;
+  --motion-slow: 400ms;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-smooth-out: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@layer base {
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  html,
+  body,
+  #app {
+    min-height: 100%;
+    background: var(--color-background);
+    color: var(--color-foreground);
+  }
+
+  body {
+    font-family: var(--font-sans);
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  * {
+    border-color: var(--color-border);
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--color-accent) 35%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+.terminal-caret::after {
+  content: "▍";
+  margin-left: 2px;
+  animation: blink 1.1s step-end infinite;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}

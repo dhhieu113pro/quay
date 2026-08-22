@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.vercel/
+*.log
+screenshots/
+artifacts/
+.DS_Store
+bin/
+obj/
+host/bin/
+host/obj/
+src-tauri/target/
