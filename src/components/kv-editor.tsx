@@ -5,6 +5,7 @@ import { Label } from "@/components/ui/label";
 import { parseMountLine } from "@/lib/wslc/spec-parse";
 
 export type KvPair = { id: string; key: string; value: string };
+export type EnvSuggestion = { key: string; value?: string; source?: string };
 
 function rid() {
   return Math.random().toString(16).slice(2, 10);
@@ -33,18 +34,41 @@ export function joinEnvLines(rows: KvPair[]) {
 export function EnvEditor({
   rows,
   onChange,
+  label = "Environment",
+  suggestions = [],
 }: {
   rows: KvPair[];
   onChange: (rows: KvPair[]) => void;
+  label?: string;
+  suggestions?: EnvSuggestion[];
 }) {
   function patch(id: string, next: Partial<KvPair>) {
     onChange(rows.map((r) => (r.id === id ? { ...r, ...next } : r)));
   }
 
+  const existing = new Set(rows.map((row) => row.key.trim()).filter(Boolean));
+  const available = suggestions.filter((suggestion, index) =>
+    suggestion.key.trim() &&
+    !existing.has(suggestion.key.trim()) &&
+    suggestions.findIndex((item) => item.key === suggestion.key) === index,
+  );
+
+  function addSuggestion(suggestion: EnvSuggestion) {
+    const blank = rows.find((row) => !row.key.trim() && !row.value);
+    if (blank) {
+      patch(blank.id, { key: suggestion.key, value: suggestion.value ?? "" });
+      return;
+    }
+    onChange([
+      ...rows,
+      { id: rid(), key: suggestion.key, value: suggestion.value ?? "" },
+    ]);
+  }
+
   return (
     <div className="grid gap-2">
       <div className="flex items-center justify-between gap-2">
-        <Label>Environment</Label>
+        <Label>{label}</Label>
         <Button
           type="button"
           variant="ghost"
@@ -55,6 +79,22 @@ export function EnvEditor({
           Add
         </Button>
       </div>
+      {available.length ? (
+        <div className="flex flex-wrap gap-1.5">
+          {available.map((suggestion) => (
+            <button
+              key={`${suggestion.source ?? "env"}:${suggestion.key}`}
+              type="button"
+              title={suggestion.source ? `From ${suggestion.source}` : `Add ${suggestion.key}`}
+              onClick={() => addSuggestion(suggestion)}
+              className="rounded-md border border-border bg-background px-2 py-1 font-mono text-[11px] text-muted-foreground hover:bg-elevated hover:text-foreground"
+            >
+              + {suggestion.key}
+              {suggestion.source ? <span className="ml-1 font-sans text-subtle">· {suggestion.source}</span> : null}
+            </button>
+          ))}
+        </div>
+      ) : null}
       <div className="hidden grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_2.75rem] gap-2 px-0.5 text-xs text-subtle sm:grid">
         <span>Name</span>
         <span>Value</span>
@@ -155,7 +195,7 @@ export function MountEditor({
             <Input
               value={row.source}
               onChange={(e) => patch(row.id, { source: e.target.value })}
-              placeholder="D:\wslc\workspaces"
+              placeholder="D:\\wslc\\workspaces"
               aria-label="Host path"
               className="font-mono text-xs"
               spellCheck={false}
