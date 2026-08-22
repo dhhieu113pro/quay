@@ -14,17 +14,22 @@ use tauri::{AppHandle, Manager, State, WindowEvent};
 pub struct Sidecar {
     stdin: Mutex<Option<ChildStdin>>,
     stdout: Mutex<Option<BufReader<ChildStdout>>>,
+    path: String,
+    startup_error: Option<String>,
 }
 
 impl Sidecar {
-    fn empty() -> Self {
+    fn empty(path: PathBuf, error: String) -> Self {
         Self {
             stdin: Mutex::new(None),
             stdout: Mutex::new(None),
+            path: path.display().to_string(),
+            startup_error: Some(error),
         }
     }
 
     fn spawn(bin: PathBuf) -> Result<Self, String> {
+        let path = bin.display().to_string();
         let mut cmd = Command::new(&bin);
         cmd.stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -41,6 +46,8 @@ impl Sidecar {
         Ok(Self {
             stdin: Mutex::new(child.stdin.take()),
             stdout: Mutex::new(child.stdout.take().map(BufReader::new)),
+            path,
+            startup_error: None,
         })
     }
 }
@@ -83,7 +90,7 @@ fn show_main(app: &AppHandle) {
 
 fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
     let show = MenuItem::with_id(app, "show", "Show Quay", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit Quay", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show, &quit])?;
 
     let mut tray = TrayIconBuilder::with_id("main")
@@ -117,7 +124,12 @@ fn wslc_invoke(sidecar: State<Sidecar>, payload: Value) -> Result<Value, String>
     let line = serde_json::to_string(&payload).map_err(|e| e.to_string())?;
     {
         let mut stdin = sidecar.stdin.lock().map_err(|e| e.to_string())?;
-        let stdin = stdin.as_mut().ok_or("C# sidecar is not running")?;
+        let stdin = stdin.as_mut().ok_or_else(|| {
+            sidecar
+                .startup_error
+                .clone()
+                .unwrap_or_else(|| "C# sidecar is not running".into())
+        })?;
         writeln!(stdin, "{line}").map_err(|e| e.to_string())?;
         stdin.flush().map_err(|e| e.to_string())?;
     }
@@ -166,6 +178,8 @@ fn wslc_probe(sidecar: State<Sidecar>) -> Value {
         "wslc": version.is_some(),
         "sidecar": sidecar_up,
         "version": version,
+        "sidecarPath": sidecar.path,
+        "sidecarError": sidecar.startup_error,
     })
 }
 
@@ -251,11 +265,11 @@ pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
             let bin = host_binary(app.handle());
-            let sidecar = match Sidecar::spawn(bin) {
+            let sidecar = match Sidecar::spawn(bin.clone()) {
                 Ok(s) => s,
                 Err(err) => {
                     eprintln!("quay-host: {err}");
-                    Sidecar::empty()
+                    Sidecar::empty(bin, err)
                 }
             };
             app.manage(sidecar);
