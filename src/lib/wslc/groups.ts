@@ -38,9 +38,9 @@ export function defaultGroupNetwork(id: string) {
   return `quay-${id}`;
 }
 
-function mergeSpecs(base: RunSpec[], override: RunSpec[] = []) {
+function mergeSpecs(base: RunSpec[], extras: RunSpec[] = []) {
   const byName = new Map(base.map((spec) => [spec.name, { ...spec }]));
-  for (const spec of override) byName.set(spec.name, { ...spec });
+  for (const spec of extras) byName.set(spec.name, { ...spec });
   return Array.from(byName.values());
 }
 
@@ -72,11 +72,14 @@ export function saveGroup(group: ContainerGroup) {
   if (typeof localStorage === "undefined") return;
   if (group.builtIn) {
     const overrides = safeParse<Record<string, Partial<ContainerGroup>>>(BUILTIN_OVERRIDES_KEY, {});
+    const base = builtInGroups.find((item) => item.id === group.id);
+    const baseNames = new Set(base?.specs.map((spec) => spec.name) ?? []);
+    const extras = group.specs.filter((spec) => !baseNames.has(spec.name));
     overrides[group.id] = {
       network: group.network,
       env: group.env,
       autoStart: group.autoStart,
-      specs: group.specs,
+      specs: extras,
     };
     localStorage.setItem(BUILTIN_OVERRIDES_KEY, JSON.stringify(overrides));
     return;
