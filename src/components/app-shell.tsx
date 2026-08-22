@@ -18,7 +18,7 @@ import { SetupScreen } from "@/components/setup-screen";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ContainersView } from "@/components/views/containers-view";
 import { DashboardView } from "@/components/views/dashboard-view";
-import { GroupsView } from "@/components/views/groups-view";
+import { CubesView } from "@/components/views/groups-view";
 import { ImagesView } from "@/components/views/images-view";
 import { SessionView } from "@/components/views/session-view";
 import { cn, formatBytes } from "@/lib/utils";
@@ -28,9 +28,9 @@ import { windowAction } from "@/lib/tauri";
 
 const NAV: Array<{ id: ViewId; label: string; icon: typeof Box }> = [
   { id: "dashboard", label: "Overview", icon: LayoutGrid },
+  { id: "groups", label: "Cubes", icon: Boxes },
   { id: "containers", label: "Containers", icon: Box },
   { id: "images", label: "Images", icon: Layers },
-  { id: "groups", label: "Groups", icon: Boxes },
   { id: "session", label: "Session", icon: Cpu },
 ];
 
@@ -95,6 +95,7 @@ export function AppShell() {
             )}
           >
             {view === "dashboard" ? <DashboardView /> : null}
+            {view === "groups" ? <CubesView /> : null}
             {view === "containers" ? (
               <div className="flex h-full min-h-0 flex-col">
                 <ContainersView />
@@ -102,7 +103,6 @@ export function AppShell() {
             ) : null}
             {view === "images" ? <ImagesView /> : null}
             {view === "volumes" ? <ImagesView /> : null}
-            {view === "groups" ? <GroupsView /> : null}
             {view === "session" ? <SessionView /> : null}
           </main>
         </div>
@@ -262,7 +262,7 @@ function StatusBar() {
         {running} ctr · {formatBytes(mem)}
       </span>
       <span className="truncate">
-        {session.cpuCount} vCPU · {session.filesystem} · {session.networking}
+        {session.cpuCount} CPU · {session.filesystem} · {session.networking}
         {session.gpu ? " · GPU" : ""}
       </span>
       <span className="ml-auto truncate text-subtle">
