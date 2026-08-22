@@ -74,7 +74,7 @@ public sealed class QuayHost
         };
         var container = _session.CreateContainer(settings);
         container.Start();
-        var id = container.GetHashCode().ToString("x");
+        var id = container.Id;
         _containers[id] = container;
         return JsonSerializer.Serialize(new { ok = true, id });
     }

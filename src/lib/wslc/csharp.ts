@@ -50,7 +50,7 @@ var settings = new ContainerSettings("${spec.image}")
 {
     Name = "${spec.name || "anonymous"}",
     InitProcess = init,
-    GpuAccess = ${spec.gpu ? "GpuAccess.All" : "GpuAccess.None"}
+    EnableGpu = ${spec.gpu ? "true" : "false"}
 };
 
 var container = session.CreateContainer(settings);
@@ -174,13 +174,15 @@ export function csharpCsproj() {
   return `<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net9.0-windows10.0.22621.0</TargetFramework>
+    <TargetFramework>net9.0-windows10.0.26100.0</TargetFramework>
+    <WindowsSdkPackageVersion>10.0.26100.87</WindowsSdkPackageVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RootNamespace>Quay.Host</RootNamespace>
+    <PlatformTarget Condition="'$(PlatformTarget)' == ''">x64</PlatformTarget>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Microsoft.WSL.Containers" Version="1.0.0-preview" />
+    <PackageReference Include="Microsoft.WSL.Containers" Version="2.9.3" />
   </ItemGroup>
 </Project>`;
 }
