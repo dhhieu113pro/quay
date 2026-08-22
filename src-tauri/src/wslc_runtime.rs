@@ -29,7 +29,12 @@ impl NativeWorker {
 
     pub fn invoke(&self, payload: Value) -> Result<Value, String> {
         let (reply_tx, reply_rx) = mpsc::channel();
-        self.tx.send(Request { payload, reply: reply_tx }).map_err(|e| e.to_string())?;
+        self.tx
+            .send(Request {
+                payload,
+                reply: reply_tx,
+            })
+            .map_err(|e| e.to_string())?;
         reply_rx.recv().map_err(|e| e.to_string())?
     }
 }
@@ -41,7 +46,9 @@ fn worker_loop(rx: Receiver<Request>) {
             Ok(runtime) => runtime.handle(&request.payload),
             Err(error) => {
                 if request.payload.get("cmd").and_then(Value::as_str) == Some("health") {
-                    Ok(json!({"ok": false, "wslc": false, "session": "Quay", "missing": [], "error": error}))
+                    Ok(
+                        json!({"ok": false, "wslc": false, "session": "Quay", "missing": [], "error": error}),
+                    )
                 } else {
                     Err(error.clone())
                 }
@@ -78,11 +85,18 @@ impl NativeRuntime {
         let api = NativeApi::load()?;
         let storage = PathBuf::from(r"C:\WslcData");
         let session = api.create_session("Quay", &storage, 4, 4096)?;
-        Ok(Self { _api: api, _session: session, containers: HashMap::new() })
+        Ok(Self {
+            _api: api,
+            _session: session,
+            containers: HashMap::new(),
+        })
     }
 
     fn handle(&mut self, root: &Value) -> Result<Value, String> {
-        let cmd = root.get("cmd").and_then(Value::as_str).ok_or("missing cmd")?;
+        let cmd = root
+            .get("cmd")
+            .and_then(Value::as_str)
+            .ok_or("missing cmd")?;
         match cmd {
             "health" => Ok(json!({"ok": true, "wslc": true, "session": "Quay", "missing": []})),
             "pull" => {
@@ -106,17 +120,38 @@ impl NativeRuntime {
         }
 
         self._session.pull(&image)?;
-        let command_text = root.get("command").and_then(Value::as_str).unwrap_or_default();
+        let command_text = root
+            .get("command")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
         let mut command = split_command_line(command_text);
         command = self.resolve_container_names(command);
         if command.is_empty() {
-            return Err(format!("container '{name}' requires an explicit command for the native WSLC API"));
+            return Err(format!(
+                "container '{name}' requires an explicit command for the native WSLC API"
+            ));
         }
 
-        let ports_text = root.get("ports").and_then(Value::as_str).unwrap_or_default().to_string();
-        let env_text = root.get("env").and_then(Value::as_str).unwrap_or_default().to_string();
-        let mounts_text = root.get("mounts").and_then(Value::as_str).unwrap_or_default().to_string();
-        let workdir = root.get("workdir").and_then(Value::as_str).unwrap_or("/").to_string();
+        let ports_text = root
+            .get("ports")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        let env_text = root
+            .get("env")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        let mounts_text = root
+            .get("mounts")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        let workdir = root
+            .get("workdir")
+            .and_then(Value::as_str)
+            .unwrap_or("/")
+            .to_string();
         let gpu = root.get("gpu").and_then(Value::as_bool).unwrap_or(false);
 
         let spec = ContainerSpec {
@@ -135,8 +170,19 @@ impl NativeRuntime {
         let started_at = now_ms();
         let bridge_ip = find_bridge_ip(&container.inspect().unwrap_or_default());
         let managed = ManagedContainer {
-            name: name.clone(), image, container, ports: ports_text, mounts: mounts_text, env: env_text,
-            command, workdir, gpu, created_at, started_at: Some(started_at), finished_at: None, bridge_ip,
+            name: name.clone(),
+            image,
+            container,
+            ports: ports_text,
+            mounts: mounts_text,
+            env: env_text,
+            command,
+            workdir,
+            gpu,
+            created_at,
+            started_at: Some(started_at),
+            finished_at: None,
+            bridge_ip,
         };
         let snapshot = snapshot(&managed)?;
         self.containers.insert(name, managed);
@@ -147,7 +193,8 @@ impl NativeRuntime {
         let mut items = Vec::new();
         for managed in self.containers.values_mut() {
             if managed.bridge_ip.is_none() {
-                managed.bridge_ip = find_bridge_ip(&managed.container.inspect().unwrap_or_default());
+                managed.bridge_ip =
+                    find_bridge_ip(&managed.container.inspect().unwrap_or_default());
             }
             items.push(snapshot(managed)?);
         }
@@ -171,23 +218,35 @@ impl NativeRuntime {
     }
 
     fn find_key(&self, id: &str) -> Result<String, String> {
-        if self.containers.contains_key(id) { return Ok(id.to_string()); }
-        for (name, managed) in &self.containers {
-            if managed.container.id().ok().as_deref() == Some(id) { return Ok(name.clone()); }
+        if self.containers.contains_key(id) {
+            return Ok(id.to_string());
         }
-        Err(format!("container '{id}' is not managed by the Quay native session"))
+        for (name, managed) in &self.containers {
+            if managed.container.id().ok().as_deref() == Some(id) {
+                return Ok(name.clone());
+            }
+        }
+        Err(format!(
+            "container '{id}' is not managed by the Quay native session"
+        ))
     }
 
     fn resolve_container_names(&mut self, command: Vec<String>) -> Vec<String> {
-        command.into_iter().map(|mut arg| {
-            for managed in self.containers.values_mut() {
-                if managed.bridge_ip.is_none() {
-                    managed.bridge_ip = find_bridge_ip(&managed.container.inspect().unwrap_or_default());
+        command
+            .into_iter()
+            .map(|mut arg| {
+                for managed in self.containers.values_mut() {
+                    if managed.bridge_ip.is_none() {
+                        managed.bridge_ip =
+                            find_bridge_ip(&managed.container.inspect().unwrap_or_default());
+                    }
+                    if let Some(ip) = &managed.bridge_ip {
+                        arg = arg.replace(&managed.name, ip);
+                    }
                 }
-                if let Some(ip) = &managed.bridge_ip { arg = arg.replace(&managed.name, ip); }
-            }
-            arg
-        }).collect()
+                arg
+            })
+            .collect()
     }
 }
 
@@ -214,34 +273,68 @@ fn snapshot(managed: &ManagedContainer) -> Result<Value, String> {
 }
 
 fn required<'a>(root: &'a Value, name: &str) -> Result<&'a str, String> {
-    root.get(name).and_then(Value::as_str).filter(|x| !x.trim().is_empty()).ok_or_else(|| format!("missing or empty '{name}'"))
+    root.get(name)
+        .and_then(Value::as_str)
+        .filter(|x| !x.trim().is_empty())
+        .ok_or_else(|| format!("missing or empty '{name}'"))
 }
 
 fn parse_ports(value: &str) -> Result<Vec<(u16, u16)>, String> {
-    value.split(',').filter(|x| !x.trim().is_empty()).map(|item| {
-        let mut parts = item.trim().split(':');
-        let host = parts.next().ok_or_else(|| format!("invalid port '{item}'"))?.parse::<u16>().map_err(|_| format!("invalid port '{item}'"))?;
-        let container = parts.next().ok_or_else(|| format!("invalid port '{item}'"))?.parse::<u16>().map_err(|_| format!("invalid port '{item}'"))?;
-        if parts.next().is_some() { return Err(format!("invalid port '{item}'")); }
-        Ok((host, container))
-    }).collect()
+    value
+        .split(',')
+        .filter(|x| !x.trim().is_empty())
+        .map(|item| {
+            let mut parts = item.trim().split(':');
+            let host = parts
+                .next()
+                .ok_or_else(|| format!("invalid port '{item}'"))?
+                .parse::<u16>()
+                .map_err(|_| format!("invalid port '{item}'"))?;
+            let container = parts
+                .next()
+                .ok_or_else(|| format!("invalid port '{item}'"))?
+                .parse::<u16>()
+                .map_err(|_| format!("invalid port '{item}'"))?;
+            if parts.next().is_some() {
+                return Err(format!("invalid port '{item}'"));
+            }
+            Ok((host, container))
+        })
+        .collect()
 }
 
 fn parse_env(value: &str) -> Vec<String> {
-    value.lines().map(str::trim).filter(|x| !x.is_empty()).map(str::to_string).collect()
+    value
+        .lines()
+        .map(str::trim)
+        .filter(|x| !x.is_empty())
+        .map(str::to_string)
+        .collect()
 }
 
 fn parse_volumes(value: &str) -> Result<Vec<VolumeSpec>, String> {
     let mut result = Vec::new();
     for line in value.lines().map(str::trim).filter(|x| !x.is_empty()) {
-        let mode_at = line.rfind(':').ok_or_else(|| format!("invalid mount '{line}'"))?;
+        let mode_at = line
+            .rfind(':')
+            .ok_or_else(|| format!("invalid mount '{line}'"))?;
         let mode = &line[mode_at + 1..];
         let paths = &line[..mode_at];
-        let dest_at = paths.rfind(':').ok_or_else(|| format!("invalid mount '{line}'"))?;
+        let dest_at = paths
+            .rfind(':')
+            .ok_or_else(|| format!("invalid mount '{line}'"))?;
         let source = &paths[..dest_at];
         let destination = &paths[dest_at + 1..];
-        if !PathBuf::from(source).is_absolute() { return Err(format!("named volume '{source}' is not supported by the native runner yet")); }
-        result.push(VolumeSpec { windows_path: PathBuf::from(source), container_path: destination.to_string(), read_only: mode.eq_ignore_ascii_case("ro") });
+        if !PathBuf::from(source).is_absolute() {
+            return Err(format!(
+                "named volume '{source}' is not supported by the native runner yet"
+            ));
+        }
+        result.push(VolumeSpec {
+            windows_path: PathBuf::from(source),
+            container_path: destination.to_string(),
+            read_only: mode.eq_ignore_ascii_case("ro"),
+        });
     }
     Ok(result)
 }
@@ -253,15 +346,26 @@ fn split_command_line(value: &str) -> Vec<String> {
     let mut chars = value.chars().peekable();
     while let Some(ch) = chars.next() {
         if let Some(q) = quote {
-            if ch == q { quote = None; }
-            else if ch == '\\' && chars.peek() == Some(&q) { current.push(chars.next().unwrap()); }
-            else { current.push(ch); }
-        } else if ch == '\'' || ch == '"' { quote = Some(ch); }
-        else if ch.is_whitespace() {
-            if !current.is_empty() { result.push(std::mem::take(&mut current)); }
-        } else { current.push(ch); }
+            if ch == q {
+                quote = None;
+            } else if ch == '\\' && chars.peek() == Some(&q) {
+                current.push(chars.next().unwrap());
+            } else {
+                current.push(ch);
+            }
+        } else if ch == '\'' || ch == '"' {
+            quote = Some(ch);
+        } else if ch.is_whitespace() {
+            if !current.is_empty() {
+                result.push(std::mem::take(&mut current));
+            }
+        } else {
+            current.push(ch);
+        }
     }
-    if !current.is_empty() { result.push(current); }
+    if !current.is_empty() {
+        result.push(current);
+    }
     result
 }
 
@@ -270,7 +374,13 @@ fn find_bridge_ip(inspect: &str) -> Option<String> {
     fn walk(value: &Value) -> Option<String> {
         match value {
             Value::Object(map) => {
-                if let Some(ip) = map.get("IPAddress").and_then(Value::as_str).filter(|x| !x.is_empty() && *x != "0.0.0.0") { return Some(ip.to_string()); }
+                if let Some(ip) = map
+                    .get("IPAddress")
+                    .and_then(Value::as_str)
+                    .filter(|x| !x.is_empty() && *x != "0.0.0.0")
+                {
+                    return Some(ip.to_string());
+                }
                 map.values().find_map(walk)
             }
             Value::Array(items) => items.iter().find_map(walk),
@@ -281,5 +391,8 @@ fn find_bridge_ip(inspect: &str) -> Option<String> {
 }
 
 fn now_ms() -> i64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as i64
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64
 }

@@ -3,7 +3,6 @@
 use quay_lib::wslc_native::{ContainerSpec, NativeApi};
 use std::io::{Read, Write};
 use std::net::TcpStream;
-use std::path::PathBuf;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -42,7 +41,7 @@ fn main() -> Result<(), String> {
     container.delete()?;
     drop(container);
     drop(session);
-    let _ = std::fs::remove_dir_all(PathBuf::from(storage));
+    let _ = std::fs::remove_dir_all(storage);
     Ok(())
 }
 
@@ -57,20 +56,34 @@ fn wait_for_nginx() -> Result<(), String> {
         }
         thread::sleep(Duration::from_millis(500));
     }
-    Err(format!("timed out waiting for nginx on 127.0.0.1:18081: {last}"))
+    Err(format!(
+        "timed out waiting for nginx on 127.0.0.1:18081: {last}"
+    ))
 }
 
 fn request() -> Result<String, String> {
     let mut stream = TcpStream::connect_timeout(
-        &"127.0.0.1:18081".parse().map_err(|e: std::net::AddrParseError| e.to_string())?,
+        &"127.0.0.1:18081"
+            .parse()
+            .map_err(|e: std::net::AddrParseError| e.to_string())?,
         Duration::from_secs(2),
-    ).map_err(|e| e.to_string())?;
-    stream.set_read_timeout(Some(Duration::from_secs(2))).map_err(|e| e.to_string())?;
-    stream.write_all(b"GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n").map_err(|e| e.to_string())?;
+    )
+    .map_err(|e| e.to_string())?;
+    stream
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .map_err(|e| e.to_string())?;
+    stream
+        .write_all(b"GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+        .map_err(|e| e.to_string())?;
     let mut response = String::new();
-    stream.read_to_string(&mut response).map_err(|e| e.to_string())?;
+    stream
+        .read_to_string(&mut response)
+        .map_err(|e| e.to_string())?;
     if !response.starts_with("HTTP/1.1 200") {
-        return Err(format!("nginx did not return HTTP 200: {}", response.lines().next().unwrap_or("empty response")));
+        return Err(format!(
+            "nginx did not return HTTP 200: {}",
+            response.lines().next().unwrap_or("empty response")
+        ));
     }
     Ok(response)
 }

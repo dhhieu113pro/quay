@@ -104,13 +104,20 @@ fn run_capture(program: &str, args: &[&str]) -> Option<String> {
 
 #[tauri::command]
 fn wslc_probe(backend: State<Backend>) -> Value {
-    let version = run_capture("wslc", &["version"])
-        .or_else(|| run_capture("container", &["version"]));
+    let version =
+        run_capture("wslc", &["version"]).or_else(|| run_capture("container", &["version"]));
     #[cfg(windows)]
-    let health = backend.worker.invoke(serde_json::json!({"cmd":"health"})).ok();
+    let health = backend
+        .worker
+        .invoke(serde_json::json!({"cmd":"health"}))
+        .ok();
     #[cfg(not(windows))]
     let health: Option<Value> = None;
-    let native_up = health.as_ref().and_then(|x| x.get("ok")).and_then(Value::as_bool).unwrap_or(false);
+    let native_up = health
+        .as_ref()
+        .and_then(|x| x.get("ok"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
     let native_error = health.as_ref().and_then(|x| x.get("error")).cloned();
     serde_json::json!({
         "wslc": native_up,
@@ -127,7 +134,9 @@ fn wslc_probe(backend: State<Backend>) -> Value {
 fn sidecar_up(backend: State<Backend>) -> bool {
     #[cfg(windows)]
     {
-        backend.worker.invoke(serde_json::json!({"cmd":"health"}))
+        backend
+            .worker
+            .invoke(serde_json::json!({"cmd":"health"}))
             .ok()
             .and_then(|x| x.get("ok").and_then(Value::as_bool))
             .unwrap_or(false)
@@ -174,11 +183,23 @@ fn autostart_set(enabled: bool) -> Result<bool, String> {
         let quoted = format!("\"{}\"", exe.display());
         let mut cmd = Command::new("reg");
         if enabled {
-            cmd.args(["add", run_key(), "/v", AUTOSTART_VALUE, "/t", "REG_SZ", "/d", &quoted, "/f"]);
+            cmd.args([
+                "add",
+                run_key(),
+                "/v",
+                AUTOSTART_VALUE,
+                "/t",
+                "REG_SZ",
+                "/d",
+                &quoted,
+                "/f",
+            ]);
         } else {
             cmd.args(["delete", run_key(), "/v", AUTOSTART_VALUE, "/f"]);
         }
-        cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+        cmd.stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         cmd.creation_flags(CREATE_NO_WINDOW);

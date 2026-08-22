@@ -5,6 +5,7 @@ dist/
 *.log
 screenshots/
 artifacts/
+.quay-cache/
 .DS_Store
 bin/
 obj/
