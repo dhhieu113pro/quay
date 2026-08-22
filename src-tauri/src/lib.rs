@@ -2,6 +2,9 @@
 //! which calls `Microsoft.WSL.Containers`. Close hides to the tray; Quit on
 //! the tray menu actually exits.
 
+#[cfg(windows)]
+pub mod wslc_native;
+
 use serde_json::Value;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
