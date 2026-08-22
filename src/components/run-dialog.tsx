@@ -33,23 +33,20 @@ export function RunDialog() {
   const open = useWslc((s) => s.runOpen);
   const setRunOpen = useWslc((s) => s.setRunOpen);
   const runContainer = useWslc((s) => s.runContainer);
-  const saveGroup = useWslc((s) => s.saveGroup);
   const catalog = useWslc((s) => s.catalog);
   const images = useWslc((s) => s.images);
-  const groups = useWslc((s) => s.groups);
-  const [spec, setSpec] = useState<RunSpec>(defaultSpec);
+  const [spec, setSpec] = useState<RunSpec>({ ...defaultSpec, groupId: undefined });
   const [envRows, setEnvRows] = useState<KvPair[]>(() => parseEnvLines(defaultSpec.env));
-  const [mountRows, setMountRows] = useState<MountRow[]>(() =>
-    parseMountLines(defaultSpec.mounts),
-  );
+  const [mountRows, setMountRows] = useState<MountRow[]>(() => parseMountLines(defaultSpec.mounts));
   const local = Array.from(
     new Set([...images.map((i) => `${i.repository}:${i.tag}`), ...catalog]),
   );
 
   function applySpec(next: RunSpec) {
-    setSpec(next);
-    setEnvRows(parseEnvLines(next.env));
-    setMountRows(parseMountLines(next.mounts));
+    const standalone = { ...next, groupId: undefined };
+    setSpec(standalone);
+    setEnvRows(parseEnvLines(standalone.env));
+    setMountRows(parseMountLines(standalone.mounts));
   }
 
   useEffect(() => {
@@ -57,29 +54,25 @@ export function RunDialog() {
   }, [open]);
 
   function patch(p: Partial<RunSpec>) {
-    setSpec((s) => ({ ...s, ...p }));
+    setSpec((s) => ({ ...s, ...p, groupId: undefined }));
   }
 
   const selectedPreset = catalogPresets.find((p) => p.image === spec.image);
-  const selectedGroup = spec.groupId ? groups.find((group) => group.id === spec.groupId) : undefined;
-  const submittedSpec = {
+  const submittedSpec: RunSpec = {
     ...spec,
+    groupId: undefined,
     env: joinEnvLines(envRows),
     mounts: joinMountLines(mountRows),
   };
-  const groupEnvCount = selectedGroup?.env.split("\n").filter((line) => line.trim()).length ?? 0;
-  const preview = cliForRun(submittedSpec).replace(
-    "wslc run",
-    selectedGroup ? `wslc run --network ${selectedGroup.network}` : "wslc run",
-  );
+  const preview = cliForRun(submittedSpec);
 
   return (
     <Dialog open={open} onOpenChange={setRunOpen}>
       <DialogContent className="flex max-h-[90dvh] max-w-2xl flex-col gap-0 overflow-hidden p-0">
         <DialogHeader className="border-b border-border px-5 py-4">
-          <DialogTitle>Run container</DialogTitle>
+          <DialogTitle>Run Container</DialogTitle>
           <DialogDescription>
-            Pick a Cube to share its WSLC network and environment variables with this container.
+            Run one standalone container. Containers that belong to a Cube are defined from the Cubes page.
           </DialogDescription>
         </DialogHeader>
 
@@ -87,161 +80,113 @@ export function RunDialog() {
           className="flex min-h-0 flex-1 flex-col"
           onSubmit={(e) => {
             e.preventDefault();
-            if (selectedGroup && submittedSpec.name.trim()) {
-              saveGroup({
-                ...selectedGroup,
-                specs: [
-                  ...selectedGroup.specs.filter((item) => item.name !== submittedSpec.name.trim()),
-                  { ...submittedSpec, name: submittedSpec.name.trim(), groupId: selectedGroup.id },
-                ],
-              });
-            }
             runContainer(submittedSpec);
             toast(`Creating ${spec.name || spec.image}`);
             setRunOpen(false);
           }}
         >
           <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto px-5 py-4">
-          <div className="grid gap-1.5">
-            <Label>Quick pick</Label>
-            <div className="flex flex-wrap gap-1.5">
-              {catalogPresets.map((p) => (
-                <button
-                  key={p.image}
-                  type="button"
-                  onClick={() => applySpec(specFromPreset(p))}
-                  className={cn(
-                    "h-9 rounded-md border px-3 text-xs",
-                    spec.image === p.image
-                      ? "border-foreground bg-elevated text-foreground"
-                      : "border-border text-muted-foreground hover:bg-elevated/70",
-                  )}
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
-            {selectedPreset ? (
-              <p className="text-xs text-subtle">{selectedPreset.hint}</p>
-            ) : null}
-          </div>
-
-          <div className="grid gap-1.5">
-            <Label htmlFor="cube">Cube</Label>
-            <select
-              id="cube"
-              value={spec.groupId ?? ""}
-              onChange={(event) => patch({ groupId: event.target.value || undefined })}
-              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            >
-              <option value="">No cube</option>
-              {groups.map((cube) => (
-                <option key={cube.id} value={cube.id}>
-                  {cube.name}{cube.builtIn ? " (Built-in)" : ""}
-                </option>
-              ))}
-            </select>
-            {selectedGroup ? (
-              <p className="text-xs text-subtle">
-                Network: <span className="font-mono">{selectedGroup.network}</span> · shared env: {groupEnvCount}
-              </p>
-            ) : (
-              <p className="text-xs text-subtle">Standalone container with no Cube network or shared environment.</p>
-            )}
-          </div>
-
-          <div className="grid gap-1.5">
-            <Label htmlFor="image">Image</Label>
-            <Input
-              id="image"
-              list="image-catalog"
-              value={spec.image}
-              onChange={(e) => patch({ image: e.target.value })}
-              required
-              className="font-mono text-xs"
-            />
-            <datalist id="image-catalog">
-              {local.map((i) => (
-                <option key={i} value={i} />
-              ))}
-            </datalist>
-          </div>
-
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="grid gap-1.5">
-              <Label htmlFor="name">Name</Label>
+              <Label>Quick pick</Label>
+              <div className="flex flex-wrap gap-1.5">
+                {catalogPresets.map((p) => (
+                  <button
+                    key={p.image}
+                    type="button"
+                    onClick={() => applySpec(specFromPreset(p))}
+                    className={cn(
+                      "h-9 rounded-md border px-3 text-xs",
+                      spec.image === p.image
+                        ? "border-foreground bg-elevated text-foreground"
+                        : "border-border text-muted-foreground hover:bg-elevated/70",
+                    )}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+              {selectedPreset ? <p className="text-xs text-subtle">{selectedPreset.hint}</p> : null}
+            </div>
+
+            <div className="grid gap-1.5">
+              <Label htmlFor="image">Image</Label>
               <Input
-                id="name"
-                placeholder="web"
-                value={spec.name}
-                onChange={(e) => patch({ name: e.target.value })}
+                id="image"
+                list="image-catalog"
+                value={spec.image}
+                onChange={(e) => patch({ image: e.target.value })}
+                required
+                className="font-mono text-xs"
+              />
+              <datalist id="image-catalog">
+                {local.map((i) => <option key={i} value={i} />)}
+              </datalist>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="grid gap-1.5">
+                <Label htmlFor="name">Name</Label>
+                <Input
+                  id="name"
+                  placeholder="web"
+                  value={spec.name}
+                  onChange={(e) => patch({ name: e.target.value })}
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="ports">Publish ports</Label>
+                <Input
+                  id="ports"
+                  placeholder="8080:80"
+                  value={spec.ports}
+                  onChange={(e) => patch({ ports: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-1.5">
+              <Label htmlFor="cmd">Command</Label>
+              <Input
+                id="cmd"
+                placeholder="optional override"
+                value={spec.command}
+                onChange={(e) => patch({ command: e.target.value })}
               />
             </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor="ports">Publish ports</Label>
-              <Input
-                id="ports"
-                placeholder="8080:80"
-                value={spec.ports}
-                onChange={(e) => patch({ ports: e.target.value })}
-              />
-            </div>
-          </div>
 
-          <div className="grid gap-1.5">
-            <Label htmlFor="cmd">Command</Label>
-            <Input
-              id="cmd"
-              placeholder="optional override"
-              value={spec.command}
-              onChange={(e) => patch({ command: e.target.value })}
+            <EnvEditor
+              rows={envRows}
+              onChange={(rows) => {
+                setEnvRows(rows);
+                patch({ env: joinEnvLines(rows) });
+              }}
             />
-          </div>
 
-          <EnvEditor
-            rows={envRows}
-            onChange={(rows) => {
-              setEnvRows(rows);
-              patch({ env: joinEnvLines(rows) });
-            }}
-          />
-
-          <MountEditor
-            rows={mountRows}
-            onChange={(rows) => {
-              setMountRows(rows);
-              patch({ mounts: joinMountLines(rows) });
-            }}
-          />
+            <MountEditor
+              rows={mountRows}
+              onChange={(rows) => {
+                setMountRows(rows);
+                patch({ mounts: joinMountLines(rows) });
+              }}
+            />
           </div>
 
           <div className="grid gap-3 border-t border-border px-5 py-3">
             <div className="flex flex-wrap items-center gap-5">
               <label className="flex items-center gap-2 text-sm">
-                <Switch
-                  checked={spec.gpu}
-                  onCheckedChange={(gpu) => patch({ gpu })}
-                />
+                <Switch checked={spec.gpu} onCheckedChange={(gpu) => patch({ gpu })} />
                 GPU
               </label>
               <label className="flex items-center gap-2 text-sm">
-                <Switch
-                  checked={spec.detach}
-                  onCheckedChange={(detach) => patch({ detach })}
-                />
+                <Switch checked={spec.detach} onCheckedChange={(detach) => patch({ detach })} />
                 Detach
               </label>
               <label className="flex items-center gap-2 text-sm">
-                <Switch
-                  checked={spec.remove}
-                  onCheckedChange={(remove) => patch({ remove })}
-                />
+                <Switch checked={spec.remove} onCheckedChange={(remove) => patch({ remove })} />
                 Auto-remove
               </label>
             </div>
-            <p className="truncate font-mono text-[11px] text-subtle">
-              {preview}{selectedGroup && groupEnvCount ? `  + ${groupEnvCount} shared env` : ""}
-            </p>
+            <p className="truncate font-mono text-[11px] text-subtle">{preview}</p>
             <div className="flex justify-end gap-2">
               <Button type="button" variant="ghost" onClick={() => setRunOpen(false)}>
                 Cancel
