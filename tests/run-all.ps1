@@ -42,14 +42,12 @@ try {
     Run-Step "Prerequisites" {
         Require-Command "node"
         Require-Command "npm"
-        Require-Command "dotnet"
         Require-Command "cargo"
         Require-Command "wsl"
 
-        Write-Host "node   : $(node --version)"
-        Write-Host "npm    : $(npm --version)"
-        Write-Host "dotnet : $(dotnet --version)  (only used to restore the native WSLC NuGet package if not cached)"
-        Write-Host "cargo  : $(cargo --version)"
+        Write-Host "node  : $(node --version)"
+        Write-Host "npm   : $(npm --version)"
+        Write-Host "cargo : $(cargo --version)"
         wsl --version
 
         if (Get-Command wslc -ErrorAction SilentlyContinue) { wslc version }
