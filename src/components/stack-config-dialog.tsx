@@ -121,9 +121,9 @@ export function StackConfigDialog({ group }: { group: ContainerGroup }) {
       </DialogTrigger>
       <DialogContent className="max-w-xl">
         <DialogHeader>
-          <DialogTitle>Configure Group · {group.name}</DialogTitle>
+          <DialogTitle>Configure Cube · {group.name}</DialogTitle>
           <DialogDescription>
-            Group settings are applied to its containers the next time the Group starts.
+            Cube settings are applied to its containers the next time the Cube starts.
           </DialogDescription>
         </DialogHeader>
 
