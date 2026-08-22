@@ -23,13 +23,11 @@ fn main() -> Result<(), String> {
     let mut container = session.create_container(&ContainerSpec {
         image: image.into(),
         name: "quay-rust-nginx-smoke".into(),
-        command: vec![
-            "/usr/sbin/nginx".into(),
-            "-g".into(),
-            "daemon off;".into(),
-        ],
+        command: vec!["/usr/sbin/nginx".into(), "-g".into(), "daemon off;".into()],
         workdir: "/".into(),
         ports: vec![(18081, 80)],
+        env: vec![],
+        volumes: vec![],
     })?;
 
     container.start()?;
@@ -44,7 +42,6 @@ fn main() -> Result<(), String> {
     container.delete()?;
     drop(container);
     drop(session);
-
     let _ = std::fs::remove_dir_all(PathBuf::from(storage));
     Ok(())
 }
@@ -67,14 +64,9 @@ fn request() -> Result<String, String> {
     let mut stream = TcpStream::connect_timeout(
         &"127.0.0.1:18081".parse().map_err(|e: std::net::AddrParseError| e.to_string())?,
         Duration::from_secs(2),
-    )
-    .map_err(|e| e.to_string())?;
-    stream
-        .set_read_timeout(Some(Duration::from_secs(2)))
-        .map_err(|e| e.to_string())?;
-    stream
-        .write_all(b"GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
-        .map_err(|e| e.to_string())?;
+    ).map_err(|e| e.to_string())?;
+    stream.set_read_timeout(Some(Duration::from_secs(2))).map_err(|e| e.to_string())?;
+    stream.write_all(b"GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n").map_err(|e| e.to_string())?;
     let mut response = String::new();
     stream.read_to_string(&mut response).map_err(|e| e.to_string())?;
     if !response.starts_with("HTTP/1.1 200") {
