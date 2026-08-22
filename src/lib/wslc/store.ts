@@ -45,6 +45,7 @@ interface WslcState {
   deleteGroup: (id: string) => void;
   setGroupAutoStart: (id: string, autoStart: boolean) => void;
   startGroup: (id: string) => void; stopGroup: (id: string) => void;
+  startGroupContainer: (groupId: string, name: string) => void;
   startAutoGroups: () => void; setLaunchAtSignIn: (enabled: boolean) => void;
 }
 
@@ -287,6 +288,22 @@ export const useWslc = create<WslcState>((set, get) => {
         for (const name of Array.from(names).reverse()) {
           const existing = get().containers.find((container) => container.name === name && container.status === "running");
           if (existing) await mutate(["container", "stop", name]);
+        }
+        await refresh();
+      })();
+    },
+    startGroupContainer: (groupId, name) => {
+      const group = get().groups.find((item) => item.id === groupId);
+      if (!group) return;
+      const spec = group.specs.find((item) => item.name === name);
+      const existing = get().containers.find((container) => container.name === name);
+      if (existing?.status === "running") return;
+      void (async () => {
+        if (existing) {
+          assignContainer(existing.name, group.id);
+          await mutate(["container", "start", existing.name]);
+        } else if (spec) {
+          await runInGroup({ ...spec, groupId: group.id });
         }
         await refresh();
       })();
