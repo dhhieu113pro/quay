@@ -1,21 +1,27 @@
-name: Microsoft Store
+name: Microsoft Store package
 
-# Builds the Store installer (offline WebView2). Optionally submits it to
-# Partner Center when STORE_PRODUCT_ID + Entra secrets are set.
+# Builds the same full-trust Win32 installers intended for Partner Center's
+# EXE/MSI app flow. Submission stays manual so the workflow never claims a
+# Partner Center upload succeeded when it only built artifacts.
 on:
   workflow_dispatch:
-    inputs:
-      publish:
-        description: "Submit to Partner Center after the build"
-        type: boolean
-        default: false
 
 permissions:
   contents: read
 
 jobs:
   store:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            rust_target: x86_64-pc-windows-msvc
+            name: x64
+          - os: windows-11-arm
+            rust_target: aarch64-pc-windows-msvc
+            name: arm64
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -26,51 +32,44 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: x86_64-pc-windows-msvc
+          targets: ${{ matrix.rust_target }}
 
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: src-tauri -> target
+          key: store-${{ matrix.rust_target }}
 
       - name: Install frontend
-        run: npm ci
+        run: npm ci --legacy-peer-deps
 
-      - name: Install Tauri CLI
-        run: npm install -g @tauri-apps/cli@2
+      - name: Verify release version is aligned
+        shell: pwsh
+        run: |
+          $package = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $tauri = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          $cargo = Select-String -Path src-tauri/Cargo.toml -Pattern '^version = "([^"]+)"$' | Select-Object -First 1
+          if (-not $cargo) { throw "Could not read Cargo package version" }
+          $cargoVersion = $cargo.Matches[0].Groups[1].Value
+          Write-Host "package.json=$package tauri=$tauri cargo=$cargoVersion"
+          if ($package -ne $tauri -or $package -ne $cargoVersion) {
+            throw "Quay version files are not aligned"
+          }
 
-      - name: Bundle for Store
-        run: npm run tauri -- build --bundles nsis,msi --config src-tauri/tauri.store.conf.json
+      - name: Bundle Store installers
+        run: npm run tauri -- build --target ${{ matrix.rust_target }} --bundles nsis,msi --config src-tauri/tauri.store.conf.json
 
       - name: Collect installers
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path store/out | Out-Null
-          Get-ChildItem -Recurse src-tauri/target/release/bundle -Include *.exe,*.msi |
+          Get-ChildItem -Recurse src-tauri/target/${{ matrix.rust_target }}/release/bundle -Include *.exe,*.msi |
             Copy-Item -Destination store/out -Force
-          Get-ChildItem store/out | Format-Table Name, Length
+          $files = Get-ChildItem store/out
+          if (-not $files) { throw "No Store installers were produced" }
+          $files | Format-Table Name, Length
 
       - uses: actions/upload-artifact@v4
         with:
-          name: quay-microsoft-store
+          name: quay-microsoft-store-${{ matrix.name }}
           path: store/out/*
           if-no-files-found: error
-
-      - name: Submit to Partner Center
-        if: ${{ inputs.publish }}
-        shell: pwsh
-        env:
-          TENANT: ${{ secrets.AZURE_AD_TENANT_ID }}
-          SELLER: ${{ secrets.SELLER_ID }}
-          CLIENT: ${{ secrets.AZURE_AD_APPLICATION_CLIENT_ID }}
-          SECRET: ${{ secrets.AZURE_AD_APPLICATION_SECRET }}
-          PRODUCT: ${{ secrets.STORE_PRODUCT_ID }}
-        run: |
-          if (-not $env:TENANT -or -not $env:PRODUCT -or -not $env:CLIENT -or -not $env:SECRET) {
-            Write-Host "Store secrets missing — upload store/out to Partner Center by hand."
-            Write-Host "Silent install argument for NSIS: /S"
-            exit 0
-          }
-          dotnet tool update -g Microsoft.OpenDevTools.StoreBroker | Out-Null
-          Write-Host "Product $env:PRODUCT — first listing is created in Partner Center."
-          Write-Host "Later updates: point the EXE/MSI package at the GitHub Release asset."
-          Write-Host "NSIS silent flag: /S"
