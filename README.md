@@ -58,7 +58,7 @@ Windows x64 and ARM64. WSL **2.9.3+** (`wsl --update --pre-release`) and `wslc.e
 
 Close hides to the tray; quit from the tray menu. Appearance follows sunrise and sunset, or lock light / dark from the titlebar.
 
-GitHub Actions cuts those on every `v*` tag. Microsoft Store uses the same NSIS build — Partner Center steps are in [`docs/store.md`](docs/store.md). Listing copy: [`store/listing.md`](store/listing.md).
+Every push to `main` runs **CI** (typecheck + both Windows installers as artifacts). Tag `v*` runs **Release** onto GitHub Releases. Microsoft Store is a separate manual workflow — Partner Center steps are in [`docs/store.md`](docs/store.md). Listing copy: [`store/listing.md`](store/listing.md).
 
 
 ## What you can do
@@ -148,6 +148,7 @@ npm run tauri -- build --bundles nsis,msi
 | `src/` | React desktop (overview, containers, images, session, C# host) |
 | `host/` | `Quay.Host` — C# sidecar, `quay-host.exe` |
 | `src-tauri/` | Tauri 2 bridge: `wslc_invoke` → sidecar stdin |
+| `.github/workflows/ci.yml` | Every push / PR — typecheck + x64/ARM64 installers as artifacts |
 | `.github/workflows/release.yml` | Tag `v*` → GitHub Release (NSIS + MSI) |
 | `.github/workflows/store.yml` | Store bundle + optional Partner Center submit |
 | `docs/store.md` | Partner Center steps, silent flags, secrets |

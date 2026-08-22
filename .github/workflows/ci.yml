@@ -1,0 +1,81 @@
+name: CI
+
+# Every push / PR: typecheck + Windows x64 and ARM64 installers as artifacts.
+# Does not cut a GitHub Release — that's the Release workflow on tags.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+
+  windows:
+    needs: typecheck
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            rust_target: x86_64-pc-windows-msvc
+            sidecar_rid: win-x64
+            name: x64
+          - os: windows-11-arm
+            rust_target: aarch64-pc-windows-msvc
+            sidecar_rid: win-arm64
+            name: arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          key: ci-${{ matrix.rust_target }}
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+
+      - name: Install frontend
+        run: npm ci
+
+      - name: Publish C# sidecar
+        shell: pwsh
+        run: ./scripts/prepare-sidecar.ps1 -Rid ${{ matrix.sidecar_rid }}
+
+      - name: Build
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: --target ${{ matrix.rust_target }} --bundles nsis,msi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: quay-${{ matrix.name }}
+          path: |
+            src-tauri/target/${{ matrix.rust_target }}/release/bundle/nsis/*.exe
+            src-tauri/target/${{ matrix.rust_target }}/release/bundle/msi/*.msi
+          if-no-files-found: error
