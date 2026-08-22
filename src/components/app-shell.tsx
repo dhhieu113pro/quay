@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import {
   Box,
   Boxes,
@@ -23,11 +23,12 @@ import { CubesView } from "@/components/views/groups-view";
 import { ImagesView } from "@/components/views/images-view";
 import { SessionView } from "@/components/views/session-view";
 import { TerminalView } from "@/components/views/terminal-view";
-import { cn, formatBytes } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { useWslc } from "@/lib/wslc/store";
-import { loadWslcStatsSummary, type WslcStatsSummary } from "@/lib/wslc/stats";
 import type { ViewId } from "@/lib/wslc/types";
 import { windowAction } from "@/lib/tauri";
+
+const QUAY_VERSION = "0.1.3";
 
 const NAV: Array<{ id: ViewId; label: string; icon: typeof Box }> = [
   { id: "dashboard", label: "Overview", icon: LayoutGrid },
@@ -260,46 +261,14 @@ function StatusBar() {
   const containers = useWslc((s) => s.containers);
   const last = useWslc((s) => s.calls[0]);
   const running = containers.filter((c) => c.status === "running").length;
-  const [stats, setStats] = useState<WslcStatsSummary | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    if (running === 0) {
-      setStats({ cpuPercent: 0, memoryMB: 0, running: 0 });
-      return;
-    }
-
-    const refreshStats = async () => {
-      const next = await loadWslcStatsSummary();
-      if (!cancelled) setStats(next);
-    };
-
-    void refreshStats();
-    const id = window.setInterval(() => {
-      void refreshStats();
-    }, 2000);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-    };
-  }, [running]);
-
-  const liveCount = stats?.running ?? running;
-  const usage = liveCount === 0
-    ? "idle"
-    : stats
-      ? `${stats.cpuPercent.toFixed(1)}% CPU · ${formatBytes(stats.memoryMB)} RAM`
-      : "stats unavailable";
 
   return (
     <footer className="hidden h-8 shrink-0 items-center gap-4 border-t border-border bg-card px-3 font-mono text-xs text-muted-foreground md:flex">
+      <span className="text-foreground">Quay v{QUAY_VERSION}</span>
       <span className={session.running ? "text-ok" : "text-warn"}>
         {session.running ? "WSLC" : "DOWN"} {wslcVersionLabel(session.version)}
       </span>
-      <span>{liveCount} ctr</span>
-      <span className="truncate">{usage}</span>
+      <span>{running} running</span>
       <span className="ml-auto truncate text-subtle">
         {last ? last.method : "idle"}
       </span>
