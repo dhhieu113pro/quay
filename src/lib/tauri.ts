@@ -12,6 +12,8 @@ export async function windowAction(kind: "minimize" | "toggleMaximize" | "close"
 }
 
 export type WslcProbe = {
+  wsl: boolean;
+  wslVersion: string | null;
   wslc: boolean;
   version: string | null;
 };
@@ -39,14 +41,22 @@ export async function invokeWslcHost(payload: Record<string, unknown>): Promise<
 
 export async function probeWslc(): Promise<WslcProbe> {
   if (!isTauri()) {
-    return { wslc: false, version: null };
+    return { wsl: false, wslVersion: null, wslc: false, version: null };
   }
   const { invoke } = await import("@tauri-apps/api/core");
   const raw = await invoke<WslcProbe>("wslc_probe");
   return {
+    wsl: Boolean(raw?.wsl),
+    wslVersion: raw?.wslVersion ?? null,
     wslc: Boolean(raw?.wslc),
     version: raw?.version ?? null,
   };
+}
+
+export async function ensureHostDirectory(path: string): Promise<void> {
+  if (!path.trim() || !isTauri()) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke<boolean>("ensure_host_directory", { path });
 }
 
 export async function getLaunchAtSignIn(): Promise<boolean> {
