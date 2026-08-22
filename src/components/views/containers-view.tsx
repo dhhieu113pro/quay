@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { StatusPill } from "@/components/status-pill";
 import { cn, formatUptime } from "@/lib/utils";
+import { runNativeStack } from "@/lib/wslc/stack-runner";
 import { useWslc } from "@/lib/wslc/store";
 import type { Container, ContainerGroup } from "@/lib/wslc/types";
 
@@ -122,9 +123,17 @@ export function ContainersView() {
                       toast(`Stopped ${c?.name ?? id}`);
                     }}
                     onStartGroup={() => {
-                      applyStackConfig(group);
-                      startGroup(group.id);
-                      toast(`Starting ${group.name}`);
+                      toast(`Starting ${group.name} on mcp-net…`);
+                      void runNativeStack(group)
+                        .then(() => {
+                          startGroup(group.id);
+                          toast.success(`${group.name} started`);
+                        })
+                        .catch((error) => {
+                          toast.error(
+                            error instanceof Error ? error.message : `Could not start ${group.name}`,
+                          );
+                        });
                     }}
                     onStopGroup={() => {
                       stopGroup(group.id);
