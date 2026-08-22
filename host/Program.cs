@@ -3,8 +3,8 @@ using Microsoft.WSL.Containers;
 
 var name = args.Length > 0 ? args[0] : "Quay";
 var dataPath = args.Length > 1 ? args[1] : @"C:\WslcData";
-var cpu = args.Length > 2 && int.TryParse(args[2], out var c) ? c : 4;
-var memoryMb = args.Length > 3 && int.TryParse(args[3], out var m) ? m : 4096;
+var cpu = args.Length > 2 && uint.TryParse(args[2], out var c) ? c : 4u;
+var memoryMb = args.Length > 3 && uint.TryParse(args[3], out var m) ? m : 4096u;
 
 var host = new QuayHost(name, dataPath, cpu, memoryMb);
 host.Start();
@@ -21,16 +21,16 @@ public sealed class QuayHost
     private readonly Session _session;
     private readonly Dictionary<string, Container> _containers = new();
 
-    public QuayHost(string name, string dataPath, int cpu, int memoryMb)
+    public QuayHost(string name, string dataPath, uint cpu, uint memoryMb)
     {
         var missing = WslcService.GetMissingComponents();
-        if (missing != ComponentFlags.None)
+        if (missing is { Count: > 0 })
             throw new InvalidOperationException($"WSL missing: {missing}");
 
         _session = new Session(new SessionSettings(name, dataPath)
         {
             CpuCount = cpu,
-            MemoryMB = memoryMb
+            MemorySizeInMB = memoryMb
         });
     }
 
@@ -87,7 +87,7 @@ public sealed class QuayHost
 
     private string Delete(string id)
     {
-        _containers[id].Delete(DeleteContainerFlags.None);
+        _containers[id].Delete(DeleteContainerOption.None);
         _containers.Remove(id);
         return """{"ok":true}""";
     }

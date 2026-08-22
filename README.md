@@ -92,7 +92,7 @@ var missing = WslcService.GetMissingComponents();
 var session = new Session(new SessionSettings("Quay", @"C:\WslcData")
 {
     CpuCount = 4,
-    MemoryMB = 4096
+    MemorySizeInMB = 4096
 });
 session.Start();
 

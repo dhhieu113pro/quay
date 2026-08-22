@@ -3,8 +3,8 @@ import type { Container, RunSpec, SessionInfo } from "./types";
 export function csharpSessionStart(session: SessionInfo) {
   return `using Microsoft.WSL.Containers;
 
-ComponentFlags missing = WslcService.GetMissingComponents();
-if (missing != ComponentFlags.None)
+var missing = WslcService.GetMissingComponents();
+if (missing.Count > 0)
 {
     Console.WriteLine($"Missing WSL components: {missing}");
     return;
@@ -13,7 +13,7 @@ if (missing != ComponentFlags.None)
 var settings = new SessionSettings("${session.name}", @"${session.dataPath}")
 {
     CpuCount = ${session.cpuCount},
-    MemoryMB = ${session.memoryMB}
+    MemorySizeInMB = ${session.memoryMB}
 };
 
 var session = new Session(settings);
@@ -37,8 +37,8 @@ export function csharpCreateAndStart(spec: RunSpec) {
         .join(", ")
     : "";
   const cmdLine = cmd
-    ? `    CmdLine = new[] { ${cmd} },`
-    : `    CmdLine = Array.Empty<string>(),`;
+    ? `    CommandLine = new[] { ${cmd} },`
+    : `    CommandLine = Array.Empty<string>(),`;
   return `var init = new ProcessSettings
 {
 ${cmdLine}
@@ -65,7 +65,7 @@ export function csharpStop(container: Pick<Container, "name">) {
 }
 
 export function csharpDelete(container: Pick<Container, "name">) {
-  return `container.Delete(DeleteContainerFlags.None);
+  return `container.Delete(DeleteContainerOption.None);
 // wslc container rm ${container.name}`;
 }
 
@@ -77,7 +77,7 @@ export function csharpExec(name: string, command: string) {
     .join(", ");
   return `var exec = container.CreateProcess(new ProcessSettings
 {
-    CmdLine = new[] { ${parts || `"/bin/bash"`} },
+    CommandLine = new[] { ${parts || `"/bin/bash"`} },
     OutputMode = ProcessOutputMode.Event
 });
 exec.OutputReceived += data => Console.Write(Encoding.UTF8.GetString(data));
@@ -104,16 +104,16 @@ public sealed class QuayHost
 {
     private readonly Session _session;
 
-    public QuayHost(string name, string dataPath, int cpu, int memoryMb)
+    public QuayHost(string name, string dataPath, uint cpu, uint memoryMb)
     {
         var missing = WslcService.GetMissingComponents();
-        if (missing != ComponentFlags.None)
+        if (missing.Count > 0)
             throw new InvalidOperationException($"WSL missing: {missing}");
 
         _session = new Session(new SessionSettings(name, dataPath)
         {
             CpuCount = cpu,
-            MemoryMB = memoryMb
+            MemorySizeInMB = memoryMb
         });
     }
 
@@ -162,7 +162,7 @@ public sealed class QuayHost
 
     private string Delete(string id)
     {
-        _session.GetContainer(id).Delete(DeleteContainerFlags.None);
+        _session.GetContainer(id).Delete(DeleteContainerOption.None);
         return """{"ok":true}""";
     }
 
