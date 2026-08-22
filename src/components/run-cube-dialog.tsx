@@ -1,5 +1,6 @@
 import { Boxes, Network, Play } from "lucide-react";
 import { toast } from "sonner";
+import { applyStackConfig } from "@/components/stack-config-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -72,6 +73,7 @@ export function RunCubeDialog({
                     size="sm"
                     disabled={empty || fullyRunning}
                     onClick={() => {
+                      if (cube.id === "local-coding") applyStackConfig(cube);
                       startCube(cube.id);
                       toast(`Starting ${cube.name}`);
                       onOpenChange(false);
