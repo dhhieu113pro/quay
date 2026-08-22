@@ -23,7 +23,7 @@ import {
 } from "@/components/kv-editor";
 import { useWslc } from "@/lib/wslc/store";
 import { cliForRun } from "@/lib/wslc/csharp";
-import { catalogPresets, specFromPreset } from "@/lib/wslc/seed";
+import { catalogPresets, mcpStack, specFromPreset } from "@/lib/wslc/seed";
 import type { RunSpec } from "@/lib/wslc/types";
 import { cn } from "@/lib/utils";
 
@@ -106,6 +106,36 @@ export function RunDialog() {
             {selectedPreset ? (
               <p className="text-xs text-subtle">{selectedPreset.hint}</p>
             ) : null}
+            <button
+              type="button"
+              onClick={() => {
+                const mcp = specFromPreset(mcpStack[0]!);
+                const ngrok = specFromPreset(mcpStack[1]!);
+                if (spec.image.includes("local-coding-mcp")) {
+                  runContainer({
+                    ...spec,
+                    env: joinEnvLines(envRows),
+                    mounts: joinMountLines(mountRows),
+                  });
+                  runContainer(ngrok);
+                } else if (spec.image.includes("ngrok")) {
+                  runContainer(mcp);
+                  runContainer({
+                    ...spec,
+                    env: joinEnvLines(envRows),
+                    mounts: joinMountLines(mountRows),
+                  });
+                } else {
+                  runContainer(mcp);
+                  runContainer(ngrok);
+                }
+                toast("Creating local-coding-mcp + ngrok");
+                setRunOpen(false);
+              }}
+              className="h-9 self-start rounded-md border border-border px-3 text-xs text-muted-foreground hover:bg-elevated/70 hover:text-foreground"
+            >
+              Run both (mcp + ngrok)
+            </button>
           </div>
 
           <div className="grid gap-1.5">

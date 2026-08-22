@@ -96,6 +96,10 @@ const LOG_SNIPPETS: Record<string, string[]> = {
     "POST /mcp OpenWorkspace /workspace",
     "AllowedRoots: /workspace",
   ],
+  ngrok: [
+    "ngrok forwarding http://local-coding-mcp:5000",
+    "inspector on :4040",
+  ],
   default: ["heartbeat"],
 };
 

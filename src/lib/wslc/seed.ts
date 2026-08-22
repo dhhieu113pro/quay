@@ -45,6 +45,15 @@ export const seedImages: ImageRecord[] = [
     containers: 1,
   },
   {
+    id: "sha256:a11e090c0de0",
+    repository: "ngrok/ngrok",
+    tag: "latest",
+    digest: "sha256:a11e090c0de04404",
+    sizeMB: 32,
+    createdAt: now - 4 * hour,
+    containers: 1,
+  },
+  {
     id: "sha256:7d3ef2c1a9b4",
     repository: "nginx",
     tag: "latest",
@@ -170,6 +179,28 @@ export const seedContainers: Container[] = [
       [1.05 * hour, "stdout", "AllowedRoots: /workspace"],
       [8 * 60 * 1000, "stdout", "GET /health 200"],
       [90 * 1000, "stdout", "POST /mcp OpenWorkspace /workspace"],
+    ]),
+  },
+  {
+    id: "a02ngrok4040",
+    name: "ngrok",
+    image: "ngrok/ngrok:latest",
+    status: "running",
+    createdAt: now - 1.05 * hour,
+    startedAt: now - 1.05 * hour,
+    ports: [{ host: 4040, container: 4040, protocol: "tcp" }],
+    mounts: [],
+    env: { NGROK_AUTHTOKEN: "" },
+    gpu: false,
+    cpuPercent: 1.1,
+    memoryMB: 22,
+    memoryLimitMB: 256,
+    command: ["http", "local-coding-mcp:5000", "--log=stdout"],
+    workdir: "/",
+    user: "root",
+    logs: logs([
+      [1.05 * hour, "stdout", "ngrok forwarding http://local-coding-mcp:5000"],
+      [1 * hour, "stdout", "inspector on :4040"],
     ]),
   },
   {
@@ -349,6 +380,7 @@ export interface CatalogPreset {
   env: string;
   mounts: string;
   workdir: string;
+  command?: string;
   gpu?: boolean;
 }
 
@@ -367,6 +399,17 @@ export const catalogPresets: CatalogPreset[] = [
     ].join("\n"),
     mounts: "D:\\wslc\\workspaces:/workspace:rw",
     workdir: "/workspace",
+  },
+  {
+    image: "ngrok/ngrok:latest",
+    name: "ngrok",
+    label: "ngrok",
+    hint: "Public HTTPS → MCP :5000  (paste NGROK_AUTHTOKEN)",
+    ports: "4040:4040",
+    env: "NGROK_AUTHTOKEN=",
+    mounts: "",
+    workdir: "/",
+    command: "http local-coding-mcp:5000 --log=stdout",
   },
   {
     image: "nginx:latest",
@@ -400,11 +443,13 @@ export const catalogPresets: CatalogPreset[] = [
   },
 ];
 
+export const mcpStack = catalogPresets.slice(0, 2);
+
 export function specFromPreset(p: CatalogPreset): RunSpec {
   return {
     image: p.image,
     name: p.name,
-    command: "",
+    command: p.command ?? "",
     ports: p.ports,
     env: p.env,
     mounts: p.mounts,
