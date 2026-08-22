@@ -131,27 +131,25 @@ public sealed class QuayHost
         RemoveExisting(name);
         await EnsureImage(image);
 
-        var command = ResolveCommand(image, spec.TryGetProperty("command", out var cmd) ? cmd.GetString() ?? "" : "");
+        var command = SplitCommandLine(spec.TryGetProperty("command", out var cmd) ? cmd.GetString() ?? "" : "");
         var env = ParseEnv(spec.TryGetProperty("env", out var envEl) ? envEl.GetString() ?? "" : "");
         var workdir = spec.TryGetProperty("workdir", out var wdEl) ? wdEl.GetString() ?? "" : "";
         var gpu = spec.TryGetProperty("gpu", out var gpuEl) && gpuEl.ValueKind == JsonValueKind.True;
         var remove = spec.TryGetProperty("remove", out var rmEl) && rmEl.ValueKind == JsonValueKind.True;
 
+        command = ResolveManagedContainerReferences(command);
+
         ProcessSettings? init = null;
         if (command.Count > 0 || env.Count > 0 || !string.IsNullOrWhiteSpace(workdir))
         {
-            if (command.Count == 0)
-            {
-                throw new InvalidOperationException(
-                    $"Container '{name}' needs an explicit command when environment or working-directory overrides are used.");
-            }
-
-            command = ResolveManagedContainerReferences(command);
+            // The SDK keeps the image ENTRYPOINT separate from this argument list.
+            // An empty CommandLine therefore preserves the image's default command
+            // while still allowing Quay to override environment and working directory.
             init = new ProcessSettings
             {
                 CommandLine = command,
                 EnvironmentVariables = env,
-                WorkingDirectory = string.IsNullOrWhiteSpace(workdir) ? "/" : workdir,
+                WorkingDirectory = workdir,
                 OutputMode = ProcessOutputMode.Event
             };
         }
@@ -224,24 +222,6 @@ public sealed class QuayHost
             resolved.Add(value);
         }
         return resolved;
-    }
-
-    private static List<string> ResolveCommand(string image, string command)
-    {
-        var args = SplitCommandLine(command);
-
-        if (args.Count == 0 && image.StartsWith("ghcr.io/dhhieu113pro/local-coding-mcp", StringComparison.OrdinalIgnoreCase))
-        {
-            return new List<string> { "/usr/bin/dotnet", "/app/LocalCodingMcp.dll" };
-        }
-
-        if (args.Count > 0 && image.StartsWith("ngrok/ngrok", StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(args[0], "http", StringComparison.OrdinalIgnoreCase))
-        {
-            args.Insert(0, "ngrok");
-        }
-
-        return args;
     }
 
     private static List<string> SplitCommandLine(string value)
