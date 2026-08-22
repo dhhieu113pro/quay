@@ -22,7 +22,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { defaultGroupNetwork, slugGroupName } from "@/lib/wslc/groups";
 import { useWslc } from "@/lib/wslc/store";
-import type { ContainerGroup } from "@/lib/wslc/types";
+import type { Container, ContainerGroup } from "@/lib/wslc/types";
 
 function emptyCube(): ContainerGroup {
   const id = `cube-${Date.now()}`;
@@ -54,6 +54,34 @@ function envSuggestions(cube: ContainerGroup): EnvSuggestion[] {
   );
 }
 
+function cubeMembers(cube: ContainerGroup, containers: Container[]) {
+  const expectedNames = new Set(cube.specs.map((spec) => spec.name).filter(Boolean));
+  const runtime = containers.filter(
+    (container) => container.groupId === cube.id || expectedNames.has(container.name),
+  );
+
+  const rows = cube.specs.map((spec) => ({
+    name: spec.name || spec.image,
+    image: spec.image,
+    container: runtime.find((item) => item.name === spec.name),
+  }));
+
+  for (const container of runtime) {
+    if (!expectedNames.has(container.name)) {
+      rows.push({ name: container.name, image: container.image, container });
+    }
+  }
+
+  return rows;
+}
+
+function cubeState(total: number, running: number) {
+  if (total === 0) return { label: "Empty", className: "bg-elevated text-muted-foreground" };
+  if (running === total) return { label: "Running", className: "bg-ok/15 text-ok" };
+  if (running > 0) return { label: "Partial", className: "bg-warn/15 text-warn" };
+  return { label: "Stopped", className: "bg-elevated text-muted-foreground" };
+}
+
 export function CubesView() {
   const groups = useWslc((s) => s.groups);
   const containers = useWslc((s) => s.containers);
@@ -68,17 +96,28 @@ export function CubesView() {
   const counts = useMemo(() => {
     const result = new Map<string, { total: number; running: number }>();
     for (const cube of groups) {
-      const memberNames = new Set(cube.specs.map((spec) => spec.name));
-      const members = containers.filter((container) =>
-        container.groupId === cube.id || memberNames.has(container.name),
-      );
+      const members = cubeMembers(cube, containers);
       result.set(cube.id, {
-        total: members.length || cube.specs.length,
-        running: members.filter((container) => container.status === "running").length,
+        total: members.length,
+        running: members.filter((member) => member.container?.status === "running").length,
       });
     }
     return result;
   }, [containers, groups]);
+
+  const startCube = (cube: ContainerGroup, members: ReturnType<typeof cubeMembers>) => {
+    if (cube.id === "local-coding") applyStackConfig(cube);
+    if (cube.specs.length) {
+      startGroup(cube.id);
+    } else {
+      for (const member of members) {
+        if (member.container && member.container.status !== "running") {
+          startContainer(member.container.id);
+        }
+      }
+    }
+    toast(`Starting ${cube.name}`);
+  };
 
   return (
     <>
@@ -104,69 +143,111 @@ export function CubesView() {
 
         <div className="grid gap-3 lg:grid-cols-2">
           {groups.map((cube) => {
-            const memberNames = new Set(cube.specs.map((spec) => spec.name));
-            const members = containers.filter((container) =>
-              container.groupId === cube.id || memberNames.has(container.name),
-            );
+            const members = cubeMembers(cube, containers);
             const count = counts.get(cube.id) ?? { total: 0, running: 0 };
             const envCount = cube.env.split("\n").map((line) => line.trim()).filter(Boolean).length;
+            const state = cubeState(count.total, count.running);
+            const fullyRunning = count.total > 0 && count.running === count.total;
+            const partiallyRunning = count.running > 0 && !fullyRunning;
+
             return (
-              <section key={cube.id} className="rounded-lg border border-border bg-card p-4">
-                <div className="flex items-start gap-3">
-                  <div className="grid size-10 shrink-0 place-items-center rounded-md bg-elevated">
-                    <Boxes className="size-5" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h2 className="font-medium">{cube.name}</h2>
-                      {cube.builtIn ? (
-                        <span className="rounded bg-elevated px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                          Built-in
-                        </span>
-                      ) : null}
+              <section key={cube.id} className="overflow-hidden rounded-xl border border-border bg-card">
+                <div className="p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="grid size-10 shrink-0 place-items-center rounded-md bg-elevated">
+                      <Boxes className="size-5" />
                     </div>
-                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                      <span className="inline-flex items-center gap-1">
-                        <Network className="size-3" /> {cube.network}
-                      </span>
-                      <span>{count.running}/{count.total} running</span>
-                      <span>{envCount} shared env</span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h2 className="font-medium">{cube.name}</h2>
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${state.className}`}>
+                          {state.label}
+                        </span>
+                        {cube.builtIn ? (
+                          <span className="rounded bg-elevated px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                            Built-in
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                        <span className="inline-flex items-center gap-1">
+                          <Network className="size-3" /> {cube.network}
+                        </span>
+                        <span className={count.running > 0 ? "font-medium text-foreground" : ""}>
+                          {count.running} running · {count.total} total
+                        </span>
+                        <span>{envCount} shared env</span>
+                      </div>
                     </div>
                   </div>
                 </div>
 
-                {cube.env.trim() ? (
-                  <div className="mt-3 rounded-md border border-border bg-background/50 px-3 py-2 font-mono text-xs text-muted-foreground">
-                    {cube.env.split("\n").filter(Boolean).slice(0, 4).map((line) => {
-                      const at = line.indexOf("=");
-                      const key = at < 0 ? line : line.slice(0, at);
-                      return <div key={key}>{key}=••••••</div>;
-                    })}
-                    {envCount > 4 ? <div>+{envCount - 4} more</div> : null}
-                  </div>
-                ) : (
-                  <p className="mt-3 text-xs text-subtle">No shared environment variables yet.</p>
-                )}
+                <div className="border-y border-border bg-background/35">
+                  {members.length ? (
+                    <ul className="divide-y divide-border">
+                      {members.map((member) => {
+                        const status = member.container?.status ?? "missing";
+                        const running = status === "running";
+                        return (
+                          <li key={member.name} className="flex items-center gap-3 px-4 py-2.5">
+                            <span
+                              className={`size-2 shrink-0 rounded-full ${running ? "bg-ok" : status === "created" ? "bg-warn" : "bg-subtle"}`}
+                              aria-hidden
+                            />
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-medium">{member.name}</p>
+                              <p className="truncate font-mono text-[11px] text-subtle">{member.image}</p>
+                            </div>
+                            <span className={running ? "text-xs font-medium text-ok" : "text-xs text-muted-foreground"}>
+                              {running ? "Running" : status === "missing" ? "Not created" : status === "created" ? "Created" : "Stopped"}
+                            </span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  ) : (
+                    <div className="px-4 py-5 text-center text-xs text-subtle">
+                      No containers are defined in this Cube yet.
+                    </div>
+                  )}
+                </div>
 
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <Button
-                    size="sm"
-                    onClick={() => {
-                      if (cube.id === "local-coding") applyStackConfig(cube);
-                      if (cube.specs.length) {
-                        startGroup(cube.id);
-                      } else {
-                        for (const container of members.filter((item) => item.status !== "running")) {
-                          startContainer(container.id);
-                        }
-                      }
-                    }}
-                  >
-                    <Play className="mr-1.5 size-3.5" /> Start all
-                  </Button>
-                  <Button size="sm" variant="secondary" onClick={() => stopGroup(cube.id)}>
-                    <Square className="mr-1.5 size-3.5" /> Stop all
-                  </Button>
+                <div className="flex flex-wrap items-center gap-2 p-4">
+                  {fullyRunning ? (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => {
+                        stopGroup(cube.id);
+                        toast(`Stopping ${cube.name}`);
+                      }}
+                    >
+                      <Square className="mr-1.5 size-3.5" /> Stop Cube
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      disabled={count.total === 0}
+                      onClick={() => startCube(cube, members)}
+                    >
+                      <Play className="mr-1.5 size-3.5" />
+                      {partiallyRunning ? "Start missing" : "Start Cube"}
+                    </Button>
+                  )}
+
+                  {partiallyRunning ? (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => {
+                        stopGroup(cube.id);
+                        toast(`Stopping ${cube.name}`);
+                      }}
+                    >
+                      <Square className="mr-1.5 size-3.5" /> Stop Cube
+                    </Button>
+                  ) : null}
+
                   <Button size="sm" variant="ghost" onClick={() => setEditing({ ...cube })}>
                     <Pencil className="mr-1.5 size-3.5" /> Configure
                   </Button>
@@ -174,6 +255,7 @@ export function CubesView() {
                     <Button
                       size="sm"
                       variant="ghost"
+                      className="ml-auto"
                       onClick={() => {
                         deleteGroup(cube.id);
                         toast(`Deleted ${cube.name}`);
