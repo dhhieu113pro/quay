@@ -1,34 +1,58 @@
 # Quay
 
-Tauri-style desktop for **WSL containers**. The WebView is this UI. Native work is a C# sidecar on [`Microsoft.WSL.Containers`](https://learn.microsoft.com/windows/wsl/wsl-container).
+A desktop for [WSL containers](https://learn.microsoft.com/windows/wsl/wsl-container) (`wslc`).
+
+A **quay** is a dock — the stone edge where ships tie up. Linux containers on Windows are the ships. This app is the berth: list them, pull images, start and stop, exec in, watch logs, hand GPU and ports across, all from a Tauri WebView whose native work is C# on `Microsoft.WSL.Containers`.
+
+Microsoft shipped `wslc.exe` (and the alias `container.exe`) in WSL 2.9.3. Same muscle memory as Docker (`run`, `pull`, `ps`, `stop`), but the runtime is a dedicated Hyper-V VM — virtiofs, consomme networking, CDI GPU — not Docker Desktop. Windows apps can drive that VM through a NuGet package. Quay is that API with a UI.
 
 ```
-WebView (this UI)
-    invoke JSON over stdin
-C# sidecar  —  Microsoft.WSL.Containers
-    WinRT
-WSL container VM  (Hyper-V, virtiofs, consomme, CDI GPU)
+┌─────────────────────┐     JSON over stdin      ┌──────────────────────────┐
+│  Tauri WebView      │ ───────────────────────► │  Quay.Host (C#)          │
+│  this UI            │                          │  Microsoft.WSL.Containers│
+│                     │ ◄─────────────────────── │                          │
+└─────────────────────┘     stdout events        └────────────┬─────────────┘
+                                                              │ WinRT
+                                                 ┌────────────▼─────────────┐
+                                                 │  WSL container VM        │
+                                                 │  Hyper-V · virtiofs      │
+                                                 │  consomme · CDI GPU      │
+                                                 └──────────────────────────┘
 ```
 
-Requires WSL **2.9.3+** (`wsl --update --pre-release`) and `wslc.exe` on PATH.
+Rust stays a thin bridge (`src-tauri`). Every button in the UI is an `invoke` that becomes `Session.PullImageAsync`, `CreateContainer`, `Start`, `Stop`, or `CreateProcess`.
 
-## Layout
+## What you can do
 
-| Path | Role |
-| --- | --- |
-| `src/` | React UI (containers, images, session, live C# invoke log) |
-| `host/` | `Quay.Host` — C# sidecar |
-| `src-tauri/` | Thin Rust bridge that shells out to the sidecar |
+- **Session** — `WslcService.GetMissingComponents()`, then `SessionSettings` (vCPU, memory, data path) and `Session.Start()` / `Terminate()`
+- **Images** — pull with progress (`ImageProgress`), remove, list
+- **Containers** — run with ports, env, bind mounts, `--gpus all`; start / stop / restart / delete; inspect; logs; exec
+- **Volumes** — create and attach
+- **C# host** — live invoke log of the exact `Microsoft.WSL.Containers` calls the sidecar would make
+
+The in-browser lab simulates a running session (nginx, Postgres, Redis, Webtop, a CUDA trainer) so the desktop is usable without Windows. On a real box, `src/lib/wslc/store.ts` is replaced by JSON to `host/`.
+
+## Requirements (Windows)
+
+- WSL **2.9.3+**: `wsl --update --pre-release`
+- `wslc.exe` on PATH (`wslc version`)
+- .NET 9 Windows targeting pack
+- NuGet: `Microsoft.WSL.Containers`
+
+```powershell
+wsl --update --pre-release
+wslc version
+dotnet add host package Microsoft.WSL.Containers
+```
 
 ## C# sidecar
 
 ```bash
 cd host
-dotnet add package Microsoft.WSL.Containers
 dotnet run
 ```
 
-The host speaks JSON lines on stdin:
+JSON lines on stdin, JSON lines on stdout:
 
 ```json
 {"cmd":"pull","image":"docker.io/library/nginx:latest"}
@@ -38,16 +62,44 @@ The host speaks JSON lines on stdin:
 {"cmd":"ps"}
 ```
 
-Same surface as `wslc run`, `wslc pull`, `wslc container stop`.
+CLI equivalents: `wslc pull`, `wslc run`, `wslc container stop`, `wslc container rm`, `wslc container ps`.
+
+Minimal host:
+
+```csharp
+using Microsoft.WSL.Containers;
+
+var missing = WslcService.GetMissingComponents();
+var session = new Session(new SessionSettings("Quay", @"C:\WslcData")
+{
+    CpuCount = 4,
+    MemoryMB = 4096
+});
+session.Start();
+
+var pull = session.PullImageAsync(new PullImageOptions("docker.io/library/nginx:latest"));
+await pull;
+
+var container = session.CreateContainer(new ContainerSettings("nginx:latest")
+{
+    Name = "web",
+    InitProcess = new ProcessSettings { OutputMode = ProcessOutputMode.Event }
+});
+container.Start();
+```
 
 ## UI
-
-The preview you used is a simulated lab (nginx, Postgres, Redis, Webtop, a CUDA trainer) so the desktop can be driven without Windows. On a real box the sidecar calls the WSL container API instead of the simulator in `src/lib/wslc/store.ts`.
 
 ```bash
 npm install
 npm run dev
 ```
+
+| Path | Role |
+| --- | --- |
+| `src/` | React desktop (overview, containers, images, session, C# host) |
+| `host/` | `Quay.Host` — C# sidecar, `quay-host.exe` |
+| `src-tauri/` | Tauri 2 bridge: `wslc_invoke` → sidecar stdin |
 
 ## License
 
