@@ -85,6 +85,9 @@ export function applyStackConfig(group: ContainerGroup) {
 
     return {
       ...spec,
+      // The image ENTRYPOINT is `dotnet LocalCodingMcp.dll` and its Dockerfile
+      // WORKDIR is /app. /workspace is only the bind-mounted data directory.
+      workdir: spec.name === "local-coding-mcp" ? "/app" : spec.workdir,
       env: Array.from(env, ([k, v]) => `${k}=${v}`).join("\n"),
       mounts: mounts.join("\n"),
     };
