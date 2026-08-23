@@ -1,0 +1,169 @@
+name: Store MSIX
+
+on:
+  workflow_dispatch:
+    inputs:
+      package_name:
+        description: "Partner Center Package/Identity/Name (leave blank to use STORE_PACKAGE_NAME variable)"
+        required: false
+        type: string
+      publisher:
+        description: "Partner Center Package/Identity/Publisher (leave blank to use STORE_PUBLISHER variable)"
+        required: false
+        type: string
+      publisher_display_name:
+        description: "Partner Center PublisherDisplayName (leave blank to use STORE_PUBLISHER_DISPLAY_NAME variable)"
+        required: false
+        type: string
+      version:
+        description: "App version such as 0.1.7 (leave blank to use package.json)"
+        required: false
+        type: string
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-msix:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            rust_target: x86_64-pc-windows-msvc
+            arch: x64
+          - os: windows-11-arm
+            rust_target: aarch64-pc-windows-msvc
+            arch: arm64
+    runs-on: ${{ matrix.os }}
+    env:
+      STORE_PACKAGE_NAME: ${{ inputs.package_name || vars.STORE_PACKAGE_NAME }}
+      STORE_PUBLISHER: ${{ inputs.publisher || vars.STORE_PUBLISHER }}
+      STORE_PUBLISHER_DISPLAY_NAME: ${{ inputs.publisher_display_name || vars.STORE_PUBLISHER_DISPLAY_NAME }}
+      REQUESTED_VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.0
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          key: store-msix-${{ matrix.rust_target }}
+
+      - name: Validate Store identity and resolve version
+        id: identity
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:STORE_PACKAGE_NAME)) {
+            throw "Missing Store Package/Identity/Name. Set repository variable STORE_PACKAGE_NAME or provide workflow input package_name. Copy the exact value from Partner Center > Product identity."
+          }
+          if ([string]::IsNullOrWhiteSpace($env:STORE_PUBLISHER)) {
+            throw "Missing Store Package/Identity/Publisher. Set repository variable STORE_PUBLISHER or provide workflow input publisher. Copy the exact value from Partner Center > Product identity."
+          }
+          if ([string]::IsNullOrWhiteSpace($env:STORE_PUBLISHER_DISPLAY_NAME)) {
+            throw "Missing PublisherDisplayName. Set STORE_PUBLISHER_DISPLAY_NAME or provide workflow input publisher_display_name."
+          }
+
+          $version = $env:REQUESTED_VERSION
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            if ("${{ github.ref_type }}" -eq "tag" -and "${{ github.ref_name }}" -match '^v(.+)$') {
+              $version = $Matches[1]
+            } else {
+              $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+            }
+          }
+          if ($version -notmatch '^\d+\.\d+\.\d+(?:[-+].*)?$') {
+            throw "Unsupported version '$version'. Expected a semantic version such as 0.1.7."
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          Write-Host "Store package version: $version"
+
+      - name: Sync build version
+        shell: pwsh
+        run: |
+          $version = "${{ steps.identity.outputs.version }}"
+          $package = Get-Content package.json -Raw | ConvertFrom-Json
+          $package.version = $version
+          $package | ConvertTo-Json -Depth 100 | Set-Content package.json -Encoding utf8
+
+          $tauri = Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          $tauri.version = $version
+          $tauri | ConvertTo-Json -Depth 100 | Set-Content src-tauri/tauri.conf.json -Encoding utf8
+
+          $cargo = Get-Content src-tauri/Cargo.toml -Raw
+          $cargo = $cargo -replace '(?m)^(version\s*=\s*")[^"]+("\s*)$', "`${1}$version`${2}"
+          Set-Content src-tauri/Cargo.toml $cargo -Encoding utf8
+
+      - name: Install frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Quay executable for Store
+        shell: pwsh
+        run: pnpm tauri build --target ${{ matrix.rust_target }} --no-bundle
+
+      - name: Package unsigned MSIX for Microsoft Store
+        shell: pwsh
+        run: |
+          ./scripts/build-store-msix.ps1 `
+            -PackageName "$env:STORE_PACKAGE_NAME" `
+            -Publisher "$env:STORE_PUBLISHER" `
+            -PublisherDisplayName "$env:STORE_PUBLISHER_DISPLAY_NAME" `
+            -Version "${{ steps.identity.outputs.version }}" `
+            -Architecture "${{ matrix.arch }}" `
+            -ExePath "src-tauri/target/${{ matrix.rust_target }}/release/quay.exe" `
+            -OutputPath "store/msix/Quay_${{ steps.identity.outputs.version }}_${{ matrix.arch }}.msix"
+
+      - name: Upload Store MSIX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: store-msix-${{ matrix.arch }}
+          path: store/msix/*.msix
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Attach MSIX to GitHub release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          gh release upload "${{ github.ref_name }}" store/msix/*.msix --clobber
+
+  verify-store-packages:
+    name: Verify Store MSIX packages
+    needs: build-msix
+    runs-on: windows-latest
+    steps:
+      - name: Download MSIX artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: store-msix-*
+          path: store-packages
+          merge-multiple: true
+
+      - name: Verify expected packages
+        shell: pwsh
+        run: |
+          $files = @(Get-ChildItem store-packages -Filter *.msix)
+          if ($files.Count -ne 2) {
+            throw "Expected x64 and ARM64 MSIX packages, found $($files.Count)"
+          }
+          foreach ($file in $files) {
+            Write-Host "Ready for Partner Center: $($file.Name) ($([math]::Round($file.Length / 1MB, 2)) MB)"
+          }
