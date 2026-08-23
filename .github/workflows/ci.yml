@@ -1,6 +1,7 @@
 name: CI
 
-# GitHub-hosted runners verify source/build/package and exercise the real WSLC runtime.
+# GitHub-hosted runners verify source, Rust, and Windows packaging.
+# Real WSLC runtime tests stay in tests/run-all.ps1 for local Windows validation.
 on:
   push:
     branches: [main]
@@ -67,92 +68,3 @@ jobs:
             src-tauri/target/${{ matrix.rust_target }}/release/bundle/nsis/*.exe
             src-tauri/target/${{ matrix.rust_target }}/release/bundle/msi/*.msi
           if-no-files-found: error
-
-  wslc-integration:
-    name: Rust + WSLC integration
-    runs-on: windows-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.15.0
-          run_install: false
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri -> target
-          key: wslc-integration
-
-      - name: Show current WSL state
-        shell: pwsh
-        run: |
-          wsl --status
-          wsl --version
-
-      - name: Update WSL pre-release
-        shell: pwsh
-        run: |
-          wsl --update --pre-release
-          wsl --shutdown
-          wsl --version
-
-      - name: Locate WSLC command
-        shell: pwsh
-        run: |
-          $cmd = Get-Command wslc -ErrorAction SilentlyContinue
-          if (-not $cmd) {
-            $candidates = @(
-              "$env:ProgramFiles\WSL\wslc.exe",
-              "$env:LOCALAPPDATA\Microsoft\WindowsApps\wslc.exe"
-            )
-            foreach ($candidate in $candidates) {
-              if (Test-Path $candidate) {
-                $dir = Split-Path $candidate -Parent
-                $dir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-                $cmd = Get-Item $candidate
-                break
-              }
-            }
-          }
-          if (-not $cmd) {
-            $found = Get-ChildItem "$env:ProgramFiles\WSL" -Filter wslc.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($found) {
-              $found.DirectoryName | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-              $cmd = $found
-            }
-          }
-          if (-not $cmd) {
-            throw "WSLC executable was not found after updating WSL"
-          }
-          Write-Host "wslc path: $($cmd.FullName ?? $cmd.Source)"
-          & $cmd.FullName version
-
-      - name: Install frontend dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Run Rust and real WSLC integration suite
-        shell: pwsh
-        env:
-          NGROK_AUTHTOKEN: ${{ secrets.NGROK_AUTHTOKEN }}
-        run: |
-          ./tests/run-all.ps1 -SkipInstall
-
-      - name: Inspect WSLC runtime after tests
-        if: always()
-        shell: pwsh
-        run: |
-          $cmd = Get-Command wslc -ErrorAction SilentlyContinue
-          if ($cmd) {
-            wslc container list --all
-            wslc image list
-          } else {
-            Write-Host "wslc is not available; skipping runtime inspection"
-          }
