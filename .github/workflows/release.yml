@@ -160,15 +160,25 @@ jobs:
           mkdir -p "installer-repo/${RELEASE_TAG}"
           cp installers/*.msi "installer-repo/${RELEASE_TAG}/"
 
+          # Keep the installer repository small: only README.md and the latest
+          # release folder remain on main. Git history still records old files.
+          for dir in installer-repo/v*/; do
+            [ -d "$dir" ] || continue
+            if [ "$(basename "$dir")" != "$RELEASE_TAG" ]; then
+              echo "Removing old installer folder $(basename "$dir")"
+              rm -rf "$dir"
+            fi
+          done
+
           cd installer-repo
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add "${RELEASE_TAG}"
+          git add -A
           if git diff --cached --quiet; then
-            echo "Installer files already published for ${RELEASE_TAG}"
+            echo "Installer repository already contains only ${RELEASE_TAG}"
             exit 0
           fi
-          git commit -m "Publish Quay ${RELEASE_TAG} installers"
+          git commit -m "Publish Quay ${RELEASE_TAG} installers and prune old versions"
           git push origin main
 
       - name: Show Microsoft Store URLs
