@@ -1,0 +1,86 @@
+name: Store Screenshots
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "docs/shots/*.jpg"
+      - "docs/shots/*.jpeg"
+      - ".github/workflows/store-screenshots.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  prepare-store-screenshots:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Convert screenshots to Microsoft Store PNGs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check pillow
+          python - <<'PY'
+          from pathlib import Path
+          from PIL import Image
+
+          source = Path("docs/shots")
+          output = Path("store/screenshots")
+          output.mkdir(parents=True, exist_ok=True)
+
+          files = sorted([*source.glob("*.jpg"), *source.glob("*.jpeg")])
+          if not files:
+              raise SystemExit("No JPEG screenshots found in docs/shots")
+
+          for path in files:
+              with Image.open(path) as image:
+                  image = image.convert("RGB")
+                  w, h = image.size
+                  # Partner Center recommends 1366x768 or larger. Preserve aspect
+                  # ratio and only upscale screenshots that are smaller.
+                  scale = max(1366 / w, 768 / h, 1.0)
+                  if scale > 1.0:
+                      image = image.resize(
+                          (round(w * scale), round(h * scale)),
+                          Image.Resampling.LANCZOS,
+                      )
+                  target = output / f"{path.stem}.png"
+                  image.save(target, "PNG", optimize=True)
+                  print(f"{path} -> {target} ({image.width}x{image.height})")
+          PY
+
+      - name: Verify Store screenshot requirements
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          from PIL import Image
+
+          files = sorted(Path("store/screenshots").glob("*.png"))
+          if not files:
+              raise SystemExit("No PNG screenshots generated")
+          if len(files) > 10:
+              raise SystemExit(f"Microsoft Store supports up to 10 screenshots; generated {len(files)}")
+
+          for path in files:
+              size = path.stat().st_size
+              if size >= 50 * 1024 * 1024:
+                  raise SystemExit(f"{path} is >= 50 MB")
+              with Image.open(path) as image:
+                  if image.format != "PNG":
+                      raise SystemExit(f"{path} is not PNG")
+                  if image.width < 1366 and image.height < 768:
+                      raise SystemExit(f"{path} is below the recommended Store dimensions: {image.size}")
+                  print(f"OK: {path.name}: {image.width}x{image.height}, {size / 1024:.1f} KiB")
+          PY
+
+      - name: Upload Microsoft Store screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: quay-microsoft-store-screenshots
+          path: store/screenshots/*.png
+          if-no-files-found: error
+          retention-days: 30
