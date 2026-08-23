@@ -4,19 +4,19 @@ on:
   workflow_dispatch:
     inputs:
       package_name:
-        description: "Partner Center Package/Identity/Name (leave blank to use STORE_PACKAGE_NAME variable)"
+        description: "Partner Center Package/Identity/Name (leave blank to use repository variable/secret)"
         required: false
         type: string
       publisher:
-        description: "Partner Center Package/Identity/Publisher (leave blank to use STORE_PUBLISHER variable)"
+        description: "Partner Center Package/Identity/Publisher (leave blank to use repository variable/secret)"
         required: false
         type: string
       publisher_display_name:
-        description: "Partner Center PublisherDisplayName (leave blank to use STORE_PUBLISHER_DISPLAY_NAME variable)"
+        description: "Partner Center PublisherDisplayName (leave blank to use repository variable/secret)"
         required: false
         type: string
       version:
-        description: "App version such as 0.1.7 (leave blank to use package.json)"
+        description: "App version such as 0.1.9 (leave blank to use package.json/tag)"
         required: false
         type: string
   push:
@@ -40,9 +40,9 @@ jobs:
             arch: arm64
     runs-on: ${{ matrix.os }}
     env:
-      STORE_PACKAGE_NAME: ${{ inputs.package_name || vars.STORE_PACKAGE_NAME }}
-      STORE_PUBLISHER: ${{ inputs.publisher || vars.STORE_PUBLISHER }}
-      STORE_PUBLISHER_DISPLAY_NAME: ${{ inputs.publisher_display_name || vars.STORE_PUBLISHER_DISPLAY_NAME }}
+      STORE_PACKAGE_NAME: ${{ inputs.package_name || vars.STORE_PACKAGE_NAME || secrets.STORE_PACKAGE_NAME }}
+      STORE_PUBLISHER: ${{ inputs.publisher || vars.STORE_PUBLISHER || secrets.STORE_PUBLISHER }}
+      STORE_PUBLISHER_DISPLAY_NAME: ${{ inputs.publisher_display_name || vars.STORE_PUBLISHER_DISPLAY_NAME || secrets.STORE_PUBLISHER_DISPLAY_NAME }}
       REQUESTED_VERSION: ${{ inputs.version }}
     steps:
       - uses: actions/checkout@v4
@@ -71,13 +71,13 @@ jobs:
         shell: pwsh
         run: |
           if ([string]::IsNullOrWhiteSpace($env:STORE_PACKAGE_NAME)) {
-            throw "Missing Store Package/Identity/Name. Set repository variable STORE_PACKAGE_NAME or provide workflow input package_name. Copy the exact value from Partner Center > Product identity."
+            throw "Missing Store Package/Identity/Name. Set repository variable or secret STORE_PACKAGE_NAME, or provide workflow input package_name. Copy the exact value from Partner Center > Product identity."
           }
           if ([string]::IsNullOrWhiteSpace($env:STORE_PUBLISHER)) {
-            throw "Missing Store Package/Identity/Publisher. Set repository variable STORE_PUBLISHER or provide workflow input publisher. Copy the exact value from Partner Center > Product identity."
+            throw "Missing Store Package/Identity/Publisher. Set repository variable or secret STORE_PUBLISHER, or provide workflow input publisher. Copy the exact value from Partner Center > Product identity."
           }
           if ([string]::IsNullOrWhiteSpace($env:STORE_PUBLISHER_DISPLAY_NAME)) {
-            throw "Missing PublisherDisplayName. Set STORE_PUBLISHER_DISPLAY_NAME or provide workflow input publisher_display_name."
+            throw "Missing PublisherDisplayName. Set repository variable or secret STORE_PUBLISHER_DISPLAY_NAME, or provide workflow input publisher_display_name."
           }
 
           $version = $env:REQUESTED_VERSION
@@ -89,9 +89,10 @@ jobs:
             }
           }
           if ($version -notmatch '^\d+\.\d+\.\d+(?:[-+].*)?$') {
-            throw "Unsupported version '$version'. Expected a semantic version such as 0.1.7."
+            throw "Unsupported version '$version'. Expected a semantic version such as 0.1.9."
           }
           "version=$version" >> $env:GITHUB_OUTPUT
+          Write-Host "Store identity configured. Package name length: $($env:STORE_PACKAGE_NAME.Length); publisher length: $($env:STORE_PUBLISHER.Length)"
           Write-Host "Store package version: $version"
 
       - name: Sync build version
