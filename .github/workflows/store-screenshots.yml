@@ -1,4 +1,4 @@
-name: Store Screenshots
+name: Store Assets
 
 on:
   workflow_dispatch:
@@ -6,52 +6,79 @@ on:
     paths:
       - "docs/shots/*.jpg"
       - "docs/shots/*.jpeg"
+      - "docs/logo.png"
       - ".github/workflows/store-screenshots.yml"
 
 permissions:
   contents: read
 
 jobs:
-  prepare-store-screenshots:
+  prepare-store-assets:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Convert screenshots to Microsoft Store PNGs
+      - name: Install image tooling
+        run: python -m pip install --disable-pip-version-check pillow
+
+      - name: Generate Microsoft Store assets
         shell: bash
         run: |
           set -euo pipefail
-          python -m pip install --disable-pip-version-check pillow
           python - <<'PY'
           from pathlib import Path
-          from PIL import Image
+          from PIL import Image, ImageOps
 
-          source = Path("docs/shots")
-          output = Path("store/screenshots")
-          output.mkdir(parents=True, exist_ok=True)
+          shots = Path("docs/shots")
+          out = Path("store/generated")
+          out.mkdir(parents=True, exist_ok=True)
 
-          files = sorted([*source.glob("*.jpg"), *source.glob("*.jpeg")])
+          # Screenshots: convert repository JPEGs to PNG and make sure they meet
+          # Microsoft's recommended minimum dimensions while preserving ratio.
+          files = sorted([*shots.glob("*.jpg"), *shots.glob("*.jpeg")])
           if not files:
               raise SystemExit("No JPEG screenshots found in docs/shots")
 
           for path in files:
-              with Image.open(path) as image:
-                  image = image.convert("RGB")
+              with Image.open(path) as src:
+                  image = src.convert("RGB")
                   w, h = image.size
-                  # Partner Center recommends 1366x768 or larger. Preserve aspect
-                  # ratio and only upscale screenshots that are smaller.
                   scale = max(1366 / w, 768 / h, 1.0)
-                  if scale > 1.0:
+                  if scale > 1:
                       image = image.resize(
                           (round(w * scale), round(h * scale)),
                           Image.Resampling.LANCZOS,
                       )
-                  target = output / f"{path.stem}.png"
+                  target = out / f"screenshot-{path.stem}.png"
                   image.save(target, "PNG", optimize=True)
-                  print(f"{path} -> {target} ({image.width}x{image.height})")
+                  print(f"{target}: {image.width}x{image.height}")
+
+          # Store logo: exact 1080x1080 PNG. Use Quay's existing logo and place
+          # it on a clean dark background with safe padding.
+          logo_path = Path("docs/logo.png")
+          if not logo_path.exists():
+              raise SystemExit("docs/logo.png not found")
+
+          with Image.open(logo_path) as src:
+              logo = src.convert("RGBA")
+              box = Image.new("RGBA", (1080, 1080), (8, 15, 29, 255))
+              fitted = ImageOps.contain(logo, (820, 820), Image.Resampling.LANCZOS)
+              x = (1080 - fitted.width) // 2
+              y = (1080 - fitted.height) // 2
+              box.alpha_composite(fitted, (x, y))
+              box.convert("RGB").save(out / "store-logo-1080x1080.png", "PNG", optimize=True)
+
+              # Recommended 2:3 poster: exact 720x1080. Keep branding simple and
+              # readable at Store thumbnail sizes.
+              poster = Image.new("RGBA", (720, 1080), (8, 15, 29, 255))
+              poster_logo = ImageOps.contain(logo, (560, 560), Image.Resampling.LANCZOS)
+              px = (720 - poster_logo.width) // 2
+              py = (1080 - poster_logo.height) // 2
+              poster.alpha_composite(poster_logo, (px, py))
+              poster.convert("RGB").save(out / "store-poster-720x1080.png", "PNG", optimize=True)
           PY
 
-      - name: Verify Store screenshot requirements
+      - name: Verify Microsoft Store requirements
         shell: bash
         run: |
           set -euo pipefail
@@ -59,11 +86,10 @@ jobs:
           from pathlib import Path
           from PIL import Image
 
-          files = sorted(Path("store/screenshots").glob("*.png"))
+          out = Path("store/generated")
+          files = sorted(out.glob("*.png"))
           if not files:
-              raise SystemExit("No PNG screenshots generated")
-          if len(files) > 10:
-              raise SystemExit(f"Microsoft Store supports up to 10 screenshots; generated {len(files)}")
+              raise SystemExit("No Store PNG assets generated")
 
           for path in files:
               size = path.stat().st_size
@@ -72,15 +98,22 @@ jobs:
               with Image.open(path) as image:
                   if image.format != "PNG":
                       raise SystemExit(f"{path} is not PNG")
-                  if image.width < 1366 and image.height < 768:
-                      raise SystemExit(f"{path} is below the recommended Store dimensions: {image.size}")
-                  print(f"OK: {path.name}: {image.width}x{image.height}, {size / 1024:.1f} KiB")
+                  dims = image.size
+
+              if path.name == "store-logo-1080x1080.png" and dims != (1080, 1080):
+                  raise SystemExit(f"Store logo has wrong dimensions: {dims}")
+              if path.name == "store-poster-720x1080.png" and dims != (720, 1080):
+                  raise SystemExit(f"Store poster has wrong dimensions: {dims}")
+              if path.name.startswith("screenshot-") and dims[0] < 1366 and dims[1] < 768:
+                  raise SystemExit(f"Screenshot below recommended dimensions: {path.name}: {dims}")
+
+              print(f"OK: {path.name}: {dims[0]}x{dims[1]}, {size / 1024:.1f} KiB")
           PY
 
-      - name: Upload Microsoft Store screenshots
+      - name: Upload Microsoft Store assets
         uses: actions/upload-artifact@v4
         with:
-          name: quay-microsoft-store-screenshots
-          path: store/screenshots/*.png
+          name: quay-microsoft-store-assets
+          path: store/generated/*.png
           if-no-files-found: error
           retention-days: 30
