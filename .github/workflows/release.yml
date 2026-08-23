@@ -1,8 +1,8 @@
 name: Release
 
 # Tag-only release: build/package Windows x64 and ARM64 installers.
-# WSLC runtime tests stay local because GitHub-hosted runners do not provide
-# a reliable WSLC runtime.
+# The git tag is the release version source of truth. Before packaging, the
+# workflow synchronizes package.json, Tauri config, and Cargo metadata to it.
 on:
   push:
     tags:
@@ -45,6 +45,38 @@ jobs:
         with:
           workspaces: src-tauri -> target
           key: release-${{ matrix.rust_target }}
+
+      - name: Sync app version from release tag
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          if ($tag -notmatch '^v(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)$') {
+            throw "Release tag '$tag' is not a supported semantic version tag such as v0.1.5"
+          }
+          $version = $Matches[1]
+          Write-Host "Building Quay $version from tag $tag"
+
+          $packagePath = "package.json"
+          $package = Get-Content $packagePath -Raw | ConvertFrom-Json
+          $package.version = $version
+          $package | ConvertTo-Json -Depth 100 | Set-Content $packagePath -Encoding utf8
+
+          $tauriPath = "src-tauri/tauri.conf.json"
+          $tauri = Get-Content $tauriPath -Raw | ConvertFrom-Json
+          $tauri.version = $version
+          $tauri | ConvertTo-Json -Depth 100 | Set-Content $tauriPath -Encoding utf8
+
+          $cargoPath = "src-tauri/Cargo.toml"
+          $cargo = Get-Content $cargoPath -Raw
+          $cargo = $cargo -replace '(?m)^(version\s*=\s*")[^"]+("\s*)$', "`${1}$version`${2}"
+          Set-Content $cargoPath $cargo -Encoding utf8
+
+          $packageCheck = (Get-Content $packagePath -Raw | ConvertFrom-Json).version
+          $tauriCheck = (Get-Content $tauriPath -Raw | ConvertFrom-Json).version
+          $cargoCheck = if ((Get-Content $cargoPath -Raw) -match '(?m)^version\s*=\s*"([^"]+)"') { $Matches[1] } else { '' }
+          if ($packageCheck -ne $version -or $tauriCheck -ne $version -or $cargoCheck -ne $version) {
+            throw "Version sync failed: package=$packageCheck tauri=$tauriCheck cargo=$cargoCheck expected=$version"
+          }
 
       - name: Install frontend
         run: pnpm install --frozen-lockfile
