@@ -13,7 +13,7 @@ test('storeVersionFromTag accepts only vX.Y.Z-store tags and strips the trigger 
   assert.throws(() => storeVersionFromTag('0.1.5-store'), /must match vX.Y.Z-store/);
 });
 
-test('buildSubmissionUpdate preserves editable metadata and replaces packages with pending uploads', () => {
+test('buildSubmissionUpdate marks copied packages for deletion before adding pending uploads', () => {
   const created = {
     id: 'submission-1',
     status: 'PendingCommit',
@@ -24,7 +24,20 @@ test('buildSubmissionUpdate preserves editable metadata and replaces packages wi
     targetPublishMode: 'Immediate',
     pricing: { priceId: 'Free' },
     listings: { 'en-us': { baseListing: { title: 'Quay' } } },
-    applicationPackages: [{ fileName: 'old.msix', fileStatus: 'Uploaded' }],
+    applicationPackages: [
+      {
+        fileName: 'Quay_0.1.4_x64.msix',
+        fileStatus: 'Uploaded',
+        minimumDirectXVersion: 'None',
+        minimumSystemRam: 'None',
+      },
+      {
+        fileName: 'Quay_0.1.4_arm64.msix',
+        fileStatus: 'Uploaded',
+        minimumDirectXVersion: 'None',
+        minimumSystemRam: 'None',
+      },
+    ],
     packageDeliveryOptions: { isMandatoryUpdate: false },
     trailers: [],
   };
@@ -41,6 +54,18 @@ test('buildSubmissionUpdate preserves editable metadata and replaces packages wi
   assert.equal(payload.applicationCategory, 'DeveloperTools');
   assert.equal(payload.visibility, 'Public');
   assert.deepEqual(payload.applicationPackages, [
+    {
+      fileName: 'Quay_0.1.4_x64.msix',
+      fileStatus: 'PendingDelete',
+      minimumDirectXVersion: 'None',
+      minimumSystemRam: 'None',
+    },
+    {
+      fileName: 'Quay_0.1.4_arm64.msix',
+      fileStatus: 'PendingDelete',
+      minimumDirectXVersion: 'None',
+      minimumSystemRam: 'None',
+    },
     {
       fileName: 'Quay_0.1.5_x64.msix',
       fileStatus: 'PendingUpload',
