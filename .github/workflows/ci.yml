@@ -1,7 +1,8 @@
 name: CI
 
-# GitHub-hosted runners verify source, Rust, and Windows packaging.
-# Real WSLC runtime tests stay in tests/run-all.ps1 for local Windows validation.
+# GitHub-hosted runners verify source, Rust WSLC adapter logic, and Windows packaging.
+# The ignored real_wslc_container_lifecycle test stays in tests/run-all.ps1 for
+# local Windows validation because hosted runners cannot reliably update WSL.
 on:
   push:
     branches: [main]
@@ -50,8 +51,8 @@ jobs:
       - name: TypeScript check
         run: pnpm typecheck
 
-      - name: Rust check
-        run: cargo check --manifest-path src-tauri/Cargo.toml --target ${{ matrix.rust_target }}
+      - name: Rust WSLC adapter tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml --target ${{ matrix.rust_target }}
 
       - name: Build Windows installer
         uses: tauri-apps/tauri-action@v1
