@@ -1,21 +1,105 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Quay — WSLC, visually.</title>
-<meta name="description" content="Quay is a fast, native Windows desktop experience for WSLC containers, images and sessions.">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Quay for WSLC</title>
+<meta name="description" content="A simple Windows desktop app for managing WSLC containers, images and sessions.">
+<meta name="color-scheme" content="light dark">
 <link rel="icon" href="logo.png">
 <style>
-:root{--bg:#05070b;--card:#0d1118;--line:#202734;--text:#f7f9fc;--muted:#98a2b3;--blue:#5bc0ff;--mint:#67e8c7;--max:1240px}*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;color:var(--text);font-family:Inter,"Segoe UI",system-ui,sans-serif;background:radial-gradient(900px 520px at 50% -10%,#17375d 0,transparent 65%),var(--bg)}a{text-decoration:none;color:inherit}.wrap{width:min(var(--max),calc(100% - 40px));margin:auto}nav{height:72px;display:flex;align-items:center;justify-content:space-between}.brand{display:flex;align-items:center;gap:11px;font-weight:700}.brand img{width:38px;height:38px;border-radius:10px}.navlinks{display:flex;gap:26px;align-items:center;color:#b5bfce;font-size:14px}.pill{padding:10px 15px;border:1px solid var(--line);border-radius:11px}.hero{text-align:center;padding:96px 0 38px}.kicker{display:inline-flex;gap:8px;align-items:center;padding:7px 12px;border:1px solid #29435e;border-radius:999px;background:#0a1623;color:#bddcf3;font-size:13px}.kicker i{width:7px;height:7px;background:var(--mint);border-radius:50%;box-shadow:0 0 14px var(--mint)}h1{font-size:clamp(58px,8vw,104px);line-height:.91;letter-spacing:-.065em;margin:25px auto 25px;max-width:1000px}.grad{background:linear-gradient(100deg,#fff 20%,#7bcfff 62%,#78f0d3);background-clip:text;-webkit-background-clip:text;color:transparent}.lead{max-width:720px;margin:auto;color:#aab5c5;font-size:20px}.actions{display:flex;justify-content:center;gap:12px;flex-wrap:wrap;margin-top:31px}.btn{min-height:50px;padding:0 20px;display:inline-flex;align-items:center;justify-content:center;border:1px solid #2b3442;border-radius:12px;font-weight:700}.primary{color:#061019;border:0;background:linear-gradient(135deg,#69caff,#65e5c4)}.release{color:#778498;font-size:13px;margin-top:14px}.stage{margin:48px auto 0;position:relative;max-width:1120px}.glow{position:absolute;inset:10% 15%;background:#268ad6;filter:blur(100px);opacity:.18}.window{position:relative;padding:10px;border:1px solid #263044;border-radius:22px;background:#0a0e15;box-shadow:0 40px 110px #000}.window img{display:block;width:100%;border-radius:14px}.logos{display:flex;justify-content:center;gap:28px;flex-wrap:wrap;padding:31px 0 0;color:#768397;font-size:13px}.section{padding:100px 0}.sectionhead{text-align:center;max-width:750px;margin:0 auto 48px}.sectionhead h2{font-size:clamp(38px,5vw,60px);letter-spacing:-.045em;margin:0 0 14px}.sectionhead p{color:var(--muted);font-size:17px}.bento{display:grid;grid-template-columns:repeat(12,1fr);gap:16px}.card{border:1px solid var(--line);border-radius:20px;background:linear-gradient(180deg,#101620,#090d13);overflow:hidden;padding:28px;min-height:260px}.card h3{font-size:22px;margin:0 0 8px}.card p{color:var(--muted);margin:0;max-width:470px}.wide{grid-column:span 8}.small{grid-column:span 4}.half{grid-column:span 6}.visual{margin-top:24px;border:1px solid #202938;border-radius:12px;overflow:hidden}.visual img{display:block;width:100%}.stat{font-size:58px;font-weight:800;letter-spacing:-.05em;margin:38px 0 0;background:linear-gradient(100deg,#72d2ff,#72efd2);background-clip:text;color:transparent}.gallery{display:grid;grid-template-columns:repeat(2,1fr);gap:20px}.shot{position:relative;border:1px solid var(--line);border-radius:18px;overflow:hidden;background:#0b1018}.shot img{display:block;width:100%;transition:.25s}.shot:hover img{transform:scale(1.015)}.caption{position:absolute;left:14px;bottom:14px;padding:7px 11px;border-radius:9px;background:#05080dc9;backdrop-filter:blur(8px);font-size:13px}.downloadbox{text-align:center;padding:62px 25px;border:1px solid #263044;border-radius:26px;background:radial-gradient(600px 250px at 50% 0,#183c62,transparent),#0b1018}.downloadbox h2{font-size:48px;letter-spacing:-.045em;margin:0 0 12px}.downloadbox p{color:var(--muted);margin:0 auto 27px}.store{margin-top:17px;color:#748195;font-size:13px}footer{border-top:1px solid #171d27;padding:32px 0 45px;color:#707d90;font-size:13px}.foot{display:flex;justify-content:space-between;flex-wrap:wrap;gap:20px}@media(max-width:800px){.navlinks a:not(.pill){display:none}.hero{padding-top:65px}h1{font-size:59px}.wide,.small,.half{grid-column:span 12}.gallery{grid-template-columns:1fr}.section{padding:70px 0}}
+:root{
+  --bg:#ffffff;
+  --surface:#f7f8fa;
+  --surface-2:#ffffff;
+  --text:#111318;
+  --muted:#667085;
+  --line:#e4e7ec;
+  --accent:#111318;
+  --accent-text:#ffffff;
+  --shadow:0 18px 55px rgba(16,24,40,.10);
+  --max:1160px;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#0b0d10;
+    --surface:#12151a;
+    --surface-2:#0f1216;
+    --text:#f5f7fa;
+    --muted:#98a2b3;
+    --line:#252a32;
+    --accent:#f5f7fa;
+    --accent-text:#0b0d10;
+    --shadow:0 24px 70px rgba(0,0,0,.35);
+  }
+}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,"Segoe UI",system-ui,-apple-system,sans-serif;line-height:1.5}a{color:inherit;text-decoration:none}.wrap{width:min(var(--max),calc(100% - 36px));margin:auto}
+nav{height:72px;display:flex;align-items:center;justify-content:space-between}.brand{display:flex;align-items:center;gap:10px;font-weight:750}.brand img{width:36px;height:36px;border-radius:9px}.navlinks{display:flex;gap:22px;align-items:center;color:var(--muted);font-size:14px}.navlinks a:hover{color:var(--text)}
+.hero{padding:88px 0 54px;text-align:center}.eyebrow{color:var(--muted);font-size:14px}.hero h1{font-size:clamp(52px,8vw,92px);line-height:.96;letter-spacing:-.06em;margin:18px auto 22px;max-width:920px}.hero p{font-size:19px;color:var(--muted);max-width:680px;margin:auto}.actions{display:flex;justify-content:center;gap:12px;flex-wrap:wrap;margin-top:28px}.btn{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:0 18px;border:1px solid var(--line);border-radius:10px;font-weight:700}.btn.primary{background:var(--accent);color:var(--accent-text);border-color:var(--accent)}.meta{margin-top:13px;color:var(--muted);font-size:13px}
+.preview{margin:42px auto 0;padding:10px;border:1px solid var(--line);border-radius:18px;background:var(--surface-2);box-shadow:var(--shadow);max-width:1080px}.preview img{display:block;width:100%;border-radius:12px}
+.section{padding:78px 0}.section h2{font-size:clamp(34px,5vw,52px);letter-spacing:-.04em;margin:0 0 12px;text-align:center}.sectionlead{color:var(--muted);text-align:center;max-width:620px;margin:0 auto 32px}.features{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.feature{padding:22px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}.feature b{display:block;margin-bottom:6px}.feature span{color:var(--muted);font-size:14px}
+.gallery{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}.shot{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--surface-2)}.shot img{display:block;width:100%}.shot figcaption{padding:11px 13px;color:var(--muted);font-size:13px}
+.download{padding:70px 24px;text-align:center;border:1px solid var(--line);border-radius:18px;background:var(--surface)}.download h2{margin:0 0 10px}.download p{color:var(--muted);margin:0 auto;max-width:560px}.store{margin-top:16px;color:var(--muted);font-size:13px}
+footer{padding:30px 0 42px;border-top:1px solid var(--line);color:var(--muted);font-size:13px}.foot{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
+@media(max-width:760px){.navlinks a:not(:last-child){display:none}.hero{padding-top:58px}.hero h1{font-size:54px}.features,.gallery{grid-template-columns:1fr}.section{padding:58px 0}}
 </style>
 </head>
 <body>
-<div class="wrap"><nav><a class="brand" href="#"><img src="logo.png"><span>Quay</span></a><div class="navlinks"><a href="#experience">Experience</a><a href="#gallery">Gallery</a><a href="https://github.com/dhhieu113pro/quay">GitHub</a><a class="pill" href="#download">Download</a></div></nav></div>
-<main>
-<section class="hero wrap"><div class="kicker"><i></i>Built for Windows · x64 + ARM64</div><h1><span class="grad">Your containers.<br>Beautifully in control.</span></h1><p class="lead">A focused desktop experience for WSLC. Run containers, manage images and inspect sessions without living in the terminal.</p><div class="actions"><a class="btn primary dlx" href="https://github.com/dhhieu113pro/quay/releases/latest">Download for Windows</a><a class="btn" href="https://github.com/dhhieu113pro/quay">View on GitHub ↗</a></div><div class="release" id="release">Latest release on GitHub · Free & open source</div><div class="stage"><div class="glow"></div><div class="window"><img src="shots/overview.jpg" alt="Quay desktop application"></div></div><div class="logos"><span>WSLC native</span><span>•</span><span>Rust + Tauri</span><span>•</span><span>Windows 11</span><span>•</span><span>Open source</span></div></section>
-<section class="section wrap" id="experience"><div class="sectionhead"><h2>Less command line.<br>More clarity.</h2><p>Quay puts the parts of WSLC you use every day into a fast, calm Windows interface.</p></div><div class="bento"><article class="card wide"><h3>Containers at a glance</h3><p>See what is running, what stopped, and take action immediately.</p><div class="visual"><img src="shots/containers.jpg"></div></article><article class="card small"><h3>Native on your PC</h3><p>Built for both Intel/AMD and Windows on ARM.</p><div class="stat">x64<br>ARM64</div></article><article class="card small"><h3>Your WSLC runtime</h3><p>No hidden container engine. Quay works with the WSLC installation already on your machine.</p><div class="stat">WSLC</div></article><article class="card wide"><h3>Launch without memorizing flags</h3><p>Configure and run a container from a visual workflow, then jump into a terminal when you actually need one.</p><div class="visual"><img src="shots/run.jpg"></div></article></div></section>
-<section class="section wrap" id="gallery"><div class="sectionhead"><h2>Designed to stay out of your way.</h2><p>Real Quay screens. No mockups.</p></div><div class="gallery"><div class="shot"><img src="shots/images.jpg"><span class="caption">Images</span></div><div class="shot"><img src="shots/session.jpg"><span class="caption">WSLC session</span></div><div class="shot"><img src="shots/host.jpg"><span class="caption">Host details</span></div><div class="shot"><img src="shots/containers.jpg"><span class="caption">Containers</span></div></div></section>
-<section class="section wrap" id="download"><div class="downloadbox"><h2>Ready to use Quay?</h2><p>Download the latest Windows installer. Choose your architecture below.</p><div class="actions"><a class="btn primary dlx" href="https://github.com/dhhieu113pro/quay/releases/latest">Download x64</a><a class="btn dla" href="https://github.com/dhhieu113pro/quay/releases/latest">Download ARM64</a></div><div class="store">Microsoft Store availability coming soon.</div></div></section>
-</main><footer><div class="wrap foot"><span>© 2026 Quay · Free and open source</span><span><a href="privacy.md">Privacy</a> · <a href="https://github.com/dhhieu113pro/quay/releases">Releases</a> · <a href="https://github.com/dhhieu113pro/quay/issues">Issues</a></span></div></footer>
-<script>(async()=>{try{let r=await fetch('https://api.github.com/repos/dhhieu113pro/quay/releases/latest');if(!r.ok)return;let j=await r.json(),a=j.assets||[],x=a.find(v=>/_x64_en-US\.msi$/i.test(v.name))||a.find(v=>/_x64-setup\.exe$/i.test(v.name)),m=a.find(v=>/_arm64_en-US\.msi$/i.test(v.name))||a.find(v=>/_arm64-setup\.exe$/i.test(v.name));if(x)document.querySelectorAll('.dlx').forEach(e=>e.href=x.browser_download_url);if(m)document.querySelectorAll('.dla').forEach(e=>e.href=m.browser_download_url);document.querySelector('#release').textContent=`${j.tag_name} · Windows x64 + ARM64 · Free & open source`}catch(e){}})()</script>
-</body></html>
+<div class="wrap">
+  <nav>
+    <a class="brand" href="#top"><img src="logo.png" alt="Quay logo"><span>Quay</span></a>
+    <div class="navlinks"><a href="#features">Features</a><a href="#screenshots">Screenshots</a><a href="https://github.com/dhhieu113pro/quay">GitHub</a><a href="#download">Download</a></div>
+  </nav>
+</div>
+<main id="top">
+  <section class="hero wrap">
+    <div class="eyebrow">Windows 11 · x64 + ARM64</div>
+    <h1>WSLC, without the clutter.</h1>
+    <p>Quay gives you a clean desktop view of your containers, images and WSLC sessions — with the terminal still one click away.</p>
+    <div class="actions">
+      <a class="btn primary dlx" href="https://github.com/dhhieu113pro/quay/releases/latest">Download x64</a>
+      <a class="btn dla" href="https://github.com/dhhieu113pro/quay/releases/latest">Download ARM64</a>
+    </div>
+    <div class="meta" id="release">Latest release on GitHub · Free and open source</div>
+    <div class="preview"><img src="shots/overview.jpg" alt="Quay overview"></div>
+  </section>
+
+  <section class="section wrap" id="features">
+    <h2>Simple by design.</h2>
+    <p class="sectionlead">Just the everyday WSLC controls you need, presented clearly.</p>
+    <div class="features">
+      <div class="feature"><b>Containers</b><span>See running and stopped containers, then start, stop or remove them.</span></div>
+      <div class="feature"><b>Images</b><span>Browse local images and pull new ones without leaving Quay.</span></div>
+      <div class="feature"><b>Sessions</b><span>See the active WSLC session and runtime information at a glance.</span></div>
+      <div class="feature"><b>Terminal</b><span>Jump into a container terminal when you need deeper control.</span></div>
+      <div class="feature"><b>Native builds</b><span>Runs on both Intel/AMD and Windows on ARM devices.</span></div>
+      <div class="feature"><b>Open source</b><span>Built with Rust and Tauri. Source and releases are available on GitHub.</span></div>
+    </div>
+  </section>
+
+  <section class="section wrap" id="screenshots">
+    <h2>See Quay in action.</h2>
+    <p class="sectionlead">Real screens from the desktop app.</p>
+    <div class="gallery">
+      <figure class="shot"><img src="shots/containers.jpg" alt="Containers"><figcaption>Containers</figcaption></figure>
+      <figure class="shot"><img src="shots/images.jpg" alt="Images"><figcaption>Images</figcaption></figure>
+      <figure class="shot"><img src="shots/run.jpg" alt="Run container"><figcaption>Run a container</figcaption></figure>
+      <figure class="shot"><img src="shots/session.jpg" alt="WSLC session"><figcaption>WSLC session</figcaption></figure>
+    </div>
+  </section>
+
+  <section class="section wrap" id="download">
+    <div class="download">
+      <h2>Download Quay</h2>
+      <p>Choose the installer for your Windows architecture. Quay requires WSL and WSLC installed on your machine.</p>
+      <div class="actions"><a class="btn primary dlx" href="https://github.com/dhhieu113pro/quay/releases/latest">Download x64</a><a class="btn dla" href="https://github.com/dhhieu113pro/quay/releases/latest">Download ARM64</a></div>
+      <div class="store">Microsoft Store coming soon.</div>
+    </div>
+  </section>
+</main>
+<footer><div class="wrap foot"><span>© 2026 Quay</span><span><a href="privacy.md">Privacy</a> · <a href="https://github.com/dhhieu113pro/quay/releases">Releases</a> · <a href="https://github.com/dhhieu113pro/quay/issues">Issues</a></span></div></footer>
+<script>
+(async()=>{try{const r=await fetch('https://api.github.com/repos/dhhieu113pro/quay/releases/latest');if(!r.ok)return;const j=await r.json(),a=j.assets||[];const x=a.find(v=>/_x64_en-US\.msi$/i.test(v.name))||a.find(v=>/_x64-setup\.exe$/i.test(v.name));const m=a.find(v=>/_arm64_en-US\.msi$/i.test(v.name))||a.find(v=>/_arm64-setup\.exe$/i.test(v.name));if(x)document.querySelectorAll('.dlx').forEach(e=>e.href=x.browser_download_url);if(m)document.querySelectorAll('.dla').forEach(e=>e.href=m.browser_download_url);document.querySelector('#release').textContent=`${j.tag_name} · Windows x64 + ARM64 · Free and open source`}catch(e){}})();
+</script>
+</body>
+</html>
