@@ -78,12 +78,28 @@ jobs:
           if-no-files-found: error
 
   wslc-integration:
-    name: WSLC integration (experimental)
+    name: Rust + WSLC integration (experimental)
     runs-on: windows-latest
     continue-on-error: true
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.0
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          key: wslc-integration
 
       - name: Show current WSL state
         shell: pwsh
@@ -129,12 +145,25 @@ jobs:
           Write-Host "wslc path: $($cmd.FullName ?? $cmd.Source)"
           & $cmd.FullName version
 
-      - name: Run WSLC hello-world
+      - name: Prepare pnpm lockfile when missing
         shell: pwsh
         run: |
-          wslc run --rm hello-world
+          if (-not (Test-Path pnpm-lock.yaml)) {
+            pnpm import
+            if ($LASTEXITCODE -ne 0) { throw "pnpm import failed" }
+          }
 
-      - name: Inspect WSLC runtime
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run Rust and real WSLC integration suite
+        shell: pwsh
+        env:
+          NGROK_AUTHTOKEN: ${{ secrets.NGROK_AUTHTOKEN }}
+        run: |
+          ./tests/run-all.ps1 -SkipInstall
+
+      - name: Inspect WSLC runtime after tests
         if: always()
         shell: pwsh
         run: |
