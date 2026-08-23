@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Quay for WSLC — a lightweight Windows desktop app for managing WSLC containers, images, sessions and terminals." />
+  <meta property="og:title" content="Quay for WSLC" />
+  <meta property="og:description" content="Manage WSLC containers from a clean native Windows desktop interface." />
+  <meta property="og:image" content="quay-hero.svg" />
+  <meta name="theme-color" content="#08111f" />
+  <title>Quay for WSLC</title>
+  <link rel="icon" href="logo.png" />
+  <style>
+    :root{--bg:#07101d;--panel:#0d1a2b;--panel2:#101f33;--text:#f5f7fb;--muted:#9fb0c8;--line:#20314a;--accent:#56c5ff;--accent2:#6ef0cf;--max:1180px}
+    *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:radial-gradient(circle at 75% 0,#123258 0,transparent 32%),var(--bg);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;line-height:1.55}a{color:inherit;text-decoration:none}.wrap{width:min(var(--max),calc(100% - 36px));margin:auto}.nav{position:sticky;top:0;z-index:20;background:rgba(7,16,29,.82);backdrop-filter:blur(14px);border-bottom:1px solid rgba(255,255,255,.06)}.navin{height:68px;display:flex;align-items:center;justify-content:space-between}.brand{display:flex;align-items:center;gap:12px;font-weight:750}.brand img{width:36px;height:36px;border-radius:9px}.links{display:flex;gap:22px;color:var(--muted);font-size:14px}.links a:hover{color:white}.hero{padding:88px 0 56px;display:grid;grid-template-columns:1.04fr .96fr;gap:52px;align-items:center}.eyebrow{display:inline-flex;align-items:center;gap:8px;padding:7px 11px;border-radius:999px;border:1px solid #284260;background:#0d1c30;color:#b9d7f2;font-size:13px}.dot{width:8px;height:8px;border-radius:999px;background:var(--accent2);box-shadow:0 0 18px var(--accent2)}h1{font-size:clamp(44px,7vw,78px);line-height:.98;letter-spacing:-.055em;margin:20px 0 22px}.gradient{background:linear-gradient(100deg,#fff 15%,#80d4ff 60%,#7ff5d8);-webkit-background-clip:text;background-clip:text;color:transparent}.lead{font-size:19px;color:var(--muted);max-width:680px}.cta{display:flex;flex-wrap:wrap;gap:12px;margin-top:30px}.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:48px;padding:0 18px;border-radius:12px;border:1px solid var(--line);font-weight:650}.btn.primary{background:linear-gradient(135deg,#5ac8ff,#63e3c1);color:#04101a;border:0}.btn:hover{transform:translateY(-1px)}.download-meta{margin-top:14px;font-size:13px;color:#8193ac}.hero-card{border:1px solid var(--line);border-radius:22px;background:linear-gradient(180deg,#10223a,#091522);padding:15px;box-shadow:0 28px 80px rgba(0,0,0,.36)}.hero-card img{display:block;width:100%;border-radius:14px}.section{padding:72px 0}.section h2{font-size:38px;letter-spacing:-.035em;margin:0 0 12px}.sub{color:var(--muted);max-width:720px;margin-bottom:28px}.features{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.feature{padding:22px;border:1px solid var(--line);background:linear-gradient(180deg,var(--panel2),var(--panel));border-radius:16px}.feature b{display:block;font-size:17px;margin-bottom:7px}.feature span{color:var(--muted);font-size:14px}.gallery{display:grid;grid-template-columns:repeat(2,1fr);gap:18px}.shot{border:1px solid var(--line);border-radius:16px;overflow:hidden;background:#0b1727}.shot img{display:block;width:100%;aspect-ratio:16/9;object-fit:cover}.shot p{margin:0;padding:13px 15px;color:#b9c8da;font-size:14px}.download{display:grid;grid-template-columns:1fr 1fr;gap:16px}.download-card{padding:25px;border-radius:17px;border:1px solid var(--line);background:linear-gradient(180deg,#12233a,#0c1828)}.download-card h3{margin:0 0 8px}.download-card p{color:var(--muted);min-height:48px}.store{margin-top:18px;border:1px dashed #39516d;border-radius:16px;padding:20px;color:#9eb0c6;background:rgba(255,255,255,.02)}footer{padding:36px 0 54px;border-top:1px solid var(--line);color:#8294aa;font-size:14px}.footerin{display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap}@media(max-width:850px){.hero{grid-template-columns:1fr;padding-top:58px}.features{grid-template-columns:1fr}.gallery,.download{grid-template-columns:1fr}.links{display:none}h1{font-size:52px}}
+  </style>
+</head>
+<body>
+  <nav class="nav"><div class="wrap navin"><a class="brand" href="#top"><img src="logo.png" alt="Quay logo"/><span>Quay for WSLC</span></a><div class="links"><a href="#features">Features</a><a href="#screenshots">Screenshots</a><a href="#download">Download</a><a href="https://github.com/dhhieu113pro/quay">GitHub</a></div></div></nav>
+
+  <main id="top">
+    <section class="wrap hero">
+      <div>
+        <div class="eyebrow"><span class="dot"></span><span>Windows · x64 · ARM64</span></div>
+        <h1><span class="gradient">WSLC containers, without the friction.</span></h1>
+        <p class="lead">Quay is a lightweight Windows desktop interface for managing containers, images, sessions and terminals through your locally installed WSLC runtime.</p>
+        <div class="cta">
+          <a class="btn primary" id="download-x64" href="https://github.com/dhhieu113pro/quay/releases/latest">Download for x64</a>
+          <a class="btn" id="download-arm64" href="https://github.com/dhhieu113pro/quay/releases/latest">Download for ARM64</a>
+          <a class="btn" href="https://github.com/dhhieu113pro/quay">View source</a>
+        </div>
+        <div class="download-meta" id="release-meta">Checking latest release…</div>
+      </div>
+      <div class="hero-card"><img src="shots/overview.jpg" alt="Quay overview screen" /></div>
+    </section>
+
+    <section class="section" id="features"><div class="wrap">
+      <h2>Everything you need for everyday WSLC work</h2>
+      <p class="sub">Stay focused on containers instead of command syntax. Quay talks directly to the WSLC runtime already installed on your machine.</p>
+      <div class="features">
+        <div class="feature"><b>Container management</b><span>View running and stopped containers, start, stop and remove them from one clean interface.</span></div>
+        <div class="feature"><b>Image management</b><span>Browse local images and pull the images you need without leaving the desktop app.</span></div>
+        <div class="feature"><b>Integrated terminals</b><span>Open container terminals quickly when you need to inspect, debug or operate a workload.</span></div>
+        <div class="feature"><b>WSLC sessions</b><span>See runtime and session information so you always know what Quay is connected to.</span></div>
+        <div class="feature"><b>x64 + ARM64</b><span>Native Windows builds for Intel/AMD PCs and modern Windows on ARM devices.</span></div>
+        <div class="feature"><b>Lightweight & open source</b><span>Built with Rust and Tauri, with source, issues and releases available publicly on GitHub.</span></div>
+      </div>
+    </div></section>
+
+    <section class="section" id="screenshots"><div class="wrap">
+      <h2>See Quay in action</h2>
+      <p class="sub">Real screenshots from the desktop app.</p>
+      <div class="gallery">
+        <div class="shot"><img src="shots/containers.jpg" alt="Containers screen"/><p>Containers</p></div>
+        <div class="shot"><img src="shots/images.jpg" alt="Images screen"/><p>Images</p></div>
+        <div class="shot"><img src="shots/run.jpg" alt="Run container screen"/><p>Run a container</p></div>
+        <div class="shot"><img src="shots/session.jpg" alt="WSLC session screen"/><p>WSLC session</p></div>
+        <div class="shot"><img src="shots/host.jpg" alt="Host details screen"/><p>Host details</p></div>
+        <div class="shot"><img src="shots/overview.jpg" alt="Overview screen"/><p>Overview</p></div>
+      </div>
+    </div></section>
+
+    <section class="section" id="download"><div class="wrap">
+      <h2>Download Quay</h2>
+      <p class="sub">Choose the build that matches your Windows machine. Quay requires Windows 11, WSL and WSLC available on PATH.</p>
+      <div class="download">
+        <div class="download-card"><h3>Windows x64</h3><p>For Intel and AMD Windows 11 PCs.</p><a class="btn primary" id="download-x64-bottom" href="https://github.com/dhhieu113pro/quay/releases/latest">Download x64 MSI</a></div>
+        <div class="download-card"><h3>Windows ARM64</h3><p>For Snapdragon, Copilot+ and other Windows on ARM devices.</p><a class="btn primary" id="download-arm64-bottom" href="https://github.com/dhhieu113pro/quay/releases/latest">Download ARM64 MSI</a></div>
+      </div>
+      <div class="store"><strong>Microsoft Store</strong><br/>Coming soon. Once the Store listing is approved, the official Microsoft Store badge and install link will appear here.</div>
+    </div></section>
+  </main>
+
+  <footer><div class="wrap footerin"><span>Quay for WSLC · Open source</span><span><a href="privacy.md">Privacy</a> · <a href="https://github.com/dhhieu113pro/quay/releases">Releases</a> · <a href="https://github.com/dhhieu113pro/quay/issues">Issues</a></span></div></footer>
+
+  <script>
+    (async () => {
+      const fallback = 'https://github.com/dhhieu113pro/quay/releases/latest';
+      try {
+        const response = await fetch('https://api.github.com/repos/dhhieu113pro/quay/releases/latest', {headers:{Accept:'application/vnd.github+json'}});
+        if (!response.ok) throw new Error('release lookup failed');
+        const release = await response.json();
+        const assets = Array.isArray(release.assets) ? release.assets : [];
+        const x64 = assets.find(a => /_x64_en-US\.msi$/i.test(a.name)) || assets.find(a => /_x64-setup\.exe$/i.test(a.name));
+        const arm64 = assets.find(a => /_arm64_en-US\.msi$/i.test(a.name)) || assets.find(a => /_arm64-setup\.exe$/i.test(a.name));
+        const x64Url = x64?.browser_download_url || fallback;
+        const arm64Url = arm64?.browser_download_url || fallback;
+        ['download-x64','download-x64-bottom'].forEach(id => document.getElementById(id).href = x64Url);
+        ['download-arm64','download-arm64-bottom'].forEach(id => document.getElementById(id).href = arm64Url);
+        document.getElementById('release-meta').textContent = `Latest release: ${release.tag_name || 'available on GitHub'} · MSI/EXE downloads are served from GitHub Releases.`;
+      } catch (_) {
+        document.getElementById('release-meta').textContent = 'Latest installers are available from GitHub Releases.';
+      }
+    })();
+  </script>
+</body>
+</html>
