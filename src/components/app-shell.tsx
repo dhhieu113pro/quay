@@ -11,6 +11,7 @@ import {
   X,
 } from "lucide-react";
 import { toast, Toaster } from "sonner";
+import packageJson from "../../package.json";
 import { AppearanceProvider, useAppearance } from "@/components/appearance-provider";
 import { AppearanceToggle } from "@/components/appearance-toggle";
 import { Mark } from "@/components/mark";
@@ -28,7 +29,7 @@ import { useWslc } from "@/lib/wslc/store";
 import type { ViewId } from "@/lib/wslc/types";
 import { windowAction } from "@/lib/tauri";
 
-const QUAY_VERSION = "0.1.4";
+const QUAY_VERSION = packageJson.version;
 
 const NAV: Array<{ id: ViewId; label: string; icon: typeof Box }> = [
   { id: "dashboard", label: "Overview", icon: LayoutGrid },
@@ -205,63 +206,12 @@ function Titlebar() {
   );
 }
 
-function CaptionBtn({
-  children,
-  label,
-  danger,
-  onClick,
-}: {
-  children: ReactNode;
-  label: string;
-  danger?: boolean;
-  onClick?: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      onClick={onClick}
-      className={cn(
-        "grid h-12 w-11 place-items-center text-muted-foreground hover:bg-elevated hover:text-foreground",
-        danger && "hover:bg-destructive hover:text-destructive-foreground",
-      )}
-    >
-      {children}
-    </button>
-  );
+function CaptionBtn({ children, label, danger, onClick }: { children: ReactNode; label: string; danger?: boolean; onClick?: () => void }) {
+  return <button type="button" aria-label={label} title={label} onClick={onClick} className={cn("grid h-12 w-11 place-items-center text-muted-foreground hover:bg-elevated hover:text-foreground", danger && "hover:bg-destructive hover:text-destructive-foreground")}>{children}</button>;
 }
 
-function NavBtn({
-  id,
-  label,
-  icon: Icon,
-  active,
-  onClick,
-}: {
-  id: ViewId;
-  label: string;
-  icon: typeof Box;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-current={active ? "page" : undefined}
-      className={cn(
-        "mx-2 flex h-10 items-center gap-2.5 rounded-md px-2.5 text-sm",
-        active
-          ? "bg-elevated text-foreground"
-          : "text-muted-foreground hover:bg-elevated/70 hover:text-foreground",
-      )}
-    >
-      <Icon className="size-4" />
-      {label}
-      <span className="sr-only">{id}</span>
-    </button>
-  );
+function NavBtn({ id, label, icon: Icon, active, onClick }: { id: ViewId; label: string; icon: typeof Box; active: boolean; onClick: () => void }) {
+  return <button type="button" onClick={onClick} aria-current={active ? "page" : undefined} className={cn("mx-2 flex h-10 items-center gap-2.5 rounded-md px-2.5 text-sm", active ? "bg-elevated text-foreground" : "text-muted-foreground hover:bg-elevated/70 hover:text-foreground")}><Icon className="size-4" />{label}<span className="sr-only">{id}</span></button>;
 }
 
 function StatusBar() {
@@ -277,43 +227,18 @@ function StatusBar() {
         {session.running ? "WSLC" : "DOWN"} {wslcVersionLabel(session.version)}
       </span>
       <span>{running} running</span>
-      <span className="ml-auto truncate text-subtle">
-        {last ? last.method : "idle"}
-      </span>
+      <span className="ml-auto truncate text-subtle">{last ? last.method : "idle"}</span>
     </footer>
   );
 }
 
-function MobileNav({
-  view,
-  onChange,
-}: {
-  view: ViewId;
-  onChange: (v: ViewId) => void;
-}) {
+function MobileNav({ view, onChange }: { view: ViewId; onChange: (v: ViewId) => void }) {
   return (
     <nav className="fixed inset-x-0 bottom-0 z-30 flex border-t border-border bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
       {NAV.map((item) => {
         const Icon = item.icon;
         const active = view === item.id;
-        return (
-          <Tooltip key={item.id}>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                onClick={() => onChange(item.id)}
-                className={cn(
-                  "flex h-14 min-h-11 flex-1 flex-col items-center justify-center gap-1 text-xs",
-                  active ? "text-foreground" : "text-muted-foreground",
-                )}
-              >
-                <Icon className="size-4" />
-                {item.label}
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>{item.label}</TooltipContent>
-          </Tooltip>
-        );
+        return <Tooltip key={item.id}><TooltipTrigger asChild><button type="button" onClick={() => onChange(item.id)} className={cn("flex h-14 min-h-11 flex-1 flex-col items-center justify-center gap-1 text-xs", active ? "text-foreground" : "text-muted-foreground")}><Icon className="size-4" />{item.label}</button></TooltipTrigger><TooltipContent>{item.label}</TooltipContent></Tooltip>;
       })}
     </nav>
   );
