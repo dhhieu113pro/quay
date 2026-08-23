@@ -66,12 +66,21 @@ export function buildSubmissionUpdate(createdSubmission, packageNames) {
     }
   }
 
-  update.applicationPackages = packageNames.map((fileName) => ({
+  const existingPackages = (createdSubmission.applicationPackages ?? []).map((pkg) => ({
+    fileName: pkg.fileName,
+    fileStatus: 'PendingDelete',
+    minimumDirectXVersion: pkg.minimumDirectXVersion ?? 'None',
+    minimumSystemRam: pkg.minimumSystemRam ?? 'None',
+  }));
+
+  const newPackages = packageNames.map((fileName) => ({
     fileName,
     fileStatus: 'PendingUpload',
     minimumDirectXVersion: 'None',
     minimumSystemRam: 'None',
   }));
+
+  update.applicationPackages = [...existingPackages, ...newPackages];
 
   return update;
 }
