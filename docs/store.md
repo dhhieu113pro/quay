@@ -11,7 +11,7 @@ Quay is a full-trust Win32 Tauri desktop. It runs the installed WSL Containers C
    - Privacy: `https://github.com/dhhieu113pro/quay/blob/main/docs/privacy.md`
    - Support: `https://github.com/dhhieu113pro/quay/issues`
    - Website: `https://github.com/dhhieu113pro/quay`
-5. Use a GitHub Release whose tag matches the internal Quay version. For the current release, use `v0.1.3`.
+5. Use a GitHub Release whose tag matches the internal Quay version. For the current release, use `v0.1.4`.
 6. The Release workflow produces x64 and ARM64 NSIS/MSI installers. The **Microsoft Store package** workflow can also be run manually to build Store-specific offline-WebView2 installers for both architectures.
 7. In Partner Center, point the package to the appropriate GitHub Release asset URL or upload the installer produced by the Store workflow.
 8. Silent install arguments:
