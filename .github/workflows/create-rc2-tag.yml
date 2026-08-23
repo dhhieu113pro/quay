@@ -1,0 +1,23 @@
+name: Create RC2 tag
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    if: github.event.head_commit.message == 'Create temporary rc2 tag workflow'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Create v0.1.4-rc2
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a v0.1.4-rc2 -m "Quay v0.1.4-rc2" 4faf09ca9395d7a7e5d3adc9a6a43a6ee8730fa6
+          git push origin v0.1.4-rc2
