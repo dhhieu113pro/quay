@@ -1,0 +1,86 @@
+name: Real WSLC
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src-tauri/**'
+      - 'tests/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/real-wslc.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  wslc-x64:
+    name: Real WSLC x64
+    runs-on: [self-hosted, windows, x64, wslc]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.0
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Verify WSLC runtime
+        shell: pwsh
+        run: |
+          wsl --version
+          wslc version
+          wslc run --rm hello-world
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run real WSLC integration suite
+        shell: pwsh
+        env:
+          NGROK_AUTHTOKEN: ${{ secrets.NGROK_AUTHTOKEN }}
+        run: |
+          ./tests/run-all.ps1 -SkipInstall
+
+  wslc-arm64:
+    name: Real WSLC ARM64
+    runs-on: [self-hosted, windows, arm64, wslc]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.0
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Verify WSLC runtime
+        shell: pwsh
+        run: |
+          wsl --version
+          wslc version
+          wslc run --rm hello-world
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run real WSLC integration suite
+        shell: pwsh
+        env:
+          NGROK_AUTHTOKEN: ${{ secrets.NGROK_AUTHTOKEN }}
+        run: |
+          ./tests/run-all.ps1 -SkipInstall
