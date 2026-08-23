@@ -1,8 +1,7 @@
 name: CI
 
-# GitHub-hosted runners verify source/build/package only.
-# WSLC runtime tests are local-only because hosted runners do not reliably
-# provide the WSL Containers runtime (`wslc`).
+# GitHub-hosted runners verify source/build/package.
+# WSLC runtime coverage is experimental until hosted runner support proves reliable.
 on:
   push:
     branches: [main]
@@ -70,3 +69,42 @@ jobs:
             src-tauri/target/${{ matrix.rust_target }}/release/bundle/nsis/*.exe
             src-tauri/target/${{ matrix.rust_target }}/release/bundle/msi/*.msi
           if-no-files-found: error
+
+  wslc-integration:
+    name: WSLC integration (experimental)
+    runs-on: windows-latest
+    continue-on-error: true
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show current WSL state
+        shell: pwsh
+        run: |
+          wsl --status
+          wsl --version
+
+      - name: Update WSL pre-release
+        shell: pwsh
+        run: |
+          wsl --update --pre-release
+          wsl --version
+
+      - name: Verify WSLC command
+        shell: pwsh
+        run: |
+          $cmd = Get-Command wslc -ErrorAction Stop
+          Write-Host "wslc path: $($cmd.Source)"
+          wslc version
+
+      - name: Run WSLC hello-world
+        shell: pwsh
+        run: |
+          wslc run --rm hello-world
+
+      - name: Inspect WSLC runtime
+        if: always()
+        shell: pwsh
+        run: |
+          wslc container list --all
+          wslc image list
