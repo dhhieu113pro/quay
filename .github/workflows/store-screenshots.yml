@@ -10,7 +10,7 @@ on:
       - ".github/workflows/store-screenshots.yml"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   prepare-store-assets:
@@ -68,8 +68,7 @@ jobs:
               box.alpha_composite(fitted, (x, y))
               box.convert("RGB").save(out / "store-logo-1080x1080.png", "PNG", optimize=True)
 
-              # Recommended 2:3 poster: exact 720x1080. Keep branding simple and
-              # readable at Store thumbnail sizes.
+              # Recommended 2:3 poster: exact 720x1080.
               poster = Image.new("RGBA", (720, 1080), (8, 15, 29, 255))
               poster_logo = ImageOps.contain(logo, (560, 560), Image.Resampling.LANCZOS)
               px = (720 - poster_logo.width) // 2
@@ -91,6 +90,10 @@ jobs:
           if not files:
               raise SystemExit("No Store PNG assets generated")
 
+          screenshot_count = len([p for p in files if p.name.startswith("screenshot-")])
+          if screenshot_count > 10:
+              raise SystemExit(f"Microsoft Store supports up to 10 screenshots; generated {screenshot_count}")
+
           for path in files:
               size = path.stat().st_size
               if size >= 50 * 1024 * 1024:
@@ -109,6 +112,25 @@ jobs:
 
               print(f"OK: {path.name}: {dims[0]}x{dims[1]}, {size / 1024:.1f} KiB")
           PY
+
+      - name: Save generated assets in repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf store/assets
+          mkdir -p store/assets
+          cp store/generated/*.png store/assets/
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add store/assets
+
+          if git diff --cached --quiet; then
+            echo "Store assets are already up to date."
+          else
+            git commit -m "Update Microsoft Store assets [skip ci]"
+            git push
+          fi
 
       - name: Upload Microsoft Store assets
         uses: actions/upload-artifact@v4
