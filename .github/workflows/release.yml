@@ -106,3 +106,73 @@ jobs:
           releaseDraft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
           args: --target ${{ matrix.rust_target }} --bundles nsis,msi
+
+      - name: Stage MSI for installer repository
+        shell: pwsh
+        run: |
+          $msi = Get-ChildItem "src-tauri/target/${{ matrix.rust_target }}/release/bundle/msi/*.msi" | Select-Object -First 1
+          if (-not $msi) { throw "MSI bundle was not produced" }
+          New-Item -ItemType Directory -Force -Path installer-artifact | Out-Null
+          Copy-Item $msi.FullName "installer-artifact/$($msi.Name)"
+          Write-Host "Staged $($msi.Name)"
+
+      - name: Upload MSI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: store-msi-${{ matrix.name }}
+          path: installer-artifact/*.msi
+          if-no-files-found: error
+          retention-days: 7
+
+  publish-store-msi:
+    name: Publish Store MSI files
+    needs: windows
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download MSI artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: store-msi-*
+          path: installers
+          merge-multiple: true
+
+      - name: Publish to quay-installer
+        env:
+          INSTALLER_TOKEN: ${{ secrets.QUAY_INSTALLER_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${INSTALLER_TOKEN:-}" ]; then
+            echo "Missing QUAY_INSTALLER_TOKEN repository secret"
+            exit 1
+          fi
+
+          shopt -s nullglob
+          files=(installers/*.msi)
+          if [ ${#files[@]} -ne 2 ]; then
+            echo "Expected 2 MSI files, found ${#files[@]}"
+            find installers -maxdepth 2 -type f -print
+            exit 1
+          fi
+
+          git clone "https://x-access-token:${INSTALLER_TOKEN}@github.com/dhhieu113pro/quay-installer.git" installer-repo
+          mkdir -p "installer-repo/${RELEASE_TAG}"
+          cp installers/*.msi "installer-repo/${RELEASE_TAG}/"
+
+          cd installer-repo
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "${RELEASE_TAG}"
+          if git diff --cached --quiet; then
+            echo "Installer files already published for ${RELEASE_TAG}"
+            exit 0
+          fi
+          git commit -m "Publish Quay ${RELEASE_TAG} installers"
+          git push origin main
+
+      - name: Show Microsoft Store URLs
+        shell: bash
+        run: |
+          echo "Published installer URLs:"
+          find installers -maxdepth 1 -type f -name '*.msi' -printf 'https://raw.githubusercontent.com/dhhieu113pro/quay-installer/main/${{ github.ref_name }}/%f\n'
