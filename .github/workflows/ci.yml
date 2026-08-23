@@ -1,7 +1,6 @@
 name: CI
 
-# GitHub-hosted runners verify source/build/package.
-# WSLC runtime coverage is experimental until hosted runner support proves reliable.
+# GitHub-hosted runners verify source/build/package and exercise the real WSLC runtime.
 on:
   push:
     branches: [main]
@@ -44,14 +43,6 @@ jobs:
           workspaces: src-tauri -> target
           key: ci-${{ matrix.rust_target }}
 
-      - name: Prepare pnpm lockfile when missing
-        shell: pwsh
-        run: |
-          if (-not (Test-Path pnpm-lock.yaml)) {
-            Write-Host "pnpm-lock.yaml is missing; importing package-lock.json for this CI run"
-            pnpm import
-          }
-
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
@@ -78,9 +69,8 @@ jobs:
           if-no-files-found: error
 
   wslc-integration:
-    name: Rust + WSLC integration (experimental)
+    name: Rust + WSLC integration
     runs-on: windows-latest
-    continue-on-error: true
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -140,18 +130,10 @@ jobs:
             }
           }
           if (-not $cmd) {
-            throw "WSL 2.9.4 installed, but wslc.exe was not found under the known WSL install locations"
+            throw "WSLC executable was not found after updating WSL"
           }
           Write-Host "wslc path: $($cmd.FullName ?? $cmd.Source)"
           & $cmd.FullName version
-
-      - name: Prepare pnpm lockfile when missing
-        shell: pwsh
-        run: |
-          if (-not (Test-Path pnpm-lock.yaml)) {
-            pnpm import
-            if ($LASTEXITCODE -ne 0) { throw "pnpm import failed" }
-          }
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
