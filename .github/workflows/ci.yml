@@ -34,7 +34,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -44,6 +43,14 @@ jobs:
         with:
           workspaces: src-tauri -> target
           key: ci-${{ matrix.rust_target }}
+
+      - name: Prepare pnpm lockfile when missing
+        shell: pwsh
+        run: |
+          if (-not (Test-Path pnpm-lock.yaml)) {
+            Write-Host "pnpm-lock.yaml is missing; importing package-lock.json for this CI run"
+            pnpm import
+          }
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
@@ -88,14 +95,39 @@ jobs:
         shell: pwsh
         run: |
           wsl --update --pre-release
+          wsl --shutdown
           wsl --version
 
-      - name: Verify WSLC command
+      - name: Locate WSLC command
         shell: pwsh
         run: |
-          $cmd = Get-Command wslc -ErrorAction Stop
-          Write-Host "wslc path: $($cmd.Source)"
-          wslc version
+          $cmd = Get-Command wslc -ErrorAction SilentlyContinue
+          if (-not $cmd) {
+            $candidates = @(
+              "$env:ProgramFiles\WSL\wslc.exe",
+              "$env:LOCALAPPDATA\Microsoft\WindowsApps\wslc.exe"
+            )
+            foreach ($candidate in $candidates) {
+              if (Test-Path $candidate) {
+                $dir = Split-Path $candidate -Parent
+                $dir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+                $cmd = Get-Item $candidate
+                break
+              }
+            }
+          }
+          if (-not $cmd) {
+            $found = Get-ChildItem "$env:ProgramFiles\WSL" -Filter wslc.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($found) {
+              $found.DirectoryName | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+              $cmd = $found
+            }
+          }
+          if (-not $cmd) {
+            throw "WSL 2.9.4 installed, but wslc.exe was not found under the known WSL install locations"
+          }
+          Write-Host "wslc path: $($cmd.FullName ?? $cmd.Source)"
+          & $cmd.FullName version
 
       - name: Run WSLC hello-world
         shell: pwsh
@@ -106,5 +138,10 @@ jobs:
         if: always()
         shell: pwsh
         run: |
-          wslc container list --all
-          wslc image list
+          $cmd = Get-Command wslc -ErrorAction SilentlyContinue
+          if ($cmd) {
+            wslc container list --all
+            wslc image list
+          } else {
+            Write-Host "wslc is not available; skipping runtime inspection"
+          }
