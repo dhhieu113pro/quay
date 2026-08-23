@@ -16,18 +16,29 @@ on:
         required: false
         type: string
       version:
-        description: "App version such as 0.1.9 (leave blank to use package.json/tag)"
+        description: "App version such as 0.1.9 (leave blank to use package.json)"
         required: false
         type: string
   push:
     tags:
-      - "v*"
+      - "v*-store"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
+  store-submission-tests:
+    name: Store submission API tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node --test tests/store-submission.test.mjs
+
   build-msix:
+    needs: store-submission-tests
     strategy:
       fail-fast: false
       matrix:
@@ -81,15 +92,17 @@ jobs:
           }
 
           $version = $env:REQUESTED_VERSION
-          if ([string]::IsNullOrWhiteSpace($version)) {
-            if ("${{ github.ref_type }}" -eq "tag" -and "${{ github.ref_name }}" -match '^v(.+)$') {
-              $version = $Matches[1]
-            } else {
-              $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          if ("${{ github.ref_type }}" -eq "tag") {
+            if ("${{ github.ref_name }}" -notmatch '^v(\d+\.\d+\.\d+)-store$') {
+              throw "Store tag '${{ github.ref_name }}' must match vX.Y.Z-store, for example v0.1.5-store."
             }
+            $version = $Matches[1]
+          } elseif ([string]::IsNullOrWhiteSpace($version)) {
+            $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
           }
-          if ($version -notmatch '^\d+\.\d+\.\d+(?:[-+].*)?$') {
-            throw "Unsupported version '$version'. Expected a semantic version such as 0.1.9."
+
+          if ($version -notmatch '^\d+\.\d+\.\d+$') {
+            throw "Unsupported Store version '$version'. Expected a numeric version such as 0.1.9."
           }
           "version=$version" >> $env:GITHUB_OUTPUT
           Write-Host "Store identity configured. Package name length: $($env:STORE_PACKAGE_NAME.Length); publisher length: $($env:STORE_PUBLISHER.Length)"
@@ -138,14 +151,6 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Attach MSIX to GitHub release
-        if: github.ref_type == 'tag'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: pwsh
-        run: |
-          gh release upload "${{ github.ref_name }}" store/msix/*.msix --clobber
-
   verify-store-packages:
     name: Verify Store MSIX packages
     needs: build-msix
@@ -168,3 +173,37 @@ jobs:
           foreach ($file in $files) {
             Write-Host "Ready for Partner Center: $($file.Name) ($([math]::Round($file.Length / 1MB, 2)) MB)"
           }
+
+  submit-store:
+    name: Submit to Microsoft Store
+    needs: verify-store-packages
+    if: github.ref_type == 'tag' && endsWith(github.ref_name, '-store')
+    runs-on: ubuntu-latest
+    env:
+      STORE_TENANT_ID: ${{ vars.STORE_TENANT_ID || secrets.STORE_TENANT_ID }}
+      STORE_CLIENT_ID: ${{ vars.STORE_CLIENT_ID || secrets.STORE_CLIENT_ID }}
+      STORE_CLIENT_SECRET: ${{ secrets.STORE_CLIENT_SECRET }}
+      STORE_APPLICATION_ID: ${{ vars.STORE_APPLICATION_ID || secrets.STORE_APPLICATION_ID }}
+      STORE_TAG: ${{ github.ref_name }}
+      STORE_PACKAGE_DIR: store-packages
+      STORE_UPLOAD_ZIP: store-upload.zip
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Download Store MSIX artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: store-msix-*
+          path: store-packages
+          merge-multiple: true
+
+      - name: Create Partner Center upload archive
+        shell: bash
+        run: zip -j "$STORE_UPLOAD_ZIP" store-packages/*.msix
+
+      - name: Submit Store packages through Partner Center API
+        run: node scripts/store-submission.mjs

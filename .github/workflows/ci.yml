@@ -1,8 +1,9 @@
 name: CI
 
-# GitHub-hosted runners verify source, Rust WSLC adapter logic, and Windows packaging.
-# The ignored real_wslc_container_lifecycle test stays in tests/run-all.ps1 for
-# local Windows validation because hosted runners cannot reliably update WSL.
+# GitHub-hosted runners verify source, Rust WSLC adapter logic, Store submission
+# request logic, and Windows packaging. The ignored real_wslc_container_lifecycle
+# test stays in tests/run-all.ps1 for local Windows validation because hosted
+# runners cannot reliably update WSL.
 on:
   push:
     branches: [main]
@@ -47,6 +48,9 @@ jobs:
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Store submission tests
+        run: pnpm test:store-submission
 
       - name: TypeScript check
         run: pnpm typecheck
