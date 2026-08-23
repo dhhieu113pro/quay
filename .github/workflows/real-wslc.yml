@@ -17,7 +17,7 @@ permissions:
 jobs:
   wslc-x64:
     name: Real WSLC x64
-    runs-on: [self-hosted, windows, x64, wslc]
+    runs-on: [self-hosted, windows, x64]
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
@@ -52,7 +52,7 @@ jobs:
 
   wslc-arm64:
     name: Real WSLC ARM64
-    runs-on: [self-hosted, windows, arm64, wslc]
+    runs-on: [self-hosted, windows, arm64]
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
