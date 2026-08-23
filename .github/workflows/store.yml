@@ -25,10 +25,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.0
+          run_install: false
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+          cache: pnpm
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -40,7 +45,7 @@ jobs:
           key: store-${{ matrix.rust_target }}
 
       - name: Install frontend
-        run: npm ci --legacy-peer-deps
+        run: pnpm install --frozen-lockfile
 
       - name: Verify release version is aligned
         shell: pwsh
@@ -56,7 +61,7 @@ jobs:
           }
 
       - name: Bundle Store installers
-        run: npm run tauri -- build --target ${{ matrix.rust_target }} --bundles nsis,msi --config src-tauri/tauri.store.conf.json
+        run: pnpm tauri -- build --target ${{ matrix.rust_target }} --bundles nsis,msi --config src-tauri/tauri.store.conf.json
 
       - name: Collect installers
         shell: pwsh
