@@ -201,8 +201,8 @@ npm run test:windows
 Create a release by pushing a version tag that matches the internal application version:
 
 ```powershell
-git tag v0.1.3
-git push origin v0.1.3
+git tag v0.1.4
+git push origin v0.1.4
 ```
 
 ## License
