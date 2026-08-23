@@ -58,28 +58,31 @@ function Wait-Http([string]$Url, [string]$Contains = "", [int]$TimeoutSeconds = 
 
 try {
     Run-Step "Prerequisites" {
-        Require-Command "node"; Require-Command "npm"; Require-Command "cargo"; Require-Command "wslc"
-        node --version; npm --version; cargo --version; wslc version
-        if ([string]::IsNullOrWhiteSpace($NgrokAuthtoken)) { throw "NGROK_AUTHTOKEN is required." }
+        Require-Command "node"; Require-Command "pnpm"; Require-Command "cargo"; Require-Command "wslc"
+        node --version; pnpm --version; cargo --version; wslc version
     }
 
     Run-Step "Frontend dependencies" {
         if ($SkipInstall) {
             if (-not (Test-Path "node_modules")) { throw "-SkipInstall supplied but node_modules does not exist." }
         } elseif (-not (Test-Path "node_modules")) {
-            npm ci
-            if ($LASTEXITCODE -ne 0) { throw "npm ci failed" }
+            if (-not (Test-Path "pnpm-lock.yaml") -and (Test-Path "package-lock.json")) {
+                pnpm import
+                if ($LASTEXITCODE -ne 0) { throw "pnpm import failed" }
+            }
+            pnpm install --frozen-lockfile
+            if ($LASTEXITCODE -ne 0) { throw "pnpm install failed" }
         }
     }
 
     Run-Step "TypeScript typecheck" {
-        npm run typecheck
+        pnpm typecheck
         if ($LASTEXITCODE -ne 0) { throw "typecheck failed" }
     }
 
-    Run-Step "Rust/Tauri CLI backend compile" {
-        cargo check --manifest-path src-tauri/Cargo.toml
-        if ($LASTEXITCODE -ne 0) { throw "cargo check failed" }
+    Run-Step "Rust/Tauri backend tests" {
+        cargo test --manifest-path src-tauri/Cargo.toml
+        if ($LASTEXITCODE -ne 0) { throw "cargo test failed" }
     }
 
     Run-Step "Default WSLC session nginx HTTP" {
@@ -93,7 +96,7 @@ try {
         Remove-WslcContainer "quay-test-nginx"
     }
 
-    Run-Step "Default WSLC local-coding Group E2E" {
+    Run-Step "Default WSLC LocalCoding Cube core E2E" {
         New-Item -ItemType Directory -Force -Path $workspace | Out-Null
         Remove-WslcContainer "local-coding-mcp-ngrok"
         Remove-WslcContainer "local-coding-mcp"
@@ -108,14 +111,22 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "local-coding-mcp failed to start" }
         Wait-Http "http://127.0.0.1:15000/health" | Out-Null
 
-        wslc run -d --name local-coding-mcp-ngrok --network mcp-net -p 14040:4040 -e "NGROK_AUTHTOKEN=$NgrokAuthtoken" ngrok/ngrok:latest http local-coding-mcp:5000 --log=stdout
-        if ($LASTEXITCODE -ne 0) { throw "ngrok failed to start" }
-        $api = Wait-Http "http://127.0.0.1:14040/api/tunnels"
-        $body = $api.Content | ConvertFrom-Json
-        if (@($body.tunnels).Count -lt 1) { throw "ngrok has no active tunnel" }
-
         $running = wslc container list | Out-String
-        if ($running -notmatch "local-coding-mcp" -or $running -notmatch "local-coding-mcp-ngrok") { throw "local-coding Group is not fully running" }
+        if ($running -notmatch "local-coding-mcp") { throw "LocalCoding core container is not running" }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($NgrokAuthtoken)) {
+        Run-Step "Default WSLC LocalCoding ngrok E2E" {
+            Remove-WslcContainer "local-coding-mcp-ngrok"
+            wslc run -d --name local-coding-mcp-ngrok --network mcp-net -p 14040:4040 -e "NGROK_AUTHTOKEN=$NgrokAuthtoken" ngrok/ngrok:latest http local-coding-mcp:5000 --log=stdout
+            if ($LASTEXITCODE -ne 0) { throw "ngrok failed to start" }
+            $api = Wait-Http "http://127.0.0.1:14040/api/tunnels"
+            $body = $api.Content | ConvertFrom-Json
+            if (@($body.tunnels).Count -lt 1) { throw "ngrok has no active tunnel" }
+        }
+    } else {
+        Write-Host ""
+        Write-Host "SKIP: LocalCoding ngrok E2E (NGROK_AUTHTOKEN not configured)" -ForegroundColor Yellow
     }
 }
 finally {
@@ -126,6 +137,6 @@ finally {
     Write-Host "===================== TEST SUMMARY =====================" -ForegroundColor Cyan
     if ($results.Count -gt 0) { $results | Format-Table -AutoSize }
     $failed = @($results | Where-Object { $_.Result -eq "FAIL" }).Count
-    if ($failed -eq 0 -and $results.Count -gt 0) { Write-Host "ALL CLI TESTS PASSED" -ForegroundColor Green }
+    if ($failed -eq 0 -and $results.Count -gt 0) { Write-Host "ALL WSLC TESTS PASSED" -ForegroundColor Green }
     elseif ($failed -gt 0) { Write-Host "$failed TEST(S) FAILED" -ForegroundColor Red }
 }
