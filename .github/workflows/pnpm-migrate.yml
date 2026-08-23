@@ -1,0 +1,38 @@
+name: Generate pnpm lockfile
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.0
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Import npm lockfile
+        run: pnpm import
+
+      - name: Verify pnpm install
+        run: pnpm install --frozen-lockfile
+
+      - name: Commit pnpm lockfile
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pnpm-lock.yaml
+          git commit -m "Generate pnpm lockfile" || exit 0
+          git push
