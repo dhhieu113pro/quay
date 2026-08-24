@@ -1,5 +1,10 @@
 import { create } from "zustand";
-import { ensureHostDirectory, invokeWslcHost } from "@/lib/tauri";
+import {
+  ensureHostDirectory,
+  getLaunchAtSignIn,
+  invokeWslcHost,
+  setLaunchAtSignIn as setNativeLaunchAtSignIn,
+} from "@/lib/tauri";
 import { checkHost } from "./probe";
 import { loadPrefs, savePrefs } from "./prefs";
 import {
@@ -349,7 +354,9 @@ export const useWslc = create<WslcState>((set, get) => {
     },
     deleteVolume: (name) => { void runOperation(`volume:${name}`, async () => { await execute(["volume", "rm", name]); await refreshInventory(); }); },
     retryProbe: async () => {
-      set({ gate: "checking", probeNote: "Checking WSL and wslc.exe…", containers: [], images: [], volumes: [], metrics: [], groups: loadGroups() });
+      const nativeLaunchAtSignIn = await getLaunchAtSignIn();
+      set({ gate: "checking", probeNote: "Checking WSL and wslc.exe…", containers: [], images: [], volumes: [], metrics: [], groups: loadGroups(), launchAtSignIn: nativeLaunchAtSignIn });
+      savePrefs({ launchAtSignIn: nativeLaunchAtSignIn, groupAuto: {} });
       const result = await checkHost();
       if (!result.wslc) {
         set({ gate: "missing", probeNote: result.note, wslcOnPath: false, session: emptySession(result.missing) });
@@ -449,7 +456,15 @@ export const useWslc = create<WslcState>((set, get) => {
       for (const group of get().groups.filter((item) => item.autoStart)) get().startGroup(group.id);
     },
     setLaunchAtSignIn: (launchAtSignIn) => {
-      set({ launchAtSignIn }); savePrefs({ launchAtSignIn, groupAuto: {} });
+      void (async () => {
+        try {
+          const nativeLaunchAtSignIn = await setNativeLaunchAtSignIn(launchAtSignIn);
+          set({ launchAtSignIn: nativeLaunchAtSignIn });
+          savePrefs({ launchAtSignIn: nativeLaunchAtSignIn, groupAuto: {} });
+        } catch (error) {
+          set({ lastError: error instanceof Error ? error.message : String(error) });
+        }
+      })();
     },
   };
 });
