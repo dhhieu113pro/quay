@@ -15,6 +15,7 @@
     "typecheck": "tsc --noEmit",
     "test:store-submission": "node --test tests/store-submission.test.mjs",
     "test:pages": "node --test tests/pages-store-link.test.mjs",
+    "test:autostart": "node --test tests/autostart-wiring.test.mjs",
     "test:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File tests/run-all.ps1"
   },
   "dependencies": {
@@ -76,11 +77,10 @@
     "@types/pg": "^8.11.10",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
-    "@vitejs/plugin-react": "^5.2.0",
     "eslint": "^9.20.0",
     "eslint-config-prettier": "^10.1.1",
     "eslint-plugin-prettier": "^5.2.6",
-    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-hooks": "^6.1.1",
     "eslint-plugin-react-refresh": "^0.4.20",
     "globals": "^15.15.0",
     "lightningcss": "^1.28.0",
