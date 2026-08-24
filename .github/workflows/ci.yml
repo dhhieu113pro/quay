@@ -37,6 +37,9 @@ jobs:
         with:
           node-version: 22
 
+      - name: Windows autostart wiring tests
+        run: pnpm test:autostart
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.rust_target }}
@@ -54,9 +57,6 @@ jobs:
 
       - name: Pages tests
         run: pnpm test:pages
-
-      - name: Windows autostart wiring tests
-        run: pnpm test:autostart
 
       - name: TypeScript check
         run: pnpm typecheck
