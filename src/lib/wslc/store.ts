@@ -1,10 +1,20 @@
 import { create } from "zustand";
 import {
   ensureHostDirectory,
+  ensureWorkspaceRoot,
+  getDefaultWorkspaceRoot,
   getLaunchAtSignIn,
   invokeWslcHost,
+  moveWorkspaceRoot,
   setLaunchAtSignIn as setNativeLaunchAtSignIn,
 } from "@/lib/tauri";
+import {
+  DEFAULT_WORKSPACE_TARGET,
+  defaultCubeContainerWorkspacePath,
+  defaultStandaloneWorkspacePath,
+  normalizeWorkspacePath,
+  resolveWorkspacePath,
+} from "@/lib/workspace";
 import { checkHost } from "./probe";
 import { loadPrefs, savePrefs } from "./prefs";
 import {
@@ -13,6 +23,7 @@ import {
   effectiveSpec,
   groupForContainer,
   loadGroups,
+  normalizeGroupWorkspace,
   saveGroup as persistGroup,
 } from "./groups";
 import type {
@@ -25,6 +36,7 @@ const CATALOG = [
   "nginx:latest", "postgres:16", "redis:7", "httpd:2.4",
 ];
 const LOCAL_CODING_WORKSPACE = "D:\\wslc\\workspaces";
+const LAB_WORKSPACE_ROOT = "D:\\Quay";
 
 interface WslcState {
   view: ViewId; gate: HostGate; probeNote: string; wslcOnPath: boolean;
@@ -32,7 +44,7 @@ interface WslcState {
   volumes: VolumeRecord[]; calls: ApiCall[]; pulls: PullJob[];
   selectedId: string | null; runOpen: boolean; inspectOpen: boolean;
   metrics: MetricsPoint[]; now: number; catalog: string[];
-  groups: ContainerGroup[]; launchAtSignIn: boolean;
+  groups: ContainerGroup[]; launchAtSignIn: boolean; workspaceRoot: string;
   operations: Record<string, boolean>; lastError: string | null;
   setView: (view: ViewId) => void;
   selectContainer: (id: string | null) => void;
@@ -57,6 +69,8 @@ interface WslcState {
   startGroup: (id: string) => void; stopGroup: (id: string) => void;
   startGroupContainer: (groupId: string, name: string) => void;
   startAutoGroups: () => void; setLaunchAtSignIn: (enabled: boolean) => void;
+  setWorkspaceRoot: (root: string) => void;
+  changeWorkspaceRoot: (nextRoot: string, mode: "move" | "keep") => Promise<void>;
 }
 
 const emptySession = (missing: string[] = []): SessionInfo => ({
@@ -118,13 +132,11 @@ function containersFrom(output?: string): Container[] {
           const protocol = Number(value(port, "protocol")) === 17 ? "udp" as const : "tcp" as const;
           return [{ host: Number(value(port, "hostport")) || 0,
             container: Number(value(port, "containerport")) || 0, protocol }];
-        })
-      : [];
+        }) : [];
     const createdSeconds = Number(value(r, "createdat"));
     const changedSeconds = Number(value(r, "statechangedat"));
     return {
-      id, name,
-      image: text(value(r, "image")), status,
+      id, name, image: text(value(r, "image")), status,
       createdAt: createdSeconds ? createdSeconds * 1000 : Date.now(),
       startedAt: status === "running" && changedSeconds ? changedSeconds * 1000 : undefined,
       ports, mounts: [], env: {}, gpu: false, cpuPercent: 0, memoryMB: 0,
@@ -140,8 +152,7 @@ function imagesFrom(output?: string): ImageRecord[] {
     const tag = text(value(r, "tag")) || "latest";
     return {
       id: text(value(r, "id", "imageid", "digest")) || `${repository}:${tag}`,
-      repository, tag, digest: text(value(r, "digest")),
-      sizeBytes: sizeBytesFrom(r),
+      repository, tag, digest: text(value(r, "digest")), sizeBytes: sizeBytesFrom(r),
       createdAt: Date.now(), containers: 0,
     };
   });
@@ -155,7 +166,7 @@ function volumesFrom(output?: string): VolumeRecord[] {
   }));
 }
 
-function runArgs(spec: RunSpec, network?: string) {
+function runArgs(spec: RunSpec, network?: string, managedMount?: string) {
   const args = ["run"];
   if (spec.detach) args.push("-d"); if (spec.remove) args.push("--rm");
   if (spec.gpu) args.push("--gpus", "all"); if (spec.name.trim()) args.push("--name", spec.name.trim());
@@ -163,6 +174,7 @@ function runArgs(spec: RunSpec, network?: string) {
   if (spec.workdir.trim()) args.push("-w", spec.workdir.trim());
   for (const p of spec.ports.split(",").map((x) => x.trim()).filter(Boolean)) args.push("-p", p);
   for (const e of spec.env.split("\n").map((x) => x.trim()).filter(Boolean)) args.push("-e", e);
+  if (managedMount) args.push("-v", managedMount);
   for (const m of spec.mounts.split("\n").map((x) => x.trim()).filter(Boolean)) args.push("-v", m);
   args.push(spec.image); if (spec.command.trim()) args.push(...spec.command.trim().split(/\s+/));
   return args;
@@ -188,10 +200,18 @@ const apiCall = (args: string[], ok: boolean, result: string): ApiCall => ({
 
 const prefs = loadPrefs();
 export const useWslc = create<WslcState>((set, get) => {
+  const saveCurrentPrefs = (patch: Partial<ReturnType<typeof loadPrefs>> = {}) => {
+    savePrefs({
+      launchAtSignIn: get().launchAtSignIn,
+      groupAuto: {},
+      workspaceRoot: get().workspaceRoot,
+      ...patch,
+    });
+  };
+
   const setOperation = (key: string, active: boolean) => set((state) => {
     const operations = { ...state.operations };
-    if (active) operations[key] = true;
-    else delete operations[key];
+    if (active) operations[key] = true; else delete operations[key];
     return { operations };
   });
 
@@ -216,9 +236,7 @@ export const useWslc = create<WslcState>((set, get) => {
         return old ? { ...container, logs: old.logs } : container;
       });
       set({ containers, now: Date.now() });
-    } catch {
-      set({ now: Date.now() });
-    }
+    } catch { set({ now: Date.now() }); }
   };
 
   const refreshInventory = async () => {
@@ -233,14 +251,10 @@ export const useWslc = create<WslcState>((set, get) => {
         volumes: volumes.ok ? volumesFrom(volumes.output) : get().volumes,
         now: Date.now(),
       });
-    } catch {
-      set({ now: Date.now() });
-    }
+    } catch { set({ now: Date.now() }); }
   };
 
-  const refreshAll = async () => {
-    await Promise.all([refreshContainers(), refreshInventory()]);
-  };
+  const refreshAll = async () => { await Promise.all([refreshContainers(), refreshInventory()]); };
 
   const refreshLogs = async (id: string) => {
     const container = get().containers.find((item) => item.id === id);
@@ -248,13 +262,9 @@ export const useWslc = create<WslcState>((set, get) => {
     const logs = await call(["container", "logs", "--tail", "100", container.name]);
     if (!logs.ok) return;
     const parsed = (logs.output ?? "").split(/\r?\n/).filter(Boolean).map((line, index) => ({
-      ts: Date.now() + index,
-      stream: "stdout" as const,
-      text: line,
+      ts: Date.now() + index, stream: "stdout" as const, text: line,
     }));
-    set((state) => ({
-      containers: state.containers.map((item) => item.id === id ? { ...item, logs: parsed } : item),
-    }));
+    set((state) => ({ containers: state.containers.map((item) => item.id === id ? { ...item, logs: parsed } : item) }));
   };
 
   const prepareGroup = async (group: ContainerGroup) => {
@@ -269,27 +279,33 @@ export const useWslc = create<WslcState>((set, get) => {
     if (!created.ok) throw new Error(created.error || `Could not create network ${network}`);
   };
 
+  const managedWorkspaceMount = async (spec: RunSpec, group?: ContainerGroup) => {
+    const groupPath = group ? normalizeGroupWorkspace(group).workspacePath : undefined;
+    const relative = normalizeWorkspacePath(
+      spec.workspacePath || (groupPath
+        ? defaultCubeContainerWorkspacePath(groupPath, spec.name || spec.image)
+        : defaultStandaloneWorkspacePath(spec.name || spec.image)),
+    );
+    const source = resolveWorkspacePath(get().workspaceRoot, relative);
+    await ensureHostDirectory(source);
+    return `${source}:${spec.workspaceTarget?.trim() || DEFAULT_WORKSPACE_TARGET}:rw`;
+  };
+
   const runInGroup = async (spec: RunSpec) => {
     const group = spec.groupId ? get().groups.find((item) => item.id === spec.groupId) : undefined;
     const effective = effectiveSpec(spec, group);
-    if (group) {
-      await prepareGroup(group);
-      await ensureNetwork(group.network);
-    }
+    if (group) { await prepareGroup(group); await ensureNetwork(group.network); }
+    const managedMount = await managedWorkspaceMount(effective, group);
     if (effective.name.trim()) assignContainer(effective.name, group?.id);
-    return execute(runArgs(effective, group?.network));
+    return execute(runArgs(effective, group?.network, managedMount));
   };
 
   const runOperation = async (key: string, work: () => Promise<void>) => {
     if (get().operations[key]) return;
     setOperation(key, true);
-    try {
-      await work();
-    } catch (error) {
-      set({ lastError: error instanceof Error ? error.message : String(error) });
-    } finally {
-      setOperation(key, false);
-    }
+    try { await work(); }
+    catch (error) { set({ lastError: error instanceof Error ? error.message : String(error) }); }
+    finally { setOperation(key, false); }
   };
 
   return {
@@ -297,11 +313,9 @@ export const useWslc = create<WslcState>((set, get) => {
     session: emptySession(["wslc"]), containers: [], images: [], volumes: [], calls: [], pulls: [],
     selectedId: null, runOpen: false, inspectOpen: false, metrics: [], now: Date.now(),
     catalog: CATALOG, groups: loadGroups(), launchAtSignIn: prefs.launchAtSignIn,
+    workspaceRoot: prefs.workspaceRoot ?? LAB_WORKSPACE_ROOT,
     operations: {}, lastError: null,
-    setView: (view) => {
-      set({ view });
-      if (view === "images") void refreshInventory();
-    },
+    setView: (view) => { set({ view }); if (view === "images") void refreshInventory(); },
     selectContainer: (selectedId) => set({ selectedId, inspectOpen: Boolean(selectedId) }),
     setRunOpen: (runOpen) => set({ runOpen }),
     setInspectOpen: (inspectOpen) => set({ inspectOpen, selectedId: inspectOpen ? get().selectedId : null }),
@@ -314,8 +328,7 @@ export const useWslc = create<WslcState>((set, get) => {
     updateSession: (patch) => set((state) => ({ session: { ...state.session, ...patch } })),
     pullImage: (reference) => {
       const ref = reference.trim();
-      if (!ref) return;
-      void runOperation(`image:${ref}`, async () => { await execute(["pull", ref]); await refreshInventory(); });
+      if (ref) void runOperation(`image:${ref}`, async () => { await execute(["pull", ref]); await refreshInventory(); });
     },
     removeImage: (id) => {
       const image = get().images.find((item) => item.id === id);
@@ -325,7 +338,11 @@ export const useWslc = create<WslcState>((set, get) => {
     },
     runContainer: (spec) => {
       void runOperation(`container:${spec.name || spec.image}`, async () => {
-        const result = await runInGroup(spec);
+        const result = await runInGroup({
+          ...spec,
+          workspacePath: spec.workspacePath || defaultStandaloneWorkspacePath(spec.name || spec.image),
+          workspaceTarget: spec.workspaceTarget || DEFAULT_WORKSPACE_TARGET,
+        });
         await refreshContainers();
         if (result.ok) set({ runOpen: false, view: "containers" });
       });
@@ -346,9 +363,7 @@ export const useWslc = create<WslcState>((set, get) => {
       const container = get().containers.find((item) => item.id === id);
       if (!container) return;
       void runOperation(`container:${container.name}`, async () => {
-        assignContainer(container.name);
-        await execute(["container", "rm", container.name]);
-        await refreshContainers();
+        assignContainer(container.name); await execute(["container", "rm", container.name]); await refreshContainers();
       });
     },
     appendExec: (id, command) => {
@@ -362,61 +377,47 @@ export const useWslc = create<WslcState>((set, get) => {
     deleteVolume: (name) => { void runOperation(`volume:${name}`, async () => { await execute(["volume", "rm", name]); await refreshInventory(); }); },
     retryProbe: async () => {
       const nativeLaunchAtSignIn = await getLaunchAtSignIn();
-      set({ gate: "checking", probeNote: "Checking WSL and wslc.exe…", containers: [], images: [], volumes: [], metrics: [], groups: loadGroups(), launchAtSignIn: nativeLaunchAtSignIn });
-      savePrefs({ launchAtSignIn: nativeLaunchAtSignIn, groupAuto: {} });
+      let workspaceRoot = get().workspaceRoot;
+      if (!prefs.workspaceRoot) {
+        try { workspaceRoot = await getDefaultWorkspaceRoot(); } catch { workspaceRoot = LAB_WORKSPACE_ROOT; }
+      }
+      try { await ensureWorkspaceRoot(workspaceRoot); }
+      catch (error) { set({ lastError: error instanceof Error ? error.message : String(error) }); }
+      set({ gate: "checking", probeNote: "Checking WSL and wslc.exe…", containers: [], images: [], volumes: [], metrics: [], groups: loadGroups(), launchAtSignIn: nativeLaunchAtSignIn, workspaceRoot });
+      savePrefs({ launchAtSignIn: nativeLaunchAtSignIn, groupAuto: {}, workspaceRoot });
       const result = await checkHost();
       if (!result.wslc) {
         set({ gate: "missing", probeNote: result.note, wslcOnPath: false, session: emptySession(result.missing) });
         return;
       }
-      set({
-        gate: "ready",
-        probeNote: result.note,
-        wslcOnPath: true,
-        session: {
-          ...emptySession(),
-          running: true,
-          version: result.version ?? "wslc",
-          wslVersion: result.wslVersion ?? "—",
-        },
-      });
+      set({ gate: "ready", probeNote: result.note, wslcOnPath: true, session: { ...emptySession(), running: true, version: result.version ?? "wslc", wslVersion: result.wslVersion ?? "—" } });
       await refreshAll();
     },
-    saveGroup: (group) => {
-      persistGroup(group);
-      set({ groups: loadGroups() });
-    },
-    deleteGroup: (id) => {
-      deleteGroupDefinition(id);
-      set({ groups: loadGroups() });
-    },
+    saveGroup: (group) => { persistGroup(group); set({ groups: loadGroups() }); },
+    deleteGroup: (id) => { deleteGroupDefinition(id); set({ groups: loadGroups() }); },
     setGroupAutoStart: (id, autoStart) => {
       const group = get().groups.find((item) => item.id === id);
       if (!group || group.builtIn) return;
-      persistGroup({ ...group, autoStart });
-      set({ groups: loadGroups() });
+      persistGroup({ ...group, autoStart }); set({ groups: loadGroups() });
     },
     startGroup: (id) => {
       const group = get().groups.find((item) => item.id === id);
       if (!group) return;
       void runOperation(`cube:${id}`, async () => {
-        await prepareGroup(group);
-        await ensureNetwork(group.network);
+        await prepareGroup(group); await ensureNetwork(group.network);
         for (const spec of group.specs) {
           if (!specConfigured(group, spec)) continue;
           const existing = get().containers.find((container) => container.name === spec.name);
           if (existing?.status === "running") continue;
-          if (existing) {
-            assignContainer(existing.name, group.id);
-            await execute(["container", "start", existing.name]);
-          } else {
+          if (existing) { assignContainer(existing.name, group.id); await execute(["container", "start", existing.name]); }
+          else {
             const effective = effectiveSpec(spec, group);
+            const managedMount = await managedWorkspaceMount(effective, group);
             assignContainer(effective.name, group.id);
-            await execute(runArgs(effective, group.network));
+            await execute(runArgs(effective, group.network, managedMount));
           }
         }
-        await refreshContainers();
-        await refreshInventory();
+        await refreshContainers(); await refreshInventory();
       });
     },
     stopGroup: (id) => {
@@ -440,38 +441,47 @@ export const useWslc = create<WslcState>((set, get) => {
       const spec = group.specs.find((item) => item.name === name);
       const existing = get().containers.find((container) => container.name === name);
       if (existing?.status === "running") return;
-      if (spec && !specConfigured(group, spec)) {
-        set({ lastError: `Configure NGROK_AUTHTOKEN before starting ${name}.` });
-        return;
-      }
+      if (spec && !specConfigured(group, spec)) { set({ lastError: `Configure NGROK_AUTHTOKEN before starting ${name}.` }); return; }
       void runOperation(`container:${name}`, async () => {
         await prepareGroup(group);
-        if (existing) {
-          assignContainer(existing.name, group.id);
-          await execute(["container", "start", existing.name]);
-        } else if (spec) {
+        if (existing) { assignContainer(existing.name, group.id); await execute(["container", "start", existing.name]); }
+        else if (spec) {
           await ensureNetwork(group.network);
           const effective = effectiveSpec(spec, group);
+          const managedMount = await managedWorkspaceMount(effective, group);
           assignContainer(effective.name, group.id);
-          await execute(runArgs(effective, group.network));
+          await execute(runArgs(effective, group.network, managedMount));
           await refreshInventory();
         }
         await refreshContainers();
       });
     },
-    startAutoGroups: () => {
-      for (const group of get().groups.filter((item) => item.autoStart)) get().startGroup(group.id);
-    },
+    startAutoGroups: () => { for (const group of get().groups.filter((item) => item.autoStart)) get().startGroup(group.id); },
     setLaunchAtSignIn: (launchAtSignIn) => {
       void (async () => {
         try {
           const nativeLaunchAtSignIn = await setNativeLaunchAtSignIn(launchAtSignIn);
           set({ launchAtSignIn: nativeLaunchAtSignIn });
-          savePrefs({ launchAtSignIn: nativeLaunchAtSignIn, groupAuto: {} });
-        } catch (error) {
-          set({ lastError: error instanceof Error ? error.message : String(error) });
-        }
+          saveCurrentPrefs({ launchAtSignIn: nativeLaunchAtSignIn });
+        } catch (error) { set({ lastError: error instanceof Error ? error.message : String(error) }); }
       })();
+    },
+    setWorkspaceRoot: (workspaceRoot) => {
+      set({ workspaceRoot });
+      saveCurrentPrefs({ workspaceRoot });
+    },
+    changeWorkspaceRoot: async (nextRoot, mode) => {
+      const previous = get().workspaceRoot;
+      if (!nextRoot.trim() || nextRoot.trim().toLowerCase() === previous.trim().toLowerCase()) return;
+      try {
+        await ensureWorkspaceRoot(nextRoot);
+        if (mode === "move") await moveWorkspaceRoot(previous, nextRoot);
+        set({ workspaceRoot: nextRoot, lastError: null });
+        savePrefs({ launchAtSignIn: get().launchAtSignIn, groupAuto: {}, workspaceRoot: nextRoot });
+      } catch (error) {
+        set({ lastError: error instanceof Error ? error.message : String(error) });
+        throw error;
+      }
     },
   };
 });

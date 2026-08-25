@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const store = readFileSync(new URL("../src/lib/wslc/store.ts", import.meta.url), "utf8");
+const prefs = readFileSync(new URL("../src/lib/wslc/prefs.ts", import.meta.url), "utf8");
 const types = readFileSync(new URL("../src/lib/wslc/types.ts", import.meta.url), "utf8");
 const utils = readFileSync(new URL("../src/lib/utils.ts", import.meta.url), "utf8");
 const groups = readFileSync(new URL("../src/lib/wslc/groups.ts", import.meta.url), "utf8");
@@ -12,6 +13,7 @@ const imagesView = readFileSync(new URL("../src/components/views/images-view.tsx
 const dashboardView = readFileSync(new URL("../src/components/views/dashboard-view.tsx", import.meta.url), "utf8");
 const groupsView = readFileSync(new URL("../src/components/views/groups-view.tsx", import.meta.url), "utf8");
 const cubeContainerDialog = readFileSync(new URL("../src/components/cube-container-dialog.tsx", import.meta.url), "utf8");
+const runDialog = readFileSync(new URL("../src/components/run-dialog.tsx", import.meta.url), "utf8");
 const kvEditor = readFileSync(new URL("../src/components/kv-editor.tsx", import.meta.url), "utf8");
 
 test("Windows sign-in preference delegates to the native Tauri autostart bridge", () => {
@@ -87,4 +89,39 @@ test("container environment editor exposes Cube variables as inherited and non-r
   assert.match(kvEditor, /inheritedRows/);
   assert.match(cubeContainerDialog, /inheritedRows=/);
   assert.match(cubeContainerDialog, /withoutEnvKeys\(/);
+});
+
+test("workspace root is persisted through existing preferences and store", () => {
+  assert.match(prefs, /workspaceRoot/);
+  assert.match(store, /workspaceRoot:\s*string/);
+  assert.match(store, /setWorkspaceRoot/);
+  assert.match(store, /savePrefs\(/);
+});
+
+test("Settings exposes workspace root selection and migration choices", () => {
+  assert.match(sessionView, />Workspace</);
+  assert.match(sessionView, /Choose folder/);
+  assert.match(sessionView, /Open folder/);
+  assert.match(sessionView, /Move existing data/);
+  assert.match(sessionView, /Keep existing data/);
+  assert.match(sessionView, /changeWorkspaceRoot/);
+});
+
+test("Cube and container editors expose managed workspace controls", () => {
+  assert.match(groupsView, /Workspace folder/);
+  assert.match(groupsView, /moveWorkspaceEntry/);
+  assert.match(cubeContainerDialog, /workspacePath/);
+  assert.match(cubeContainerDialog, /workspaceTarget/);
+  assert.match(cubeContainerDialog, /Choose folder/);
+  assert.match(runDialog, /workspacePath/);
+  assert.match(runDialog, /workspaceTarget/);
+  assert.match(runDialog, /Workspace folder/);
+});
+
+test("managed workspace mount is generated separately from ordinary mounts", () => {
+  assert.match(store, /resolveWorkspacePath/);
+  assert.match(store, /DEFAULT_WORKSPACE_TARGET/);
+  assert.match(store, /ensureHostDirectory/);
+  assert.match(store, /workspacePath/);
+  assert.match(store, /workspaceTarget/);
 });

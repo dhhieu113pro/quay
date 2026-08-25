@@ -127,6 +127,8 @@ export interface RunSpec {
   remove: boolean;
   detach: boolean;
   workdir: string;
+  workspacePath?: string;
+  workspaceTarget?: string;
   groupId?: string;
 }
 
@@ -137,6 +139,7 @@ export interface ContainerGroup {
   env: string;
   builtIn: boolean;
   autoStart: boolean;
+  workspacePath?: string;
   specs: RunSpec[];
 }
 
