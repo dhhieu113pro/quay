@@ -11,10 +11,8 @@ export function SessionView() {
   const operations = useWslc((s) => s.operations);
   const startSession = useWslc((s) => s.startSession);
   const stopSession = useWslc((s) => s.stopSession);
-  const groups = useWslc((s) => s.groups);
   const launchAtSignIn = useWslc((s) => s.launchAtSignIn);
   const setLaunchAtSignIn = useWslc((s) => s.setLaunchAtSignIn);
-  const setGroupAutoStart = useWslc((s) => s.setGroupAutoStart);
   const sessionBusy = Boolean(operations.session);
   const running = containers.filter((container) => container.status === "running").length;
 
@@ -71,7 +69,7 @@ export function SessionView() {
       <section className="rounded-xl border border-border bg-card p-4">
         <h2 className="text-sm font-medium">Windows sign-in</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Open Quay when you sign in to Windows. User-created Cubes can be marked to start automatically when Quay opens.
+          Open Quay when you sign in to Windows.
         </p>
         <label className="mt-3 flex items-center gap-2 text-sm">
           <Switch
@@ -83,29 +81,6 @@ export function SessionView() {
           />
           Open Quay at sign-in
         </label>
-        <ul className="mt-4 grid gap-2">
-          {groups.map((cube) => (
-            <li
-              key={cube.id}
-              className="flex items-center justify-between gap-3 rounded-lg bg-elevated px-3 py-2"
-            >
-              <div>
-                <p className="text-sm">{cube.name}</p>
-                <p className="font-mono text-xs text-subtle">
-                  {cube.specs.map((spec) => spec.name).join(" + ") || "No members"}
-                </p>
-              </div>
-              <label className="flex items-center gap-2 text-xs text-muted-foreground" title={cube.builtIn ? "Built-in Cubes do not auto-start by default" : undefined}>
-                <Switch
-                  checked={cube.autoStart}
-                  disabled={cube.builtIn}
-                  onCheckedChange={(on) => setGroupAutoStart(cube.id, on)}
-                />
-                Auto start
-              </label>
-            </li>
-          ))}
-        </ul>
       </section>
 
       <section className="rounded-xl border border-border bg-card p-4">
