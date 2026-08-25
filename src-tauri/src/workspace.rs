@@ -110,7 +110,7 @@ pub fn workspace_ensure(root: String) -> Result<(), String> {
 
 #[cfg(windows)]
 fn pick_folder(current: Option<String>) -> Result<Option<String>, String> {
-    let selected = current.unwrap_or_default().replace(''', "''");
+    let selected = current.unwrap_or_default().replace('\'', "''");
     let script = format!(
         "Add-Type -AssemblyName System.Windows.Forms; $d=New-Object System.Windows.Forms.FolderBrowserDialog; $d.Description='Choose Quay workspace folder'; if ('{selected}' -ne '') {{$d.SelectedPath='{selected}'}}; if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {{[Console]::Write($d.SelectedPath)}}"
     );
