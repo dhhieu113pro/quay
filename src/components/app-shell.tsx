@@ -37,7 +37,7 @@ const NAV: Array<{ id: ViewId; label: string; icon: typeof Box }> = [
   { id: "containers", label: "Containers", icon: Box },
   { id: "terminal", label: "Terminal", icon: SquareTerminal },
   { id: "images", label: "Images", icon: Layers },
-  { id: "session", label: "Session", icon: Cpu },
+  { id: "session", label: "Settings", icon: Cpu },
 ];
 
 function wslcVersionLabel(version: string) {
