@@ -8,6 +8,7 @@ const utils = readFileSync(new URL("../src/lib/utils.ts", import.meta.url), "utf
 const appShell = readFileSync(new URL("../src/components/app-shell.tsx", import.meta.url), "utf8");
 const sessionView = readFileSync(new URL("../src/components/views/session-view.tsx", import.meta.url), "utf8");
 const imagesView = readFileSync(new URL("../src/components/views/images-view.tsx", import.meta.url), "utf8");
+const dashboardView = readFileSync(new URL("../src/components/views/dashboard-view.tsx", import.meta.url), "utf8");
 
 test("Windows sign-in preference delegates to the native Tauri autostart bridge", () => {
   assert.match(store, /getLaunchAtSignIn/);
@@ -41,6 +42,13 @@ test("image and volume sizes are normalized to bytes before display", () => {
   assert.match(store, /Number\(value\(row, "sizemb"\)\).*1024.*1024/s);
   assert.match(imagesView, /formatBytes\(img\.sizeBytes\)/);
   assert.match(imagesView, /formatBytes\(volume\.sizeBytes\)/);
+});
+
+test("dashboard uses byte-normalized image totals and converts host MB before formatting", () => {
+  assert.match(dashboardView, /images\.reduce\(\(a, i\) => a \+ i\.sizeBytes, 0\)/);
+  assert.doesNotMatch(dashboardView, /i\.sizeMB/);
+  assert.match(dashboardView, /formatBytes\(host\.memoryUsedMB \* 1024 \* 1024\)/);
+  assert.match(dashboardView, /formatBytes\(host\.memoryTotalMB \* 1024 \* 1024\)/);
 });
 
 test("formatBytes accepts bytes and scales through binary units", () => {
