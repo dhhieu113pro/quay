@@ -139,6 +139,9 @@ fn autostart_set(enabled: bool) -> Result<bool, String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            show_main(app);
+        }))
         .setup(|app| {
             app.manage(Backend::new());
             if let Err(err) = setup_tray(app.handle()) { eprintln!("tray: {err}"); }
