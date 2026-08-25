@@ -10,20 +10,25 @@ mod workspace;
 
 use serde_json::Value;
 use std::process::{Command, Stdio};
+use std::sync::{Arc, Mutex};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager, State, WindowEvent};
 
 pub struct Backend {
     #[cfg(windows)]
-    worker: wslc_runtime::CliWorker,
+    executor: wslc_executor::WslcExecutor,
+    #[cfg(windows)]
+    host: Arc<Mutex<wslc_runtime::HostSampler>>,
 }
 
 impl Backend {
     fn new() -> Self {
         Self {
             #[cfg(windows)]
-            worker: wslc_runtime::CliWorker::spawn(),
+            executor: wslc_executor::WslcExecutor::new(),
+            #[cfg(windows)]
+            host: Arc::new(Mutex::new(wslc_runtime::HostSampler::default())),
         }
     }
 }
@@ -62,10 +67,14 @@ fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
 #[tauri::command]
 async fn wslc_invoke(backend: State<'_, Backend>, payload: Value) -> Result<Value, String> {
     #[cfg(windows)] {
-        let worker = backend.worker.clone();
-        tauri::async_runtime::spawn_blocking(move || worker.invoke(payload))
-            .await
-            .map_err(|e| format!("WSLC worker task failed: {e}"))?
+        let executor = backend.executor.clone();
+        let host = backend.host.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            let mut host = host.lock().map_err(|_| "host sampler poisoned".to_string())?;
+            wslc_runtime::invoke(&executor, &mut host, payload)
+        })
+        .await
+        .map_err(|e| format!("WSLC executor task failed: {e}"))?
     }
     #[cfg(not(windows))] {
         let _ = backend;
@@ -90,10 +99,14 @@ fn run_capture(program: &str, args: &[&str]) -> Option<String> {
 }
 
 #[tauri::command]
-fn wslc_probe() -> Value {
-    let wsl_version = run_capture("wsl", &["--version"]);
-    let version = run_capture("wslc", &["version"]);
-    serde_json::json!({ "wsl": wsl_version.is_some(), "wslVersion": wsl_version, "wslc": version.is_some(), "version": version })
+async fn wslc_probe() -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let wsl_version = run_capture("wsl", &["--version"]);
+        let version = run_capture("wslc", &["version"]);
+        serde_json::json!({ "wsl": wsl_version.is_some(), "wslVersion": wsl_version, "wslc": version.is_some(), "version": version })
+    })
+    .await
+    .map_err(|e| format!("WSLC probe task failed: {e}"))
 }
 
 #[tauri::command]
@@ -140,7 +153,7 @@ fn autostart_set(enabled: bool) -> Result<bool, String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             show_main(app);
         }))
@@ -158,6 +171,13 @@ pub fn run() {
             workspace::workspace_pick_descendant, workspace::workspace_open,
             workspace::workspace_move_root, workspace::workspace_move_entry
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Quay");
+        .build(tauri::generate_context!())
+        .expect("error while building Quay");
+
+    app.run(|app, event| {
+        if matches!(event, tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit) {
+            #[cfg(windows)]
+            app.state::<Backend>().executor.shutdown();
+        }
+    });
 }
