@@ -50,7 +50,6 @@ export function relativeWorkspacePath(root: string, absolutePath: string): strin
   const baseLower = base.toLowerCase();
   const candidateLower = candidate.toLowerCase();
   if (candidateLower === baseLower) throw new Error("Choose a folder inside the Quay workspace root");
-  const prefix = `${baseLower}\\`;
   const normalizedCandidate = candidateLower.replace(/\//g, "\\");
   const normalizedBase = baseLower.replace(/\//g, "\\");
   if (!normalizedCandidate.startsWith(`${normalizedBase}\\`)) {
