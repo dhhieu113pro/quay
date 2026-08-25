@@ -28,7 +28,7 @@ test("Cube configuration is locked whenever a member is running or transitioning
 
 test("Cube start is disabled until every configured member can run", () => {
   assert.match(groupsView, /cubeCanStart\(/);
-  assert.match(groupsView, /need configuration/);
+  assert.match(groupsView, /need(?:s)? configuration/);
 });
 
 test("stopped Cube members can be edited using their existing RunSpec", () => {
