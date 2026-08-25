@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { GettingStartedView } from "@/components/views/getting-started-view";
 import { openWorkspacePath, pickWorkspaceRoot } from "@/lib/tauri";
 import { useWslc } from "@/lib/wslc/store";
 
@@ -21,6 +22,7 @@ export function SessionView() {
   const changeWorkspaceRoot = useWslc((s) => s.changeWorkspaceRoot);
   const [pendingRoot, setPendingRoot] = useState<string | null>(null);
   const [changingRoot, setChangingRoot] = useState(false);
+  const [showGettingStarted, setShowGettingStarted] = useState(false);
   const sessionBusy = Boolean(operations.session);
   const running = containers.filter((container) => container.status === "running").length;
 
@@ -36,6 +38,10 @@ export function SessionView() {
     } finally {
       setChangingRoot(false);
     }
+  }
+
+  if (showGettingStarted) {
+    return <GettingStartedView rerun onDone={() => setShowGettingStarted(false)} onCancel={() => setShowGettingStarted(false)} />;
   }
 
   return (
@@ -108,6 +114,16 @@ export function SessionView() {
           Auto follows sunrise and sunset at this location. Light and dark lock the palette. Closing the window hides Quay in the tray; quit from the tray menu.
         </p>
         <div className="mt-3"><AppearanceToggle /></div>
+      </section>
+
+      <section className="rounded-xl border border-border bg-card p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-medium">Getting Started</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Review the essential workspace, WSLC, and startup preferences again.</p>
+          </div>
+          <Button type="button" variant="secondary" onClick={() => setShowGettingStarted(true)}>Run Getting Started again</Button>
+        </div>
       </section>
 
       <Dialog open={Boolean(pendingRoot)} onOpenChange={(open) => { if (!open && !changingRoot) setPendingRoot(null); }}>
