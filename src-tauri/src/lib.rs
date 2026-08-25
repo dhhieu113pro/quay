@@ -58,9 +58,18 @@ fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
 }
 
 #[tauri::command]
-fn wslc_invoke(backend: State<Backend>, payload: Value) -> Result<Value, String> {
-    #[cfg(windows)] { backend.worker.invoke(payload) }
-    #[cfg(not(windows))] { let _ = backend; let _ = payload; Err("WSLC is only available on Windows".into()) }
+async fn wslc_invoke(backend: State<'_, Backend>, payload: Value) -> Result<Value, String> {
+    #[cfg(windows)] {
+        let worker = backend.worker.clone();
+        tauri::async_runtime::spawn_blocking(move || worker.invoke(payload))
+            .await
+            .map_err(|e| format!("WSLC worker task failed: {e}"))?
+    }
+    #[cfg(not(windows))] {
+        let _ = backend;
+        let _ = payload;
+        Err("WSLC is only available on Windows".into())
+    }
 }
 
 fn run_capture(program: &str, args: &[&str]) -> Option<String> {
