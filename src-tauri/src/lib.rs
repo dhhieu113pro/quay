@@ -3,6 +3,8 @@
 //! Close hides to tray; Quit actually exits.
 
 #[cfg(windows)]
+mod wslc_executor;
+#[cfg(windows)]
 mod wslc_runtime;
 mod workspace;
 
