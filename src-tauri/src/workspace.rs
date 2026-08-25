@@ -39,7 +39,7 @@ fn validate_relative(path: &str) -> Result<PathBuf, String> {
 }
 
 fn path_key(path: &Path) -> String {
-    path.to_string_lossy().replace('/', r"\").trim_end_matches('\').to_lowercase()
+    path.to_string_lossy().replace('/', "\\").trim_end_matches('\\').to_lowercase()
 }
 
 fn validate_descendant(root: &Path, candidate: &Path) -> Result<(), String> {
