@@ -75,7 +75,7 @@ export function ImagesView() {
                       {img.repository}<span className="text-muted-foreground">:{img.tag}</span>
                     </p>
                     <p className="mt-0.5 truncate font-mono text-xs text-subtle">
-                      {img.id} · {formatBytes(img.sizeMB)} · {relativeTime(img.createdAt, now)}
+                      {img.id} · {formatBytes(img.sizeBytes)} · {relativeTime(img.createdAt, now)}
                     </p>
                   </div>
                   {busy ? <span className="text-xs text-muted-foreground">Working…</span> : null}
@@ -130,7 +130,7 @@ export function ImagesView() {
                   <div className="min-w-0 flex-1">
                     <p className="text-sm">{volume.name}</p>
                     <p className="mt-0.5 truncate font-mono text-xs text-subtle">
-                      {volume.mountpoint || "WSLC volume"} · {formatBytes(volume.sizeMB)}
+                      {volume.mountpoint || "WSLC volume"} · {formatBytes(volume.sizeBytes)}
                     </p>
                   </div>
                   <Button
