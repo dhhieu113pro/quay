@@ -116,11 +116,23 @@ function CubeDialog({ cube, onClose, onSave }: { cube: ContainerGroup | null; on
   const patch = (value: Partial<ContainerGroup>) => setDraft((current) => current ? { ...current, ...value } : current);
 
   function save() {
-    const name = draft.name.trim(); if (!name) return;
-    const next = syncGroupEnv({ ...draft, name, env: joinEnvLines(envRows), workspacePath, network: draft.network.trim() || defaultGroupNetwork(draft.id) });
-    const from = cube.workspacePath || defaultCubeWorkspacePath(cube.name || name);
+    const currentDraft = draft;
+    const currentCube = cube;
+    const name = currentDraft.name.trim();
+    if (!name) return;
+    const next: ContainerGroup = syncGroupEnv({
+      ...currentDraft,
+      name,
+      env: joinEnvLines(envRows),
+      workspacePath,
+      network: currentDraft.network.trim() || defaultGroupNetwork(currentDraft.id),
+    });
+    const from = currentCube.workspacePath || defaultCubeWorkspacePath(currentCube.name || name);
     const to = defaultCubeWorkspacePath(name);
-    if (!creating && name !== cube.name && isGeneratedCubeWorkspacePath(from, cube.name) && from !== to) { setRename({ next, from, to }); return; }
+    if (!creating && name !== currentCube.name && isGeneratedCubeWorkspacePath(from, currentCube.name) && from !== to) {
+      setRename({ next, from, to });
+      return;
+    }
     onSave(next);
   }
 
