@@ -44,11 +44,12 @@ test("image and volume sizes are normalized to bytes before display", () => {
   assert.match(imagesView, /formatBytes\(volume\.sizeBytes\)/);
 });
 
-test("dashboard uses byte-normalized image totals and converts host MB before formatting", () => {
+test("dashboard uses byte-normalized image totals and centralized MB conversion", () => {
   assert.match(dashboardView, /images\.reduce\(\(a, i\) => a \+ i\.sizeBytes, 0\)/);
   assert.doesNotMatch(dashboardView, /i\.sizeMB/);
-  assert.match(dashboardView, /formatBytes\(host\.memoryUsedMB \* 1024 \* 1024\)/);
-  assert.match(dashboardView, /formatBytes\(host\.memoryTotalMB \* 1024 \* 1024\)/);
+  assert.match(utils, /export function mebibytesToBytes\(mebibytes: number\)/);
+  assert.match(dashboardView, /formatBytes\(mebibytesToBytes\(host\.memoryUsedMB\)\)/);
+  assert.match(dashboardView, /formatBytes\(mebibytesToBytes\(host\.memoryTotalMB\)\)/);
 });
 
 test("formatBytes accepts bytes and scales through binary units", () => {
