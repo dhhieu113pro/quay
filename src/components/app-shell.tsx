@@ -48,13 +48,10 @@ export function AppShell() {
   const view = useWslc((s) => s.view);
   const setView = useWslc((s) => s.setView);
   const tick = useWslc((s) => s.tick);
-  const session = useWslc((s) => s.session);
-  const containers = useWslc((s) => s.containers);
   const gate = useWslc((s) => s.gate);
   const retryProbe = useWslc((s) => s.retryProbe);
   const lastError = useWslc((s) => s.lastError);
   const clearError = useWslc((s) => s.clearError);
-  const running = containers.filter((c) => c.status === "running").length;
   const gated = gate === "checking" || gate === "missing";
 
   useEffect(() => {
@@ -97,14 +94,6 @@ export function AppShell() {
                 onClick={() => setView(item.id)}
               />
             ))}
-            <div className="mt-auto border-t border-border px-4 py-3">
-              <p className="text-xs text-muted-foreground">
-                {running} running
-              </p>
-              <p className="mt-0.5 font-mono text-xs text-subtle">
-                WSLC {wslcVersionLabel(session.version)}
-              </p>
-            </div>
           </nav>
           <main
             className={cn(

@@ -26,6 +26,17 @@ function safeParse<T>(key: string, fallback: T): T {
   }
 }
 
+function envEntries(raw: string) {
+  return raw
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const at = line.indexOf("=");
+      return [at < 0 ? line : line.slice(0, at), at < 0 ? "" : line.slice(at + 1)] as const;
+    });
+}
+
 export function slugGroupName(name: string) {
   return name
     .trim()
@@ -95,7 +106,7 @@ export function rememberGroupSpec(group: ContainerGroup, spec: RunSpec) {
     ...group.specs.filter((item) => item.name !== normalized.name),
     normalized,
   ];
-  const updated = { ...group, specs };
+  const updated = syncGroupEnv({ ...group, specs });
   saveGroup(updated);
   return updated;
 }
@@ -111,19 +122,38 @@ export function deleteGroupDefinition(id: string) {
   localStorage.setItem(ASSIGNMENTS_KEY, JSON.stringify(assignments));
 }
 
-export function mergeEnv(groupEnv: string, containerEnv: string) {
+export function mergeEnv(first: string, second: string) {
   const values = new Map<string, string>();
-  for (const source of [groupEnv, containerEnv]) {
-    for (const raw of source.split("\n")) {
-      const line = raw.trim();
-      if (!line) continue;
-      const at = line.indexOf("=");
-      const key = at < 0 ? line : line.slice(0, at);
-      const value = at < 0 ? "" : line.slice(at + 1);
-      values.set(key, value);
-    }
+  for (const source of [first, second]) {
+    for (const [key, value] of envEntries(source)) values.set(key, value);
   }
   return Array.from(values, ([key, value]) => `${key}=${value}`).join("\n");
+}
+
+export function withoutEnvKeys(env: string, inheritedEnv: string) {
+  const inheritedKeys = new Set(envEntries(inheritedEnv).map(([key]) => key));
+  return envEntries(env)
+    .filter(([key]) => !inheritedKeys.has(key))
+    .map(([key, value]) => `${key}=${value}`)
+    .join("\n");
+}
+
+export function syncGroupEnv(group: ContainerGroup): ContainerGroup {
+  const values = new Map(envEntries(group.env));
+  for (const spec of group.specs) {
+    for (const [key, value] of envEntries(spec.env)) {
+      if (!values.has(key)) values.set(key, value);
+    }
+  }
+  const env = Array.from(values, ([key, value]) => `${key}=${value}`).join("\n");
+  return {
+    ...group,
+    env,
+    specs: group.specs.map((spec) => ({
+      ...spec,
+      env: withoutEnvKeys(spec.env, env),
+    })),
+  };
 }
 
 export function effectiveSpec(spec: RunSpec, group?: ContainerGroup): RunSpec {
@@ -131,7 +161,7 @@ export function effectiveSpec(spec: RunSpec, group?: ContainerGroup): RunSpec {
   return {
     ...spec,
     groupId: group.id,
-    env: mergeEnv(group.env, spec.env),
+    env: mergeEnv(spec.env, group.env),
   };
 }
 
