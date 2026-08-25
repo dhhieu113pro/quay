@@ -111,13 +111,14 @@ function CubeDialog({ cube, onClose, onSave }: { cube: ContainerGroup | null; on
   const creating = Boolean(cube && !cube.name.trim());
   useEffect(() => { const next = cube ? syncGroupEnv(cube) : null; setDraft(next); setEnvRows(parseEnvLines(next?.env ?? "")); setRename(null); }, [cube]);
   if (!cube || !draft) return null;
-  const workspacePath = draft.workspacePath || defaultCubeWorkspacePath(draft.name || "cube");
+
+  const currentCube: ContainerGroup = cube;
+  const currentDraft: ContainerGroup = draft;
+  const workspacePath = currentDraft.workspacePath || defaultCubeWorkspacePath(currentDraft.name || "cube");
   let resolved = workspaceRoot; try { resolved = resolveWorkspacePath(workspaceRoot, workspacePath); } catch { /* invalid text remains editable */ }
   const patch = (value: Partial<ContainerGroup>) => setDraft((current) => current ? { ...current, ...value } : current);
 
   function save() {
-    const currentDraft = draft;
-    const currentCube = cube;
     const name = currentDraft.name.trim();
     if (!name) return;
     const next: ContainerGroup = syncGroupEnv({
@@ -145,10 +146,10 @@ function CubeDialog({ cube, onClose, onSave }: { cube: ContainerGroup | null; on
   }
 
   return <>
-    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}><DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>{draft.builtIn ? `Configure ${draft.name}` : draft.name ? `Edit ${draft.name}` : "Create cube"}</DialogTitle><DialogDescription>Cube settings and managed workspace folder.</DialogDescription></DialogHeader>
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}><DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>{currentDraft.builtIn ? `Configure ${currentDraft.name}` : currentDraft.name ? `Edit ${currentDraft.name}` : "Create cube"}</DialogTitle><DialogDescription>Cube settings and managed workspace folder.</DialogDescription></DialogHeader>
       <div className="grid gap-4">
-        <div className="grid gap-1.5"><Label>Name</Label><Input value={draft.name} disabled={draft.builtIn} onChange={(event) => { const name = event.target.value; if (creating) { const id = slugGroupName(name); patch({ name, id, network: defaultGroupNetwork(id), workspacePath: defaultCubeWorkspacePath(name || "cube") }); } else patch({ name }); }} /></div>
-        <div className="grid gap-1.5"><Label>WSLC network</Label><Input value={draft.network} onChange={(event) => patch({ network: event.target.value })} className="font-mono text-xs" /></div>
+        <div className="grid gap-1.5"><Label>Name</Label><Input value={currentDraft.name} disabled={currentDraft.builtIn} onChange={(event) => { const name = event.target.value; if (creating) { const id = slugGroupName(name); patch({ name, id, network: defaultGroupNetwork(id), workspacePath: defaultCubeWorkspacePath(name || "cube") }); } else patch({ name }); }} /></div>
+        <div className="grid gap-1.5"><Label>WSLC network</Label><Input value={currentDraft.network} onChange={(event) => patch({ network: event.target.value })} className="font-mono text-xs" /></div>
         <div className="grid gap-2 rounded-lg border border-border p-3"><Label>Workspace folder</Label><div className="flex gap-2"><Input value={workspacePath} onChange={(event) => patch({ workspacePath: event.target.value })} className="font-mono text-xs" /><Button type="button" variant="secondary" onClick={() => void (async () => { const selected = await pickWorkspaceDescendant(workspaceRoot, resolved); if (selected) patch({ workspacePath: relativeWorkspacePath(workspaceRoot, selected) }); })()}>Choose folder</Button><Button type="button" variant="ghost" onClick={() => void openWorkspacePath(workspaceRoot, workspacePath)}><FolderOpen className="size-4" />Open</Button></div><p className="font-mono text-[11px] text-subtle">{resolved}</p></div>
         <EnvEditor label="Shared environment" rows={envRows} onChange={(rows) => { setEnvRows(rows); patch({ env: joinEnvLines(rows) }); }} />
       </div>
