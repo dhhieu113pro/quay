@@ -1,23 +1,12 @@
 #![cfg(windows)]
 
+use crate::wslc_executor::{CliResult, WslcExecutor};
 use serde_json::{json, Value};
 use std::mem::size_of;
-use std::process::{Command, Stdio};
-use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 
-#[derive(Clone)]
-pub struct CliWorker {
-    tx: Sender<Request>,
-}
-
-struct Request {
-    payload: Value,
-    reply: Sender<Result<Value, String>>,
-}
-
 #[derive(Default)]
-struct HostSampler {
+pub struct HostSampler {
     previous_cpu: Option<(u64, u64, u64)>,
 }
 
@@ -37,54 +26,26 @@ extern "system" {
     fn GlobalMemoryStatusEx(status: *mut MemoryStatusEx) -> i32;
 }
 
-impl CliWorker {
-    pub fn spawn() -> Self {
-        let (tx, rx) = mpsc::channel::<Request>();
-        thread::Builder::new().name("quay-wslc-cli".into()).spawn(move || worker_loop(rx)).expect("spawn Quay WSLC CLI worker");
-        Self { tx }
-    }
-
-    pub fn invoke(&self, payload: Value) -> Result<Value, String> {
-        let (reply_tx, reply_rx) = mpsc::channel();
-        self.tx.send(Request { payload, reply: reply_tx }).map_err(|e| e.to_string())?;
-        reply_rx.recv().map_err(|e| e.to_string())?
-    }
-}
-
-fn worker_loop(rx: Receiver<Request>) {
-    let mut host = HostSampler::default();
-    for request in rx {
-        let result = handle(&request.payload, &mut host);
-        let _ = request.reply.send(result);
-    }
-}
-
-fn handle(root: &Value, host: &mut HostSampler) -> Result<Value, String> {
+pub fn invoke(executor: &WslcExecutor, host: &mut HostSampler, root: Value) -> Result<Value, String> {
     let cmd = root.get("cmd").and_then(Value::as_str).ok_or("missing cmd")?;
     match cmd {
         "health" => {
-            let result = run_wslc(&["version".into()])?;
-            Ok(json!({"ok": result.ok, "wslc": result.ok, "session": "default", "output": result.output, "error": result.error, "exitCode": result.exit_code}))
+            let args = vec!["version".into()];
+            let result = executor.execute(args.clone())?;
+            Ok(json!({"ok": result.ok, "wslc": result.ok, "session": "default", "output": result.output, "error": result.error, "exitCode": result.exit_code, "command": "wslc version"}))
         }
         "host_stats" => host.sample(),
         "run_cli" => {
             let args = root.get("args").and_then(Value::as_array).ok_or("missing args")?.iter()
                 .map(|x| x.as_str().map(str::to_string).ok_or("args must be strings"))
                 .collect::<Result<Vec<_>, _>>()?;
-            let result = run_wslc(&args)?;
+            let result = executor.execute(args.clone())?;
             Ok(result_json(result, &args))
         }
         "ensure_network" => {
             let name = root.get("name").and_then(Value::as_str).filter(|x| !x.trim().is_empty()).ok_or("missing network name")?;
-            let list_args = vec!["network".into(), "list".into()];
-            let listed = run_wslc(&list_args)?;
-            if !listed.ok { return Ok(result_json(listed, &list_args)); }
-            if listed.output.lines().any(|line| line.split_whitespace().any(|part| part.eq_ignore_ascii_case(name))) {
-                return Ok(json!({"ok": true, "output": listed.output, "network": name}));
-            }
-            let create_args = vec!["network".into(), "create".into(), name.into()];
-            let created = run_wslc(&create_args)?;
-            Ok(result_json(created, &create_args))
+            let result = executor.ensure_network(name)?;
+            Ok(json!({"ok": result.ok, "output": result.output, "error": result.error, "exitCode": result.exit_code, "network": name}))
         }
         _ => Err(format!("unknown command '{cmd}'")),
     }
@@ -125,18 +86,6 @@ fn memory_status() -> Result<(u64, u64, u32), String> {
     let ok = unsafe { GlobalMemoryStatusEx(&mut status) };
     if ok == 0 { return Err("GlobalMemoryStatusEx failed".into()); }
     Ok((status.total_phys, status.avail_phys, status.memory_load))
-}
-
-struct CliResult { ok: bool, output: String, error: String, exit_code: i32 }
-
-fn run_wslc(args: &[String]) -> Result<CliResult, String> {
-    let mut command = Command::new("wslc");
-    command.args(args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
-    use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    command.creation_flags(CREATE_NO_WINDOW);
-    let output = command.output().map_err(|e| format!("failed to execute wslc: {e}"))?;
-    Ok(CliResult { ok: output.status.success(), output: String::from_utf8_lossy(&output.stdout).trim().to_string(), error: String::from_utf8_lossy(&output.stderr).trim().to_string(), exit_code: output.status.code().unwrap_or(-1) })
 }
 
 fn result_json(result: CliResult, args: &[String]) -> Value {
