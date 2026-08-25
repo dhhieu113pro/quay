@@ -9,6 +9,11 @@ export function shortId(id: string) {
   return id.slice(0, 12);
 }
 
+export function mebibytesToBytes(mebibytes: number) {
+  const value = Number.isFinite(mebibytes) ? Math.max(0, mebibytes) : 0;
+  return value * 1024 * 1024;
+}
+
 export function formatBytes(bytes: number) {
   const value = Number.isFinite(bytes) ? Math.max(0, bytes) : 0;
   const KB = 1024;
