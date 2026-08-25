@@ -33,18 +33,19 @@ export type WslcInvokeResult = {
   memoryUsedMB?: number;
 };
 
+async function invokeNative<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<T>(command, args);
+}
+
 export async function invokeWslcHost(payload: Record<string, unknown>): Promise<WslcInvokeResult> {
   if (!isTauri()) return { ok: true, output: "browser lab" };
-  const { invoke } = await import("@tauri-apps/api/core");
-  return invoke<WslcInvokeResult>("wslc_invoke", { payload });
+  return invokeNative<WslcInvokeResult>("wslc_invoke", { payload });
 }
 
 export async function probeWslc(): Promise<WslcProbe> {
-  if (!isTauri()) {
-    return { wsl: false, wslVersion: null, wslc: false, version: null };
-  }
-  const { invoke } = await import("@tauri-apps/api/core");
-  const raw = await invoke<WslcProbe>("wslc_probe");
+  if (!isTauri()) return { wsl: false, wslVersion: null, wslc: false, version: null };
+  const raw = await invokeNative<WslcProbe>("wslc_probe");
   return {
     wsl: Boolean(raw?.wsl),
     wslVersion: raw?.wslVersion ?? null,
@@ -55,15 +56,48 @@ export async function probeWslc(): Promise<WslcProbe> {
 
 export async function ensureHostDirectory(path: string): Promise<void> {
   if (!path.trim() || !isTauri()) return;
-  const { invoke } = await import("@tauri-apps/api/core");
-  await invoke<boolean>("ensure_host_directory", { path });
+  await invokeNative<boolean>("ensure_host_directory", { path });
+}
+
+export async function getDefaultWorkspaceRoot(): Promise<string> {
+  if (!isTauri()) return "D:\\Quay";
+  return invokeNative<string>("workspace_default_root");
+}
+
+export async function ensureWorkspaceRoot(root: string): Promise<void> {
+  if (!isTauri()) return;
+  await invokeNative<void>("workspace_ensure", { root });
+}
+
+export async function pickWorkspaceRoot(current?: string): Promise<string | null> {
+  if (!isTauri()) return null;
+  return invokeNative<string | null>("workspace_pick_root", { current: current || null });
+}
+
+export async function pickWorkspaceDescendant(root: string, current?: string): Promise<string | null> {
+  if (!isTauri()) return null;
+  return invokeNative<string | null>("workspace_pick_descendant", { root, current: current || null });
+}
+
+export async function openWorkspacePath(root: string, relative?: string): Promise<void> {
+  if (!isTauri()) return;
+  await invokeNative<void>("workspace_open", { root, relative: relative || null });
+}
+
+export async function moveWorkspaceRoot(oldRoot: string, newRoot: string): Promise<void> {
+  if (!isTauri()) return;
+  await invokeNative<void>("workspace_move_root", { oldRoot, newRoot });
+}
+
+export async function moveWorkspaceEntry(root: string, fromRelative: string, toRelative: string): Promise<void> {
+  if (!isTauri()) return;
+  await invokeNative<void>("workspace_move_entry", { root, fromRelative, toRelative });
 }
 
 export async function getLaunchAtSignIn(): Promise<boolean> {
   if (!isTauri()) return loadLaunchFallback();
   try {
-    const { invoke } = await import("@tauri-apps/api/core");
-    return Boolean(await invoke<boolean>("autostart_enabled"));
+    return Boolean(await invokeNative<boolean>("autostart_enabled"));
   } catch {
     return loadLaunchFallback();
   }
@@ -72,22 +106,15 @@ export async function getLaunchAtSignIn(): Promise<boolean> {
 export async function setLaunchAtSignIn(enabled: boolean): Promise<boolean> {
   saveLaunchFallback(enabled);
   if (!isTauri()) return enabled;
-  const { invoke } = await import("@tauri-apps/api/core");
-  return Boolean(await invoke<boolean>("autostart_set", { enabled }));
+  return Boolean(await invokeNative<boolean>("autostart_set", { enabled }));
 }
 
 function loadLaunchFallback() {
-  try {
-    return localStorage.getItem("quay.launchAtSignIn") === "1";
-  } catch {
-    return false;
-  }
+  try { return localStorage.getItem("quay.launchAtSignIn") === "1"; }
+  catch { return false; }
 }
 
 function saveLaunchFallback(enabled: boolean) {
-  try {
-    localStorage.setItem("quay.launchAtSignIn", enabled ? "1" : "0");
-  } catch {
-    /* ignore */
-  }
+  try { localStorage.setItem("quay.launchAtSignIn", enabled ? "1" : "0"); }
+  catch { /* ignore */ }
 }
