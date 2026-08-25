@@ -4,9 +4,10 @@ export type QuayPrefs = {
   launchAtSignIn: boolean;
   groupAuto: Record<string, boolean>;
   workspaceRoot?: string;
+  onboardingCompleted?: boolean;
 };
 
-const fallback: QuayPrefs = { launchAtSignIn: false, groupAuto: {} };
+const fallback: QuayPrefs = { launchAtSignIn: false, groupAuto: {}, onboardingCompleted: false };
 
 export function loadPrefs(): QuayPrefs {
   if (typeof localStorage === "undefined") return fallback;
@@ -20,6 +21,7 @@ export function loadPrefs(): QuayPrefs {
       workspaceRoot: typeof parsed.workspaceRoot === "string" && parsed.workspaceRoot.trim()
         ? parsed.workspaceRoot.trim()
         : undefined,
+      onboardingCompleted: parsed.onboardingCompleted === true,
     };
   } catch {
     return fallback;
