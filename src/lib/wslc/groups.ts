@@ -1,3 +1,9 @@
+import {
+  DEFAULT_WORKSPACE_TARGET,
+  defaultCubeContainerWorkspacePath,
+  defaultCubeWorkspacePath,
+  normalizeWorkspacePath,
+} from "@/lib/workspace";
 import { mcpStack, specFromPreset } from "./catalog";
 import type { ContainerGroup, RunSpec } from "./types";
 
@@ -12,6 +18,7 @@ const localCoding: ContainerGroup = {
   env: "",
   builtIn: true,
   autoStart: false,
+  workspacePath: defaultCubeWorkspacePath("LocalCoding"),
   specs: mcpStack.map((preset) => ({ ...specFromPreset(preset), groupId: "local-coding" })),
 };
 
@@ -19,35 +26,22 @@ export const builtInGroups: ContainerGroup[] = [localCoding];
 
 function safeParse<T>(key: string, fallback: T): T {
   if (typeof localStorage === "undefined") return fallback;
-  try {
-    return JSON.parse(localStorage.getItem(key) || "") as T;
-  } catch {
-    return fallback;
-  }
+  try { return JSON.parse(localStorage.getItem(key) || "") as T; }
+  catch { return fallback; }
 }
 
 function envEntries(raw: string) {
-  return raw
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const at = line.indexOf("=");
-      return [at < 0 ? line : line.slice(0, at), at < 0 ? "" : line.slice(at + 1)] as const;
-    });
+  return raw.split("\n").map((line) => line.trim()).filter(Boolean).map((line) => {
+    const at = line.indexOf("=");
+    return [at < 0 ? line : line.slice(0, at), at < 0 ? "" : line.slice(at + 1)] as const;
+  });
 }
 
 export function slugGroupName(name: string) {
-  return name
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "") || `cube-${Date.now()}`;
+  return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || `cube-${Date.now()}`;
 }
 
-export function defaultGroupNetwork(id: string) {
-  return `quay-${id}`;
-}
+export function defaultGroupNetwork(id: string) { return `quay-${id}`; }
 
 function mergeSpecs(base: RunSpec[], extras: RunSpec[] = []) {
   const byName = new Map(base.map((spec) => [spec.name, { ...spec }]));
@@ -55,21 +49,38 @@ function mergeSpecs(base: RunSpec[], extras: RunSpec[] = []) {
   return Array.from(byName.values());
 }
 
+export function normalizeGroupWorkspace(group: ContainerGroup): ContainerGroup {
+  const workspacePath = normalizeWorkspacePath(group.workspacePath || defaultCubeWorkspacePath(group.name));
+  return {
+    ...group,
+    workspacePath,
+    specs: (group.specs ?? []).map((spec) => ({
+      ...spec,
+      groupId: group.id,
+      workspacePath: normalizeWorkspacePath(
+        spec.workspacePath || defaultCubeContainerWorkspacePath(workspacePath, spec.name || spec.image),
+      ),
+      workspaceTarget: spec.workspaceTarget?.trim() || DEFAULT_WORKSPACE_TARGET,
+    })),
+  };
+}
+
 export function loadGroups(): ContainerGroup[] {
   const overrides = safeParse<Record<string, Partial<ContainerGroup>>>(BUILTIN_OVERRIDES_KEY, {});
   const builtIns = builtInGroups.map((group) => {
     const override = overrides[group.id] ?? {};
-    return {
+    return normalizeGroupWorkspace({
       ...group,
       network: override.network || group.network,
       env: override.env ?? group.env,
       autoStart: override.autoStart ?? group.autoStart,
+      workspacePath: override.workspacePath ?? group.workspacePath,
       specs: mergeSpecs(group.specs, override.specs),
-    };
+    });
   });
   const users = safeParse<ContainerGroup[]>(GROUPS_KEY, [])
     .filter((group) => group && group.id && group.name)
-    .map((group) => ({
+    .map((group) => normalizeGroupWorkspace({
       ...group,
       builtIn: false,
       env: group.env ?? "",
@@ -79,8 +90,9 @@ export function loadGroups(): ContainerGroup[] {
   return [...builtIns, ...users];
 }
 
-export function saveGroup(group: ContainerGroup) {
+export function saveGroup(input: ContainerGroup) {
   if (typeof localStorage === "undefined") return;
+  const group = normalizeGroupWorkspace(input);
   if (group.builtIn) {
     const overrides = safeParse<Record<string, Partial<ContainerGroup>>>(BUILTIN_OVERRIDES_KEY, {});
     const base = builtInGroups.find((item) => item.id === group.id);
@@ -90,6 +102,7 @@ export function saveGroup(group: ContainerGroup) {
       network: group.network,
       env: group.env,
       autoStart: group.autoStart,
+      workspacePath: group.workspacePath,
       specs: extras,
     };
     localStorage.setItem(BUILTIN_OVERRIDES_KEY, JSON.stringify(overrides));
@@ -101,12 +114,15 @@ export function saveGroup(group: ContainerGroup) {
 }
 
 export function rememberGroupSpec(group: ContainerGroup, spec: RunSpec) {
-  const normalized = { ...spec, groupId: group.id };
-  const specs = [
-    ...group.specs.filter((item) => item.name !== normalized.name),
-    normalized,
-  ];
-  const updated = syncGroupEnv({ ...group, specs });
+  const normalizedGroup = normalizeGroupWorkspace(group);
+  const normalized = {
+    ...spec,
+    groupId: group.id,
+    workspacePath: spec.workspacePath || defaultCubeContainerWorkspacePath(normalizedGroup.workspacePath!, spec.name || spec.image),
+    workspaceTarget: spec.workspaceTarget || DEFAULT_WORKSPACE_TARGET,
+  };
+  const specs = [...normalizedGroup.specs.filter((item) => item.name !== normalized.name), normalized];
+  const updated = syncGroupEnv({ ...normalizedGroup, specs });
   saveGroup(updated);
   return updated;
 }
@@ -116,67 +132,54 @@ export function deleteGroupDefinition(id: string) {
   const users = loadGroups().filter((group) => !group.builtIn && group.id !== id);
   localStorage.setItem(GROUPS_KEY, JSON.stringify(users));
   const assignments = loadAssignments();
-  for (const [name, groupId] of Object.entries(assignments)) {
-    if (groupId === id) delete assignments[name];
-  }
+  for (const [name, groupId] of Object.entries(assignments)) if (groupId === id) delete assignments[name];
   localStorage.setItem(ASSIGNMENTS_KEY, JSON.stringify(assignments));
 }
 
 export function mergeEnv(first: string, second: string) {
   const values = new Map<string, string>();
-  for (const source of [first, second]) {
-    for (const [key, value] of envEntries(source)) values.set(key, value);
-  }
+  for (const source of [first, second]) for (const [key, value] of envEntries(source)) values.set(key, value);
   return Array.from(values, ([key, value]) => `${key}=${value}`).join("\n");
 }
 
 export function withoutEnvKeys(env: string, inheritedEnv: string) {
   const inheritedKeys = new Set(envEntries(inheritedEnv).map(([key]) => key));
-  return envEntries(env)
-    .filter(([key]) => !inheritedKeys.has(key))
-    .map(([key, value]) => `${key}=${value}`)
-    .join("\n");
+  return envEntries(env).filter(([key]) => !inheritedKeys.has(key)).map(([key, value]) => `${key}=${value}`).join("\n");
 }
 
 export function syncGroupEnv(group: ContainerGroup): ContainerGroup {
-  const values = new Map(envEntries(group.env));
-  for (const spec of group.specs) {
-    for (const [key, value] of envEntries(spec.env)) {
-      if (!values.has(key)) values.set(key, value);
-    }
+  const normalized = normalizeGroupWorkspace(group);
+  const values = new Map(envEntries(normalized.env));
+  for (const spec of normalized.specs) {
+    for (const [key, value] of envEntries(spec.env)) if (!values.has(key)) values.set(key, value);
   }
   const env = Array.from(values, ([key, value]) => `${key}=${value}`).join("\n");
   return {
-    ...group,
+    ...normalized,
     env,
-    specs: group.specs.map((spec) => ({
-      ...spec,
-      env: withoutEnvKeys(spec.env, env),
-    })),
+    specs: normalized.specs.map((spec) => ({ ...spec, env: withoutEnvKeys(spec.env, env) })),
   };
 }
 
 export function effectiveSpec(spec: RunSpec, group?: ContainerGroup): RunSpec {
   if (!group) return spec;
+  const normalized = normalizeGroupWorkspace(group);
   return {
     ...spec,
     groupId: group.id,
     env: mergeEnv(spec.env, group.env),
+    workspacePath: spec.workspacePath || defaultCubeContainerWorkspacePath(normalized.workspacePath!, spec.name || spec.image),
+    workspaceTarget: spec.workspaceTarget || DEFAULT_WORKSPACE_TARGET,
   };
 }
 
-export function loadAssignments(): Record<string, string> {
-  return safeParse<Record<string, string>>(ASSIGNMENTS_KEY, {});
-}
+export function loadAssignments(): Record<string, string> { return safeParse<Record<string, string>>(ASSIGNMENTS_KEY, {}); }
 
 export function assignContainer(name: string, groupId?: string) {
   if (typeof localStorage === "undefined" || !name.trim()) return;
   const assignments = loadAssignments();
-  if (groupId) assignments[name.trim()] = groupId;
-  else delete assignments[name.trim()];
+  if (groupId) assignments[name.trim()] = groupId; else delete assignments[name.trim()];
   localStorage.setItem(ASSIGNMENTS_KEY, JSON.stringify(assignments));
 }
 
-export function groupForContainer(name: string) {
-  return loadAssignments()[name];
-}
+export function groupForContainer(name: string) { return loadAssignments()[name]; }
