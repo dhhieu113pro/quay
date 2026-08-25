@@ -36,7 +36,12 @@ const CATALOG = [
   "nginx:latest", "postgres:16", "redis:7", "httpd:2.4",
 ];
 const LOCAL_CODING_WORKSPACE = "D:\\wslc\\workspaces";
-const LAB_WORKSPACE_ROOT = "D:\\Quay";
+const LAB_WORKSPACE_ROOT = "D:\\QuayAppData\\workspace";
+
+export type CompleteOnboardingInput = {
+  workspaceRoot: string;
+  launchAtSignIn: boolean;
+};
 
 interface WslcState {
   view: ViewId; gate: HostGate; probeNote: string; wslcOnPath: boolean;
@@ -45,6 +50,7 @@ interface WslcState {
   selectedId: string | null; runOpen: boolean; inspectOpen: boolean;
   metrics: MetricsPoint[]; now: number; catalog: string[];
   groups: ContainerGroup[]; launchAtSignIn: boolean; workspaceRoot: string;
+  onboardingCompleted: boolean;
   operations: Record<string, boolean>; lastError: string | null;
   setView: (view: ViewId) => void;
   selectContainer: (id: string | null) => void;
@@ -70,6 +76,8 @@ interface WslcState {
   startGroupContainer: (groupId: string, name: string) => void;
   startAutoGroups: () => void; setLaunchAtSignIn: (enabled: boolean) => void;
   setWorkspaceRoot: (root: string) => void;
+  setOnboardingCompleted: (completed: boolean) => void;
+  completeOnboarding: (input: CompleteOnboardingInput) => Promise<void>;
   changeWorkspaceRoot: (nextRoot: string, mode: "move" | "keep") => Promise<void>;
 }
 
@@ -205,6 +213,7 @@ export const useWslc = create<WslcState>((set, get) => {
       launchAtSignIn: get().launchAtSignIn,
       groupAuto: {},
       workspaceRoot: get().workspaceRoot,
+      onboardingCompleted: get().onboardingCompleted,
       ...patch,
     });
   };
@@ -314,6 +323,7 @@ export const useWslc = create<WslcState>((set, get) => {
     selectedId: null, runOpen: false, inspectOpen: false, metrics: [], now: Date.now(),
     catalog: CATALOG, groups: loadGroups(), launchAtSignIn: prefs.launchAtSignIn,
     workspaceRoot: prefs.workspaceRoot ?? LAB_WORKSPACE_ROOT,
+    onboardingCompleted: prefs.onboardingCompleted === true,
     operations: {}, lastError: null,
     setView: (view) => { set({ view }); if (view === "images") void refreshInventory(); },
     selectContainer: (selectedId) => set({ selectedId, inspectOpen: Boolean(selectedId) }),
@@ -384,7 +394,7 @@ export const useWslc = create<WslcState>((set, get) => {
       try { await ensureWorkspaceRoot(workspaceRoot); }
       catch (error) { set({ lastError: error instanceof Error ? error.message : String(error) }); }
       set({ gate: "checking", probeNote: "Checking WSL and wslc.exe…", containers: [], images: [], volumes: [], metrics: [], groups: loadGroups(), launchAtSignIn: nativeLaunchAtSignIn, workspaceRoot });
-      savePrefs({ launchAtSignIn: nativeLaunchAtSignIn, groupAuto: {}, workspaceRoot });
+      savePrefs({ launchAtSignIn: nativeLaunchAtSignIn, groupAuto: {}, workspaceRoot, onboardingCompleted: get().onboardingCompleted });
       const result = await checkHost();
       if (!result.wslc) {
         set({ gate: "missing", probeNote: result.note, wslcOnPath: false, session: emptySession(result.missing) });
@@ -470,6 +480,18 @@ export const useWslc = create<WslcState>((set, get) => {
       set({ workspaceRoot });
       saveCurrentPrefs({ workspaceRoot });
     },
+    setOnboardingCompleted: (onboardingCompleted) => {
+      set({ onboardingCompleted });
+      saveCurrentPrefs({ onboardingCompleted });
+    },
+    completeOnboarding: async (input) => {
+      const workspaceRoot = input.workspaceRoot.trim();
+      if (!workspaceRoot) throw new Error("Choose a Quay workspace folder before continuing.");
+      await ensureWorkspaceRoot(input.workspaceRoot);
+      const launchAtSignIn = await setNativeLaunchAtSignIn(input.launchAtSignIn);
+      set({ workspaceRoot, launchAtSignIn, onboardingCompleted: true, lastError: null });
+      saveCurrentPrefs({ workspaceRoot, launchAtSignIn, onboardingCompleted: true });
+    },
     changeWorkspaceRoot: async (nextRoot, mode) => {
       const previous = get().workspaceRoot;
       if (!nextRoot.trim() || nextRoot.trim().toLowerCase() === previous.trim().toLowerCase()) return;
@@ -477,7 +499,7 @@ export const useWslc = create<WslcState>((set, get) => {
         await ensureWorkspaceRoot(nextRoot);
         if (mode === "move") await moveWorkspaceRoot(previous, nextRoot);
         set({ workspaceRoot: nextRoot, lastError: null });
-        savePrefs({ launchAtSignIn: get().launchAtSignIn, groupAuto: {}, workspaceRoot: nextRoot });
+        savePrefs({ launchAtSignIn: get().launchAtSignIn, groupAuto: {}, workspaceRoot: nextRoot, onboardingCompleted: get().onboardingCompleted });
       } catch (error) {
         set({ lastError: error instanceof Error ? error.message : String(error) });
         throw error;
