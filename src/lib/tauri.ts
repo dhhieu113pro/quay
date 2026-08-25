@@ -46,12 +46,7 @@ export async function invokeWslcHost(payload: Record<string, unknown>): Promise<
 export async function probeWslc(): Promise<WslcProbe> {
   if (!isTauri()) return { wsl: false, wslVersion: null, wslc: false, version: null };
   const raw = await invokeNative<WslcProbe>("wslc_probe");
-  return {
-    wsl: Boolean(raw?.wsl),
-    wslVersion: raw?.wslVersion ?? null,
-    wslc: Boolean(raw?.wslc),
-    version: raw?.version ?? null,
-  };
+  return { wsl: Boolean(raw?.wsl), wslVersion: raw?.wslVersion ?? null, wslc: Boolean(raw?.wslc), version: raw?.version ?? null };
 }
 
 export async function ensureHostDirectory(path: string): Promise<void> {
@@ -60,7 +55,7 @@ export async function ensureHostDirectory(path: string): Promise<void> {
 }
 
 export async function getDefaultWorkspaceRoot(): Promise<string> {
-  if (!isTauri()) return "D:\\Quay";
+  if (!isTauri()) return "D:\\QuayAppData\\workspace";
   return invokeNative<string>("workspace_default_root");
 }
 
@@ -96,11 +91,8 @@ export async function moveWorkspaceEntry(root: string, fromRelative: string, toR
 
 export async function getLaunchAtSignIn(): Promise<boolean> {
   if (!isTauri()) return loadLaunchFallback();
-  try {
-    return Boolean(await invokeNative<boolean>("autostart_enabled"));
-  } catch {
-    return loadLaunchFallback();
-  }
+  try { return Boolean(await invokeNative<boolean>("autostart_enabled")); }
+  catch { return loadLaunchFallback(); }
 }
 
 export async function setLaunchAtSignIn(enabled: boolean): Promise<boolean> {
