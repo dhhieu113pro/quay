@@ -95,6 +95,13 @@ const rows = (output?: string, key?: string): Record<string, unknown>[] => {
   return [];
 };
 
+function sizeBytesFrom(row: Record<string, unknown>) {
+  const bytes = Number(value(row, "size"));
+  if (Number.isFinite(bytes) && bytes > 0) return bytes;
+  const sizeMB = Number(value(row, "sizemb"));
+  return Number.isFinite(sizeMB) && sizeMB > 0 ? sizeMB * 1024 * 1024 : 0;
+}
+
 function containersFrom(output?: string): Container[] {
   return rows(output, "containers").map((r) => {
     const rawState = value(r, "status", "state");
@@ -134,7 +141,7 @@ function imagesFrom(output?: string): ImageRecord[] {
     return {
       id: text(value(r, "id", "imageid", "digest")) || `${repository}:${tag}`,
       repository, tag, digest: text(value(r, "digest")),
-      sizeMB: Number(value(r, "sizemb", "size")) || 0,
+      sizeBytes: sizeBytesFrom(r),
       createdAt: Date.now(), containers: 0,
     };
   });
@@ -143,7 +150,7 @@ function imagesFrom(output?: string): ImageRecord[] {
 function volumesFrom(output?: string): VolumeRecord[] {
   return rows(output, "volumes").map((r) => ({
     name: text(value(r, "name")), driver: text(value(r, "driver")) || "wslc",
-    mountpoint: text(value(r, "mountpoint")), sizeMB: Number(value(r, "sizemb", "size")) || 0,
+    mountpoint: text(value(r, "mountpoint")), sizeBytes: sizeBytesFrom(r),
     createdAt: Date.now(), inUse: false,
   }));
 }
