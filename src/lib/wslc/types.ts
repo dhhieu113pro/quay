@@ -64,7 +64,7 @@ export interface ImageRecord {
   repository: string;
   tag: string;
   digest: string;
-  sizeMB: number;
+  sizeBytes: number;
   createdAt: number;
   containers: number;
 }
@@ -82,7 +82,7 @@ export interface VolumeRecord {
   name: string;
   driver: string;
   mountpoint: string;
-  sizeMB: number;
+  sizeBytes: number;
   createdAt: number;
   inUse: boolean;
 }

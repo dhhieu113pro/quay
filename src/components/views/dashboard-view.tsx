@@ -13,7 +13,7 @@ import { RunCubeDialog } from "@/components/run-cube-dialog";
 import { Button } from "@/components/ui/button";
 import { StatusPill } from "@/components/status-pill";
 import { invokeWslcHost } from "@/lib/tauri";
-import { formatBytes, formatUptime } from "@/lib/utils";
+import { formatBytes, formatUptime, mebibytesToBytes } from "@/lib/utils";
 import { useWslc } from "@/lib/wslc/store";
 
 type HostStats = {
@@ -153,7 +153,7 @@ export function DashboardView() {
             icon={<Layers className="size-4" />}
             label="Images"
             value={`${images.length}`}
-            hint={formatBytes(images.reduce((a, i) => a + i.sizeMB, 0))}
+            hint={formatBytes(images.reduce((a, i) => a + i.sizeBytes, 0))}
           />
           <Stat
             icon={<Cpu className="size-4" />}
@@ -164,9 +164,9 @@ export function DashboardView() {
           <Stat
             icon={<MemoryStick className="size-4" />}
             label="Memory"
-            value={host.memoryTotalMB ? formatBytes(host.memoryUsedMB) : "—"}
+            value={host.memoryTotalMB ? formatBytes(mebibytesToBytes(host.memoryUsedMB)) : "—"}
             hint={host.memoryTotalMB
-              ? `of ${formatBytes(host.memoryTotalMB)} · ${Math.round(host.memoryPercent)}%`
+              ? `of ${formatBytes(mebibytesToBytes(host.memoryTotalMB))} · ${Math.round(host.memoryPercent)}%`
               : "reading Windows host"}
           />
         </div>

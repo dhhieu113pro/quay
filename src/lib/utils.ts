@@ -9,10 +9,26 @@ export function shortId(id: string) {
   return id.slice(0, 12);
 }
 
-export function formatBytes(mb: number) {
-  if (mb >= 1024) return `${(mb / 1024).toFixed(1)} GB`;
-  if (mb >= 10) return `${Math.round(mb)} MB`;
-  return `${mb.toFixed(1)} MB`;
+export function mebibytesToBytes(mebibytes: number) {
+  const value = Number.isFinite(mebibytes) ? Math.max(0, mebibytes) : 0;
+  return value * 1024 * 1024;
+}
+
+export function formatBytes(bytes: number) {
+  const value = Number.isFinite(bytes) ? Math.max(0, bytes) : 0;
+  const KB = 1024;
+  const MB = 1024 * 1024;
+  const GB = 1024 * 1024 * 1024;
+  const TB = 1024 * 1024 * 1024 * 1024;
+
+  const format = (amount: number, unit: "KB" | "MB" | "GB" | "TB") =>
+    `${amount >= 100 ? Math.round(amount) : amount.toFixed(1)} ${unit}`;
+
+  if (value >= TB) return format(value / TB, "TB");
+  if (value >= GB) return format(value / GB, "GB");
+  if (value >= MB) return format(value / MB, "MB");
+  if (value >= KB) return format(value / KB, "KB");
+  return `${Math.round(value)} B`;
 }
 
 export function formatUptime(startedAt?: number, now = Date.now()) {
