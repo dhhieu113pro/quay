@@ -3,6 +3,7 @@ const KEY = "quay.prefs";
 export type QuayPrefs = {
   launchAtSignIn: boolean;
   groupAuto: Record<string, boolean>;
+  workspaceRoot?: string;
 };
 
 const fallback: QuayPrefs = { launchAtSignIn: false, groupAuto: {} };
@@ -16,6 +17,9 @@ export function loadPrefs(): QuayPrefs {
     return {
       launchAtSignIn: Boolean(parsed.launchAtSignIn),
       groupAuto: parsed.groupAuto && typeof parsed.groupAuto === "object" ? parsed.groupAuto : {},
+      workspaceRoot: typeof parsed.workspaceRoot === "string" && parsed.workspaceRoot.trim()
+        ? parsed.workspaceRoot.trim()
+        : undefined,
     };
   } catch {
     return fallback;
