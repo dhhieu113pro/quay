@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Boxes, FileText, FolderOpen, LoaderCircle, Pencil, Play, Plus, Square, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { CubeContainerDialog } from "@/components/cube-container-dialog";
+import { CubeLogsPanel } from "@/components/cube-logs-panel";
 import { EnvEditor, joinEnvLines, parseEnvLines, type KvPair } from "@/components/kv-editor";
 import { RunCubeDialog } from "@/components/run-cube-dialog";
 import { applyStackConfig, loadStackConfig } from "@/components/stack-config-dialog";
@@ -12,7 +13,6 @@ import { Label } from "@/components/ui/label";
 import { moveWorkspaceEntry, openWorkspacePath } from "@/lib/tauri";
 import { defaultCubeWorkspacePath, isGeneratedCubeWorkspacePath, resolveWorkspacePath } from "@/lib/workspace";
 import { cubeCanConfigure, cubeCanStart, cubeNetworkName, effectiveSpec, slugGroupName, specConfigured, syncGroupEnv } from "@/lib/wslc/groups";
-import { openLogs } from "@/lib/wslc/log-store";
 import { useWslc, type OperationStatus } from "@/lib/wslc/store";
 import type { Container, ContainerGroup, RunSpec } from "@/lib/wslc/types";
 
@@ -62,6 +62,7 @@ export function CubesView() {
   const [editing, setEditing] = useState<ContainerGroup | null>(null);
   const [containerEditor, setContainerEditor] = useState<{ cube: ContainerGroup } | null>(null);
   const [runOpen, setRunOpen] = useState(false);
+  const [logCubeId, setLogCubeId] = useState<string | null>(null);
 
   const counts = useMemo(() => new Map(groups.map((cube) => {
     const members = membersOf(cube, containers);
@@ -75,53 +76,62 @@ export function CubesView() {
     return true;
   }
 
-  return <>
-    <div className="mx-auto w-full max-w-6xl p-4 sm:p-6">
-      <div className="mb-5 flex items-start justify-between gap-4">
-        <div><h1 className="text-xl font-semibold">Cubes</h1><p className="mt-1 text-sm text-muted-foreground">Define related containers with one network, shared environment, and a managed workspace.</p></div>
-        <div className="flex gap-2"><Button variant="secondary" onClick={() => setRunOpen(true)}><Play className="size-4" />Run Cube</Button><Button onClick={() => setEditing(emptyCube())}><Plus className="size-4" />New Cube</Button></div>
+  const logCube = groups.find((cube) => cube.id === logCubeId) ?? null;
+
+  return <div className="flex min-h-0 flex-1">
+    <div className="min-w-0 flex-1">
+      <div className="mx-auto w-full max-w-6xl p-4 sm:p-6">
+        <div className="mb-5 flex items-start justify-between gap-4">
+          <div><h1 className="text-xl font-semibold">Cubes</h1><p className="mt-1 text-sm text-muted-foreground">Define related containers with one network, shared environment, and a managed workspace.</p></div>
+          <div className="flex gap-2"><Button variant="secondary" onClick={() => setRunOpen(true)}><Play className="size-4" />Run Cube</Button><Button onClick={() => setEditing(emptyCube())}><Plus className="size-4" />New Cube</Button></div>
+        </div>
+        <div className="grid gap-3 lg:grid-cols-2">
+          {groups.map((cube) => {
+            const members = membersOf(cube, containers);
+            const count = counts.get(cube.id) ?? { total: 0, running: 0 };
+            const cubeStatus = operations[`cube:${cube.id}`];
+            const busy = Boolean(cubeStatus);
+            const canConfigure = cubeCanConfigure(cube, containers, operations);
+            const missing = members.filter((member) => needsConfig(cube, member)).length;
+            const canStart = cubeCanStart(cube, containers, operations) && missing === 0;
+            return <section key={cube.id} className="overflow-hidden rounded-xl border border-border bg-card">
+              <div className="p-4">
+                <div className="flex items-start gap-3"><div className="grid size-10 place-items-center rounded-md bg-elevated"><Boxes className="size-5" /></div><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><h2 className="font-medium">{cube.name}</h2>{cube.builtIn ? <span className="rounded bg-elevated px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">Built-in</span> : null}{cubeStatus ? <span className="text-xs text-muted-foreground">{operationLabel(cubeStatus)}</span> : null}</div><p className="mt-1 text-xs text-muted-foreground">{count.running} running · {members.length} members · {cube.network}</p><p className="mt-1 truncate font-mono text-[11px] text-subtle">{cube.workspacePath || defaultCubeWorkspacePath(cube.name)}</p>{missing > 0 ? <p className="mt-1 text-xs text-warn">{missing} {missing === 1 ? "member needs" : "members need"} configuration before this Cube can start.</p> : null}</div></div>
+              </div>
+              <ul className="divide-y divide-border border-y border-border bg-background/35">{members.map((member) => {
+                const running = member.container?.status === "running";
+                const memberStatus = operations[`container:${member.name}`];
+                const memberBusy = busy || Boolean(memberStatus);
+                const blocked = needsConfig(cube, member);
+                return <li key={member.name} className="flex items-center gap-2 px-4 py-2.5"><span className={`size-2 rounded-full ${running ? "bg-ok" : blocked ? "bg-warn" : "bg-subtle"}`} /><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{member.name}</p><p className="truncate font-mono text-[11px] text-subtle">{member.image}</p></div>
+                  {memberStatus ? <span className="text-xs text-muted-foreground">{operationLabel(memberStatus)}</span> : null}
+                  <Button size="icon-sm" variant="ghost" disabled={memberBusy || (!running && blocked)} onClick={() => {
+                    if (running && member.container) stopContainer(member.container.id);
+                    else if (member.spec) { if (cube.id === "local-coding") applyStackConfig(cube); startGroupContainer(cube.id, member.name); }
+                    else if (member.container) startContainer(member.container.id);
+                  }}>{memberBusy ? <LoaderCircle className="size-3.5 animate-spin" /> : running ? <Square className="size-3.5" /> : <Play className="size-3.5" />}</Button></li>;
+              })}</ul>
+              <div className="flex flex-wrap gap-2 p-4">
+                <Button size="sm" disabled={!count.total || busy || (count.running === 0 && !canStart)} onClick={() => count.running ? stopGroup(cube.id) : startGroup(cube.id)}>{busy ? <LoaderCircle className="size-3.5 animate-spin" /> : count.running ? <Square className="size-3.5" /> : <Play className="size-3.5" />}{cubeStatus === "starting" ? "Starting…" : cubeStatus === "stopping" ? "Stopping…" : count.running ? "Stop Cube" : "Start Cube"}</Button>
+                <Button size="icon-sm" variant="ghost" aria-label={`Logs for ${cube.name}`} title={`Logs for ${cube.name}`} onClick={() => setLogCubeId(cube.id)}><FileText className="size-3.5" /></Button>
+                <Button size="sm" variant="outline" disabled={!canConfigure} onClick={() => setContainerEditor({ cube })}><Plus className="size-3.5" />Add Container</Button>
+                <Button size="sm" variant="ghost" disabled={!canConfigure} onClick={() => setEditing(syncGroupEnv(cube))}><Pencil className="size-3.5" />Configure</Button>
+                {!cube.builtIn ? <Button size="sm" variant="ghost" className="ml-auto" disabled={!canConfigure} onClick={() => deleteGroup(cube.id)}><Trash2 className="size-3.5" />Delete</Button> : null}
+              </div>
+            </section>;
+          })}
+        </div>
+        <CubeDialog cube={editing} onClose={() => setEditing(null)} onSave={(cube) => { saveGroup(syncGroupEnv(cube)); toast(`Saved ${cube.name}`); setEditing(null); }} />
       </div>
-      <div className="grid gap-3 lg:grid-cols-2">
-        {groups.map((cube) => {
-          const members = membersOf(cube, containers);
-          const count = counts.get(cube.id) ?? { total: 0, running: 0 };
-          const cubeStatus = operations[`cube:${cube.id}`];
-          const busy = Boolean(cubeStatus);
-          const canConfigure = cubeCanConfigure(cube, containers, operations);
-          const missing = members.filter((member) => needsConfig(cube, member)).length;
-          const canStart = cubeCanStart(cube, containers, operations) && missing === 0;
-          return <section key={cube.id} className="overflow-hidden rounded-xl border border-border bg-card">
-            <div className="p-4">
-              <div className="flex items-start gap-3"><div className="grid size-10 place-items-center rounded-md bg-elevated"><Boxes className="size-5" /></div><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><h2 className="font-medium">{cube.name}</h2>{cube.builtIn ? <span className="rounded bg-elevated px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">Built-in</span> : null}{cubeStatus ? <span className="text-xs text-muted-foreground">{operationLabel(cubeStatus)}</span> : null}</div><p className="mt-1 text-xs text-muted-foreground">{count.running} running · {members.length} members · {cube.network}</p><p className="mt-1 truncate font-mono text-[11px] text-subtle">{cube.workspacePath || defaultCubeWorkspacePath(cube.name)}</p>{missing > 0 ? <p className="mt-1 text-xs text-warn">{missing} {missing === 1 ? "member needs" : "members need"} configuration before this Cube can start.</p> : null}</div></div>
-            </div>
-            <ul className="divide-y divide-border border-y border-border bg-background/35">{members.map((member) => {
-              const running = member.container?.status === "running";
-              const memberStatus = operations[`container:${member.name}`];
-              const memberBusy = busy || Boolean(memberStatus);
-              const blocked = needsConfig(cube, member);
-              return <li key={member.name} className="flex items-center gap-2 px-4 py-2.5"><span className={`size-2 rounded-full ${running ? "bg-ok" : blocked ? "bg-warn" : "bg-subtle"}`} /><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{member.name}</p><p className="truncate font-mono text-[11px] text-subtle">{member.image}</p></div>
-                {memberStatus ? <span className="text-xs text-muted-foreground">{operationLabel(memberStatus)}</span> : null}
-                <Button size="icon-sm" variant="ghost" disabled={memberBusy || (!running && blocked)} onClick={() => {
-                  if (running && member.container) stopContainer(member.container.id);
-                  else if (member.spec) { if (cube.id === "local-coding") applyStackConfig(cube); startGroupContainer(cube.id, member.name); }
-                  else if (member.container) startContainer(member.container.id);
-                }}>{memberBusy ? <LoaderCircle className="size-3.5 animate-spin" /> : running ? <Square className="size-3.5" /> : <Play className="size-3.5" />}</Button></li>;
-            })}</ul>
-            <div className="flex flex-wrap gap-2 p-4">
-              <Button size="sm" disabled={!count.total || busy || (count.running === 0 && !canStart)} onClick={() => count.running ? stopGroup(cube.id) : startGroup(cube.id)}>{busy ? <LoaderCircle className="size-3.5 animate-spin" /> : count.running ? <Square className="size-3.5" /> : <Play className="size-3.5" />}{cubeStatus === "starting" ? "Starting…" : cubeStatus === "stopping" ? "Stopping…" : count.running ? "Stop Cube" : "Start Cube"}</Button>
-              <Button size="icon-sm" variant="ghost" aria-label={`Logs for ${cube.name}`} title={`Logs for ${cube.name}`} onClick={() => openLogs({ cubeId: cube.id })}><FileText className="size-3.5" /></Button>
-              <Button size="sm" variant="outline" disabled={!canConfigure} onClick={() => setContainerEditor({ cube })}><Plus className="size-3.5" />Add Container</Button>
-              <Button size="sm" variant="ghost" disabled={!canConfigure} onClick={() => setEditing(syncGroupEnv(cube))}><Pencil className="size-3.5" />Configure</Button>
-              {!cube.builtIn ? <Button size="sm" variant="ghost" className="ml-auto" disabled={!canConfigure} onClick={() => deleteGroup(cube.id)}><Trash2 className="size-3.5" />Delete</Button> : null}
-            </div>
-          </section>;
-        })}
-      </div>
-      <CubeDialog cube={editing} onClose={() => setEditing(null)} onSave={(cube) => { saveGroup(syncGroupEnv(cube)); toast(`Saved ${cube.name}`); setEditing(null); }} />
+      <RunCubeDialog open={runOpen} onOpenChange={setRunOpen} />
+      <CubeContainerDialog cube={containerEditor?.cube ?? null} open={Boolean(containerEditor)} onOpenChange={(open) => { if (!open) setContainerEditor(null); }} onSave={(spec) => { if (containerEditor && saveMember(containerEditor.cube, spec)) setContainerEditor(null); }} />
     </div>
-    <RunCubeDialog open={runOpen} onOpenChange={setRunOpen} />
-    <CubeContainerDialog cube={containerEditor?.cube ?? null} open={Boolean(containerEditor)} onOpenChange={(open) => { if (!open) setContainerEditor(null); }} onSave={(spec) => { if (containerEditor && saveMember(containerEditor.cube, spec)) setContainerEditor(null); }} />
-  </>;
+    {logCube ? (
+      <div className="fixed inset-0 z-40 flex h-dvh flex-col bg-background md:static md:z-0 md:h-auto md:w-[min(100%,24rem)] md:shrink-0 lg:w-[28rem]">
+        <CubeLogsPanel cubeId={logCube.id} cubeName={logCube.name} onClose={() => setLogCubeId(null)} />
+      </div>
+    ) : null}
+  </div>;
 }
 
 function CubeDialog({ cube, onClose, onSave }: { cube: ContainerGroup | null; onClose: () => void; onSave: (cube: ContainerGroup) => void }) {
