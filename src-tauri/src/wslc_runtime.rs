@@ -3,6 +3,7 @@
 use crate::wslc_executor::{CliResult, WslcExecutor};
 use serde_json::{json, Value};
 use std::mem::size_of;
+use std::sync::{Arc, Mutex};
 use std::thread;
 
 #[derive(Default)]
@@ -26,7 +27,7 @@ extern "system" {
     fn GlobalMemoryStatusEx(status: *mut MemoryStatusEx) -> i32;
 }
 
-pub fn invoke(executor: &WslcExecutor, host: &mut HostSampler, root: Value) -> Result<Value, String> {
+pub fn invoke(executor: &WslcExecutor, host: &Arc<Mutex<HostSampler>>, root: Value) -> Result<Value, String> {
     let cmd = root.get("cmd").and_then(Value::as_str).ok_or("missing cmd")?;
     match cmd {
         "health" => {
@@ -34,7 +35,10 @@ pub fn invoke(executor: &WslcExecutor, host: &mut HostSampler, root: Value) -> R
             let result = executor.execute(args.clone())?;
             Ok(json!({"ok": result.ok, "wslc": result.ok, "session": "default", "output": result.output, "error": result.error, "exitCode": result.exit_code, "command": "wslc version"}))
         }
-        "host_stats" => host.sample(),
+        "host_stats" => host
+            .lock()
+            .map_err(|_| "host sampler poisoned".to_string())?
+            .sample(),
         "run_cli" => {
             let args = root.get("args").and_then(Value::as_array).ok_or("missing args")?.iter()
                 .map(|x| x.as_str().map(str::to_string).ok_or("args must be strings"))
