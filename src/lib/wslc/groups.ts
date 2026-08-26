@@ -128,13 +128,13 @@ export function specConfigured(spec: RunSpec, group?: ContainerGroup) {
 }
 
 function memberNames(cube: ContainerGroup) { return new Set(cube.specs.map((spec) => spec.name).filter(Boolean)); }
-export function cubeCanConfigure(cube: ContainerGroup, containers: Container[], operations: Record<string, boolean>) {
+export function cubeCanConfigure(cube: ContainerGroup, containers: Container[], operations: Record<string, unknown>) {
   if (operations[`cube:${cube.id}`]) return false;
   const names = memberNames(cube);
   return !containers.some((container) => (container.groupId === cube.id || names.has(container.name)) &&
     (container.status === "running" || container.status === "paused" || container.status === "removing" || operations[`container:${container.name}`]));
 }
-export function cubeCanStart(cube: ContainerGroup, containers: Container[], operations: Record<string, boolean>) {
+export function cubeCanStart(cube: ContainerGroup, containers: Container[], operations: Record<string, unknown>) {
   return cube.specs.length > 0 && cubeCanConfigure(cube, containers, operations) && cube.specs.every((spec) => specConfigured(spec, cube));
 }
 

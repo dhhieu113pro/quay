@@ -19,8 +19,10 @@ export function ImagesView() {
   const now = useWslc((s) => s.now);
   const [ref, setRef] = useState("ghcr.io/dhhieu113pro/local-coding-mcp:latest");
   const [volName, setVolName] = useState("");
-  const pulling = Boolean(operations[`image:${ref.trim()}`]);
-  const creatingVolume = Boolean(volName.trim() && operations[`volume:${volName.trim()}`]);
+  const pullStatus = operations[`image:${ref.trim()}`];
+  const pulling = pullStatus === "pulling";
+  const volumeStatus = volName.trim() ? operations[`volume:${volName.trim()}`] : undefined;
+  const creatingVolume = volumeStatus === "creating";
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 p-4 md:p-6">
@@ -42,7 +44,7 @@ export function ImagesView() {
             onSubmit={(event) => {
               event.preventDefault();
               const value = ref.trim();
-              if (!value || pulling) return;
+              if (!value || pullStatus) return;
               pullImage(value);
               toast(`Pulling ${value}`);
             }}
@@ -53,21 +55,22 @@ export function ImagesView() {
               onChange={(event) => setRef(event.target.value)}
               placeholder="nginx:latest"
               className="font-mono"
-              disabled={pulling}
+              disabled={Boolean(pullStatus)}
             />
             <datalist id="pull-catalog">
               {catalog.map((item) => <option key={item} value={item} />)}
             </datalist>
-            <Button type="submit" disabled={pulling || !ref.trim()}>
+            <Button type="submit" disabled={Boolean(pullStatus) || !ref.trim()}>
               {pulling ? <LoaderCircle className="size-4 animate-spin" /> : <Download className="size-4" />}
-              {pulling ? "Pulling…" : "Pull"}
+              {pulling ? "Pulling…" : pullStatus === "removing" ? "Removing…" : "Pull"}
             </Button>
           </form>
 
           <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
             {images.length ? images.map((img) => {
               const reference = `${img.repository}:${img.tag}`;
-              const busy = Boolean(operations[`image:${reference}`]);
+              const status = operations[`image:${reference}`];
+              const busy = Boolean(status);
               return (
                 <li key={img.id} className="flex items-center gap-3 px-4 py-3">
                   <div className="min-w-0 flex-1">
@@ -78,7 +81,8 @@ export function ImagesView() {
                       {img.id} · {formatBytes(img.sizeBytes)} · {relativeTime(img.createdAt, now)}
                     </p>
                   </div>
-                  {busy ? <span className="text-xs text-muted-foreground">Working…</span> : null}
+                  {status === "pulling" ? <span className="text-xs text-muted-foreground">Pulling…</span> : null}
+                  {status === "removing" ? <span className="text-xs text-muted-foreground">Removing…</span> : null}
                   <Button
                     size="icon-sm"
                     variant="ghost"
@@ -105,7 +109,7 @@ export function ImagesView() {
             onSubmit={(event) => {
               event.preventDefault();
               const value = volName.trim();
-              if (!value || creatingVolume) return;
+              if (!value || volumeStatus) return;
               createVolume(value);
               toast(`Creating volume ${value}`);
               setVolName("");
@@ -115,16 +119,17 @@ export function ImagesView() {
               value={volName}
               onChange={(event) => setVolName(event.target.value)}
               placeholder="volume name"
-              disabled={creatingVolume}
+              disabled={Boolean(volumeStatus)}
             />
-            <Button type="submit" disabled={!volName.trim() || creatingVolume}>
+            <Button type="submit" disabled={!volName.trim() || Boolean(volumeStatus)}>
               {creatingVolume ? <LoaderCircle className="size-4 animate-spin" /> : null}
               {creatingVolume ? "Creating…" : "Create"}
             </Button>
           </form>
           <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
             {volumes.length ? volumes.map((volume) => {
-              const busy = Boolean(operations[`volume:${volume.name}`]);
+              const status = operations[`volume:${volume.name}`];
+              const busy = Boolean(status);
               return (
                 <li key={volume.name} className="flex items-center gap-3 px-4 py-3">
                   <div className="min-w-0 flex-1">
@@ -133,6 +138,7 @@ export function ImagesView() {
                       {volume.mountpoint || "WSLC volume"} · {formatBytes(volume.sizeBytes)}
                     </p>
                   </div>
+                  {status === "removing" ? <span className="text-xs text-muted-foreground">Removing…</span> : null}
                   <Button
                     size="icon-sm"
                     variant="ghost"

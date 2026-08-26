@@ -38,6 +38,8 @@ const CATALOG = [
 const LOCAL_CODING_WORKSPACE = "D:\\wslc\\workspaces";
 const LAB_WORKSPACE_ROOT = "D:\\QuayAppData\\workspace";
 
+export type OperationStatus = "starting" | "stopping" | "restarting" | "pulling" | "removing" | "creating";
+
 export type CompleteOnboardingInput = {
   workspaceRoot: string;
   launchAtSignIn: boolean;
@@ -51,7 +53,7 @@ interface WslcState {
   metrics: MetricsPoint[]; now: number; catalog: string[];
   groups: ContainerGroup[]; launchAtSignIn: boolean; workspaceRoot: string;
   onboardingCompleted: boolean;
-  operations: Record<string, boolean>; lastError: string | null;
+  operations: Record<string, OperationStatus>; lastError: string | null;
   setView: (view: ViewId) => void;
   selectContainer: (id: string | null) => void;
   setRunOpen: (open: boolean) => void;
@@ -221,9 +223,9 @@ export const useWslc = create<WslcState>((set, get) => {
     });
   };
 
-  const setOperation = (key: string, active: boolean) => set((state) => {
+  const setOperation = (key: string, status?: OperationStatus) => set((state) => {
     const operations = { ...state.operations };
-    if (active) operations[key] = true; else delete operations[key];
+    if (status) operations[key] = status; else delete operations[key];
     return { operations };
   });
 
@@ -321,12 +323,12 @@ export const useWslc = create<WslcState>((set, get) => {
     return execute(runArgs(effective, group?.network, managedMount));
   };
 
-  const runOperation = async (key: string, work: () => Promise<void>) => {
+  const runOperation = async (key: string, status: OperationStatus, work: () => Promise<void>) => {
     if (get().operations[key]) return;
-    setOperation(key, true);
+    setOperation(key, status);
     try { await work(); }
     catch (error) { set({ lastError: error instanceof Error ? error.message : String(error) }); }
-    finally { setOperation(key, false); }
+    finally { setOperation(key); }
   };
 
   return {
@@ -345,21 +347,21 @@ export const useWslc = create<WslcState>((set, get) => {
     tick: refreshContainers,
     refreshInventory,
     refreshLogs,
-    startSession: () => { void runOperation("session", async () => { await execute(["system", "session", "start"]); await refreshAfterMutation(); }); },
-    stopSession: () => { void runOperation("session", async () => { await execute(["system", "session", "terminate"]); await refreshAfterMutation(); }); },
+    startSession: () => { void runOperation("session", "starting", async () => { await execute(["system", "session", "start"]); await refreshAfterMutation(); }); },
+    stopSession: () => { void runOperation("session", "stopping", async () => { await execute(["system", "session", "terminate"]); await refreshAfterMutation(); }); },
     updateSession: (patch) => set((state) => ({ session: { ...state.session, ...patch } })),
     pullImage: (reference) => {
       const ref = reference.trim();
-      if (ref) void runOperation(`image:${ref}`, async () => { await execute(["pull", ref]); await refreshAfterMutation(); });
+      if (ref) void runOperation(`image:${ref}`, "pulling", async () => { await execute(["pull", ref]); await refreshAfterMutation(); });
     },
     removeImage: (id) => {
       const image = get().images.find((item) => item.id === id);
       if (!image) return;
       const ref = `${image.repository}:${image.tag}`;
-      void runOperation(`image:${ref}`, async () => { await execute(["image", "rm", ref]); await refreshAfterMutation(); });
+      void runOperation(`image:${ref}`, "removing", async () => { await execute(["image", "rm", ref]); await refreshAfterMutation(); });
     },
     runContainer: (spec) => {
-      void runOperation(`container:${spec.name || spec.image}`, async () => {
+      void runOperation(`container:${spec.name || spec.image}`, "starting", async () => {
         const result = await runInGroup({
           ...spec,
           workspacePath: spec.workspacePath || defaultStandaloneWorkspacePath(spec.name || spec.image),
@@ -371,20 +373,20 @@ export const useWslc = create<WslcState>((set, get) => {
     },
     startContainer: (id) => {
       const container = get().containers.find((item) => item.id === id);
-      if (container) void runOperation(`container:${container.name}`, async () => { await execute(["container", "start", container.name]); await refreshAfterMutation(); });
+      if (container) void runOperation(`container:${container.name}`, "starting", async () => { await execute(["container", "start", container.name]); await refreshAfterMutation(); });
     },
     stopContainer: (id) => {
       const container = get().containers.find((item) => item.id === id);
-      if (container) void runOperation(`container:${container.name}`, async () => { await execute(["container", "stop", container.name]); await refreshAfterMutation(); });
+      if (container) void runOperation(`container:${container.name}`, "stopping", async () => { await execute(["container", "stop", container.name]); await refreshAfterMutation(); });
     },
     restartContainer: (id) => {
       const container = get().containers.find((item) => item.id === id);
-      if (container) void runOperation(`container:${container.name}`, async () => { await execute(["container", "restart", container.name]); await refreshAfterMutation(); });
+      if (container) void runOperation(`container:${container.name}`, "restarting", async () => { await execute(["container", "restart", container.name]); await refreshAfterMutation(); });
     },
     deleteContainer: (id) => {
       const container = get().containers.find((item) => item.id === id);
       if (!container) return;
-      void runOperation(`container:${container.name}`, async () => {
+      void runOperation(`container:${container.name}`, "removing", async () => {
         assignContainer(container.name); await execute(["container", "rm", container.name]); await refreshAfterMutation();
       });
     },
@@ -394,9 +396,9 @@ export const useWslc = create<WslcState>((set, get) => {
     },
     createVolume: (name) => {
       const value = name.trim();
-      if (value) void runOperation(`volume:${value}`, async () => { await execute(["volume", "create", value]); await refreshAfterMutation(); });
+      if (value) void runOperation(`volume:${value}`, "creating", async () => { await execute(["volume", "create", value]); await refreshAfterMutation(); });
     },
-    deleteVolume: (name) => { void runOperation(`volume:${name}`, async () => { await execute(["volume", "rm", name]); await refreshAfterMutation(); }); },
+    deleteVolume: (name) => { void runOperation(`volume:${name}`, "removing", async () => { await execute(["volume", "rm", name]); await refreshAfterMutation(); }); },
     retryProbe: async () => {
       const nativeLaunchAtSignIn = await getLaunchAtSignIn();
       let workspaceRoot = get().workspaceRoot;
@@ -425,7 +427,7 @@ export const useWslc = create<WslcState>((set, get) => {
     startGroup: (id) => {
       const group = get().groups.find((item) => item.id === id);
       if (!group) return;
-      void runOperation(`cube:${id}`, async () => {
+      void runOperation(`cube:${id}`, "starting", async () => {
         await prepareGroup(group); await ensureNetwork(group.network);
         for (const spec of group.specs) {
           if (!specConfigured(group, spec)) continue;
@@ -445,7 +447,7 @@ export const useWslc = create<WslcState>((set, get) => {
     stopGroup: (id) => {
       const group = get().groups.find((item) => item.id === id);
       if (!group) return;
-      void runOperation(`cube:${id}`, async () => {
+      void runOperation(`cube:${id}`, "stopping", async () => {
         const names = new Set([
           ...group.specs.map((spec) => spec.name),
           ...get().containers.filter((container) => container.groupId === id).map((container) => container.name),
@@ -464,7 +466,7 @@ export const useWslc = create<WslcState>((set, get) => {
       const existing = get().containers.find((container) => container.name === name);
       if (existing?.status === "running") return;
       if (spec && !specConfigured(group, spec)) { set({ lastError: `Configure NGROK_AUTHTOKEN before starting ${name}.` }); return; }
-      void runOperation(`container:${name}`, async () => {
+      void runOperation(`container:${name}`, "starting", async () => {
         await prepareGroup(group);
         if (existing) { assignContainer(existing.name, group.id); await execute(["container", "start", existing.name]); }
         else if (spec) {
