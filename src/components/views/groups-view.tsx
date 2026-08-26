@@ -9,16 +9,16 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { moveWorkspaceEntry, openWorkspacePath, pickWorkspaceDescendant } from "@/lib/tauri";
-import { defaultCubeWorkspacePath, isGeneratedCubeWorkspacePath, relativeWorkspacePath, resolveWorkspacePath } from "@/lib/workspace";
-import { cubeCanConfigure, cubeCanStart, defaultGroupNetwork, effectiveSpec, slugGroupName, specConfigured, syncGroupEnv } from "@/lib/wslc/groups";
+import { moveWorkspaceEntry, openWorkspacePath } from "@/lib/tauri";
+import { defaultCubeWorkspacePath, isGeneratedCubeWorkspacePath, resolveWorkspacePath } from "@/lib/workspace";
+import { cubeCanConfigure, cubeCanStart, cubeNetworkName, effectiveSpec, slugGroupName, specConfigured, syncGroupEnv } from "@/lib/wslc/groups";
 import { openLogs } from "@/lib/wslc/log-store";
 import { useWslc, type OperationStatus } from "@/lib/wslc/store";
 import type { Container, ContainerGroup, RunSpec } from "@/lib/wslc/types";
 
 function emptyCube(): ContainerGroup {
   const id = `cube-${Date.now()}`;
-  return { id, name: "", network: defaultGroupNetwork(id), env: "", builtIn: false, autoStart: false, specs: [] };
+  return { id, name: "", network: cubeNetworkName(""), env: "", builtIn: false, autoStart: false, specs: [] };
 }
 
 type Member = { name: string; image: string; spec?: RunSpec; container?: Container };
@@ -136,13 +136,14 @@ function CubeDialog({ cube, onClose, onSave }: { cube: ContainerGroup | null; on
   const currentCube: ContainerGroup = cube;
   const currentDraft: ContainerGroup = draft;
   const workspacePath = currentDraft.workspacePath || defaultCubeWorkspacePath(currentDraft.name || "cube");
-  let resolved = workspaceRoot; try { resolved = resolveWorkspacePath(workspaceRoot, workspacePath); } catch { /* invalid text remains editable */ }
+  const containerEnvKeys = new Set(currentDraft.protectedEnvKeys ?? []);
+  let resolved = workspaceRoot; try { resolved = resolveWorkspacePath(workspaceRoot, workspacePath); } catch { /* stored path remains visible */ }
   const patch = (value: Partial<ContainerGroup>) => setDraft((current) => current ? { ...current, ...value } : current);
 
   function save() {
     const name = currentDraft.name.trim();
     if (!name) return;
-    const next: ContainerGroup = syncGroupEnv({ ...currentDraft, name, env: joinEnvLines(envRows), workspacePath, network: currentDraft.network.trim() || defaultGroupNetwork(currentDraft.id) });
+    const next: ContainerGroup = syncGroupEnv({ ...currentDraft, name, env: joinEnvLines(envRows), workspacePath, network: cubeNetworkName(name) });
     const from = currentCube.workspacePath || defaultCubeWorkspacePath(currentCube.name || name);
     const to = defaultCubeWorkspacePath(name);
     if (!creating && name !== currentCube.name && isGeneratedCubeWorkspacePath(from, currentCube.name) && from !== to) { setRename({ next, from, to }); return; }
@@ -160,10 +161,10 @@ function CubeDialog({ cube, onClose, onSave }: { cube: ContainerGroup | null; on
   return <>
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}><DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>{currentDraft.builtIn ? `Configure ${currentDraft.name}` : currentDraft.name ? `Edit ${currentDraft.name}` : "Create cube"}</DialogTitle><DialogDescription>Cube settings and managed workspace folder.</DialogDescription></DialogHeader>
       <div className="grid gap-4">
-        <div className="grid gap-1.5"><Label>Name</Label><Input value={currentDraft.name} disabled={currentDraft.builtIn} onChange={(event) => { const name = event.target.value; if (creating) { const id = slugGroupName(name); patch({ name, id, network: defaultGroupNetwork(id), workspacePath: defaultCubeWorkspacePath(name || "cube") }); } else patch({ name }); }} /></div>
-        <div className="grid gap-1.5"><Label>WSLC network</Label><Input value={currentDraft.network} onChange={(event) => patch({ network: event.target.value })} className="font-mono text-xs" /></div>
-        <div className="grid gap-2 rounded-lg border border-border p-3"><Label>Workspace folder</Label><div className="flex gap-2"><Input value={workspacePath} onChange={(event) => patch({ workspacePath: event.target.value })} className="font-mono text-xs" /><Button type="button" variant="secondary" onClick={() => void (async () => { const selected = await pickWorkspaceDescendant(workspaceRoot, resolved); if (selected) patch({ workspacePath: relativeWorkspacePath(workspaceRoot, selected) }); })()}>Choose folder</Button><Button type="button" variant="ghost" onClick={() => void openWorkspacePath(workspaceRoot, workspacePath)}><FolderOpen className="size-4" />Open</Button></div><p className="font-mono text-[11px] text-subtle">{resolved}</p></div>
-        <EnvEditor label="Shared environment" rows={envRows} onChange={(rows) => { setEnvRows(rows); patch({ env: joinEnvLines(rows) }); }} />
+        <div className="grid gap-1.5"><Label>Name</Label><Input value={currentDraft.name} disabled={currentDraft.builtIn} onChange={(event) => { const name = event.target.value; if (creating) { const id = slugGroupName(name); patch({ name, id, network: cubeNetworkName(name), workspacePath: defaultCubeWorkspacePath(name || "cube") }); } else patch({ name, network: cubeNetworkName(name) }); }} /></div>
+        <div className="grid gap-1.5"><Label>WSLC network</Label><Input value={cubeNetworkName(currentDraft.name)} disabled className="font-mono text-xs" /></div>
+        <div className="grid gap-2 rounded-lg border border-border p-3"><Label>Workspace folder</Label><div className="flex gap-2"><Input value={workspacePath} readOnly className="font-mono text-xs" /><Button type="button" variant="ghost" onClick={() => void openWorkspacePath(workspaceRoot, workspacePath)}><FolderOpen className="size-4" />Open</Button></div><p className="font-mono text-[11px] text-subtle">{resolved}</p></div>
+        <EnvEditor label="Shared environment" rows={envRows} protectedKeys={containerEnvKeys} onChange={(rows) => { setEnvRows(rows); patch({ env: joinEnvLines(rows) }); }} />
       </div>
       <div className="flex justify-end gap-2"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button onClick={save}>Save Cube</Button></div>
     </DialogContent></Dialog>
