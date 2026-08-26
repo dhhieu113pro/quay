@@ -96,7 +96,7 @@ export interface VolumeRecord {
   inUse: boolean;
 }
 
-export type FilesystemMode = "virtiofs" | "9p" | "none";
+export type FilesystemMode = "virtiofs" | "9p";
 export type NetworkMode = "consomme" | "nat" | "none";
 
 export interface SessionInfo {
