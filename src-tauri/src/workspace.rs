@@ -102,12 +102,23 @@ fn pick_folder(current: Option<String>) -> Result<Option<String>, String> {
 fn pick_folder(_current: Option<String>) -> Result<Option<String>, String> { Ok(None) }
 
 #[tauri::command]
-pub fn workspace_pick_root(current: Option<String>) -> Result<Option<String>, String> { pick_folder(current) }
+pub async fn workspace_pick_root(current: Option<String>) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || pick_folder(current))
+        .await
+        .map_err(|e| format!("workspace picker task failed: {e}"))?
+}
 
 #[tauri::command]
-pub fn workspace_pick_descendant(root: String, current: Option<String>) -> Result<Option<String>, String> {
-    let root_path = normalize_absolute(Path::new(root.trim()))?;
-    if let Some(selected) = pick_folder(current)? { validate_descendant(&root_path, Path::new(&selected))?; Ok(Some(selected)) } else { Ok(None) }
+pub async fn workspace_pick_descendant(root: String, current: Option<String>) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let root_path = normalize_absolute(Path::new(root.trim()))?;
+        if let Some(selected) = pick_folder(current)? {
+            validate_descendant(&root_path, Path::new(&selected))?;
+            Ok(Some(selected))
+        } else { Ok(None) }
+    })
+    .await
+    .map_err(|e| format!("workspace picker task failed: {e}"))?
 }
 
 #[tauri::command]
@@ -119,8 +130,7 @@ pub fn workspace_open(root: String, relative: Option<String>) -> Result<(), Stri
     Ok(())
 }
 
-#[tauri::command]
-pub fn workspace_move_root(old_root: String, new_root: String) -> Result<(), String> {
+fn move_root_blocking(old_root: String, new_root: String) -> Result<(), String> {
     let old_root = normalize_absolute(Path::new(old_root.trim()))?;
     let new_root = normalize_absolute(Path::new(new_root.trim()))?;
     fs::create_dir_all(&new_root).map_err(|e| e.to_string())?;
@@ -139,10 +149,23 @@ pub fn workspace_move_root(old_root: String, new_root: String) -> Result<(), Str
 }
 
 #[tauri::command]
-pub fn workspace_move_entry(root: String, from_relative: String, to_relative: String) -> Result<(), String> {
+pub async fn workspace_move_root(old_root: String, new_root: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || move_root_blocking(old_root, new_root))
+        .await
+        .map_err(|e| format!("workspace move task failed: {e}"))?
+}
+
+fn move_entry_blocking(root: String, from_relative: String, to_relative: String) -> Result<(), String> {
     let root = normalize_absolute(Path::new(root.trim()))?;
     let source = root.join(validate_relative(&from_relative)?); let destination = root.join(validate_relative(&to_relative)?);
     validate_descendant(&root, &source)?; validate_descendant(&root, &destination)?; move_without_overwrite(&source, &destination)
+}
+
+#[tauri::command]
+pub async fn workspace_move_entry(root: String, from_relative: String, to_relative: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || move_entry_blocking(root, from_relative, to_relative))
+        .await
+        .map_err(|e| format!("workspace move task failed: {e}"))?
 }
 
 #[cfg(test)]

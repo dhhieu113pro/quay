@@ -208,6 +208,9 @@ const apiCall = (args: string[], ok: boolean, result: string): ApiCall => ({
 
 const prefs = loadPrefs();
 export const useWslc = create<WslcState>((set, get) => {
+  let containersRefreshInFlight: Promise<void> | null = null;
+  let inventoryRefreshInFlight: Promise<void> | null = null;
+
   const saveCurrentPrefs = (patch: Partial<ReturnType<typeof loadPrefs>> = {}) => {
     savePrefs({
       launchAtSignIn: get().launchAtSignIn,
@@ -234,36 +237,47 @@ export const useWslc = create<WslcState>((set, get) => {
     return result;
   };
 
-  const refreshContainers = async () => {
-    if (get().gate !== "ready") return;
-    try {
-      const result = await call(["container", "list", "--all", "--no-trunc", "--format", "json"]);
-      if (!result.ok) return;
-      const previous = get().containers;
-      const containers = containersFrom(result.output).map((container) => {
-        const old = previous.find((item) => item.id === container.id || item.name === container.name);
-        return old ? { ...container, logs: old.logs } : container;
-      });
-      set({ containers, now: Date.now() });
-    } catch { set({ now: Date.now() }); }
+  const refreshContainers = (): Promise<void> => {
+    if (containersRefreshInFlight) return containersRefreshInFlight;
+    if (get().gate !== "ready") return Promise.resolve();
+    containersRefreshInFlight = (async () => {
+      try {
+        const result = await call(["container", "list", "--all", "--no-trunc", "--format", "json"]);
+        if (!result.ok) return;
+        const previous = get().containers;
+        const containers = containersFrom(result.output).map((container) => {
+          const old = previous.find((item) => item.id === container.id || item.name === container.name);
+          return old ? { ...container, logs: old.logs } : container;
+        });
+        set({ containers, now: Date.now() });
+      } catch { set({ now: Date.now() }); }
+      finally { containersRefreshInFlight = null; }
+    })();
+    return containersRefreshInFlight;
   };
 
-  const refreshInventory = async () => {
-    if (get().gate !== "ready") return;
-    try {
-      const [images, volumes] = await Promise.all([
-        call(["image", "list", "--no-trunc", "--format", "json"]),
-        call(["volume", "list", "--format", "json"]),
-      ]);
-      set({
-        images: images.ok ? imagesFrom(images.output) : get().images,
-        volumes: volumes.ok ? volumesFrom(volumes.output) : get().volumes,
-        now: Date.now(),
-      });
-    } catch { set({ now: Date.now() }); }
+  const refreshInventory = (): Promise<void> => {
+    if (inventoryRefreshInFlight) return inventoryRefreshInFlight;
+    if (get().gate !== "ready") return Promise.resolve();
+    inventoryRefreshInFlight = (async () => {
+      try {
+        const [images, volumes] = await Promise.all([
+          call(["image", "list", "--no-trunc", "--format", "json"]),
+          call(["volume", "list", "--format", "json"]),
+        ]);
+        set({
+          images: images.ok ? imagesFrom(images.output) : get().images,
+          volumes: volumes.ok ? volumesFrom(volumes.output) : get().volumes,
+          now: Date.now(),
+        });
+      } catch { set({ now: Date.now() }); }
+      finally { inventoryRefreshInFlight = null; }
+    })();
+    return inventoryRefreshInFlight;
   };
 
   const refreshAll = async () => { await Promise.all([refreshContainers(), refreshInventory()]); };
+  const refreshAfterMutation = async () => { await refreshAll(); };
 
   const refreshLogs = async (id: string) => {
     const container = get().containers.find((item) => item.id === id);
@@ -282,10 +296,8 @@ export const useWslc = create<WslcState>((set, get) => {
 
   const ensureNetwork = async (network: string) => {
     if (!network.trim()) return;
-    const list = await call(["network", "list"]);
-    if (list.ok && (list.output ?? "").toLowerCase().includes(network.toLowerCase())) return;
-    const created = await execute(["network", "create", network]);
-    if (!created.ok) throw new Error(created.error || `Could not create network ${network}`);
+    const result = await invokeWslcHost({ cmd: "ensure_network", name: network });
+    if (!result.ok) throw new Error(result.error || `Could not create network ${network}`);
   };
 
   const managedWorkspaceMount = async (spec: RunSpec, group?: ContainerGroup) => {
@@ -333,18 +345,18 @@ export const useWslc = create<WslcState>((set, get) => {
     tick: refreshContainers,
     refreshInventory,
     refreshLogs,
-    startSession: () => { void runOperation("session", async () => { await execute(["system", "session", "start"]); await refreshContainers(); }); },
-    stopSession: () => { void runOperation("session", async () => { await execute(["system", "session", "terminate"]); await refreshContainers(); }); },
+    startSession: () => { void runOperation("session", async () => { await execute(["system", "session", "start"]); await refreshAfterMutation(); }); },
+    stopSession: () => { void runOperation("session", async () => { await execute(["system", "session", "terminate"]); await refreshAfterMutation(); }); },
     updateSession: (patch) => set((state) => ({ session: { ...state.session, ...patch } })),
     pullImage: (reference) => {
       const ref = reference.trim();
-      if (ref) void runOperation(`image:${ref}`, async () => { await execute(["pull", ref]); await refreshInventory(); });
+      if (ref) void runOperation(`image:${ref}`, async () => { await execute(["pull", ref]); await refreshAfterMutation(); });
     },
     removeImage: (id) => {
       const image = get().images.find((item) => item.id === id);
       if (!image) return;
       const ref = `${image.repository}:${image.tag}`;
-      void runOperation(`image:${ref}`, async () => { await execute(["image", "rm", ref]); await refreshInventory(); });
+      void runOperation(`image:${ref}`, async () => { await execute(["image", "rm", ref]); await refreshAfterMutation(); });
     },
     runContainer: (spec) => {
       void runOperation(`container:${spec.name || spec.image}`, async () => {
@@ -353,27 +365,27 @@ export const useWslc = create<WslcState>((set, get) => {
           workspacePath: spec.workspacePath || defaultStandaloneWorkspacePath(spec.name || spec.image),
           workspaceTarget: spec.workspaceTarget || DEFAULT_WORKSPACE_TARGET,
         });
-        await refreshContainers();
+        await refreshAfterMutation();
         if (result.ok) set({ runOpen: false, view: "containers" });
       });
     },
     startContainer: (id) => {
       const container = get().containers.find((item) => item.id === id);
-      if (container) void runOperation(`container:${container.name}`, async () => { await execute(["container", "start", container.name]); await refreshContainers(); });
+      if (container) void runOperation(`container:${container.name}`, async () => { await execute(["container", "start", container.name]); await refreshAfterMutation(); });
     },
     stopContainer: (id) => {
       const container = get().containers.find((item) => item.id === id);
-      if (container) void runOperation(`container:${container.name}`, async () => { await execute(["container", "stop", container.name]); await refreshContainers(); });
+      if (container) void runOperation(`container:${container.name}`, async () => { await execute(["container", "stop", container.name]); await refreshAfterMutation(); });
     },
     restartContainer: (id) => {
       const container = get().containers.find((item) => item.id === id);
-      if (container) void runOperation(`container:${container.name}`, async () => { await execute(["container", "restart", container.name]); await refreshContainers(); });
+      if (container) void runOperation(`container:${container.name}`, async () => { await execute(["container", "restart", container.name]); await refreshAfterMutation(); });
     },
     deleteContainer: (id) => {
       const container = get().containers.find((item) => item.id === id);
       if (!container) return;
       void runOperation(`container:${container.name}`, async () => {
-        assignContainer(container.name); await execute(["container", "rm", container.name]); await refreshContainers();
+        assignContainer(container.name); await execute(["container", "rm", container.name]); await refreshAfterMutation();
       });
     },
     appendExec: (id, command) => {
@@ -382,9 +394,9 @@ export const useWslc = create<WslcState>((set, get) => {
     },
     createVolume: (name) => {
       const value = name.trim();
-      if (value) void runOperation(`volume:${value}`, async () => { await execute(["volume", "create", value]); await refreshInventory(); });
+      if (value) void runOperation(`volume:${value}`, async () => { await execute(["volume", "create", value]); await refreshAfterMutation(); });
     },
-    deleteVolume: (name) => { void runOperation(`volume:${name}`, async () => { await execute(["volume", "rm", name]); await refreshInventory(); }); },
+    deleteVolume: (name) => { void runOperation(`volume:${name}`, async () => { await execute(["volume", "rm", name]); await refreshAfterMutation(); }); },
     retryProbe: async () => {
       const nativeLaunchAtSignIn = await getLaunchAtSignIn();
       let workspaceRoot = get().workspaceRoot;
@@ -427,7 +439,7 @@ export const useWslc = create<WslcState>((set, get) => {
             await execute(runArgs(effective, group.network, managedMount));
           }
         }
-        await refreshContainers(); await refreshInventory();
+        await refreshAfterMutation();
       });
     },
     stopGroup: (id) => {
@@ -442,7 +454,7 @@ export const useWslc = create<WslcState>((set, get) => {
           const existing = get().containers.find((container) => container.name === name && container.status === "running");
           if (existing) await execute(["container", "stop", name]);
         }
-        await refreshContainers();
+        await refreshAfterMutation();
       });
     },
     startGroupContainer: (groupId, name) => {
@@ -461,9 +473,8 @@ export const useWslc = create<WslcState>((set, get) => {
           const managedMount = await managedWorkspaceMount(effective, group);
           assignContainer(effective.name, group.id);
           await execute(runArgs(effective, group.network, managedMount));
-          await refreshInventory();
         }
-        await refreshContainers();
+        await refreshAfterMutation();
       });
     },
     startAutoGroups: () => { for (const group of get().groups.filter((item) => item.autoStart)) get().startGroup(group.id); },
