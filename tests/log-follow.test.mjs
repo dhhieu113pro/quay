@@ -16,3 +16,11 @@ test("scrolling away pauses follow and returning to bottom resumes it", async ()
   assert.match(source, /New logs/);
   assert.match(source, /resumeFollow/);
 });
+
+test("new rows are detected even when the bounded buffer length stays constant", async () => {
+  const source = await read("src/components/views/logs-view.tsx");
+  assert.match(source, /newestVisibleId = visible\.at\(-1\)\?\.id \?\? null/);
+  assert.match(source, /previousNewestVisibleId/);
+  assert.match(source, /newestVisibleId !== previousNewestVisibleId\.current/);
+  assert.doesNotMatch(source, /previousVisibleCount/);
+});
