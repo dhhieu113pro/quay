@@ -21,10 +21,12 @@ test("Cube log panel reuses aggregated logs with cube scoping and follow behavio
   assert.match(panel, /onClose/);
 });
 
-test("Cube log panel is large and full-height on desktop", () => {
-  assert.match(groupsView, /md:h-full/);
-  assert.match(groupsView, /md:w-\[48%\]/);
-  assert.doesNotMatch(groupsView, /md:h-auto/);
-  assert.doesNotMatch(groupsView, /lg:w-\[28rem\]/);
+test("Cube log inspector overlays the page without shrinking Cube content", () => {
+  assert.match(groupsView, /fixed[^\"]*right-0[^\"]*top-0[^\"]*bottom-0/);
+  assert.match(groupsView, /md:w-\[min\(50vw,760px\)\]/);
+  assert.match(groupsView, /md:min-w-\[520px\]/);
+  assert.match(groupsView, /shadow-/);
+  assert.doesNotMatch(groupsView, /md:static/);
+  assert.doesNotMatch(groupsView, /md:w-\[48%\]/);
   assert.match(panel, /h-full/);
 });
