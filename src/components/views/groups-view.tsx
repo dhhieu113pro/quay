@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { Boxes, FileText, FolderOpen, LoaderCircle, Pencil, Play, Plus, Square, Trash2 } from "lucide-react";
+import { Boxes, Copy, FileText, FolderOpen, LoaderCircle, Pencil, Play, Plus, Square, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { CloneCubeDialog } from "@/components/clone-cube-dialog";
 import { CubeContainerDialog } from "@/components/cube-container-dialog";
 import { CubeLogsPanel } from "@/components/cube-logs-panel";
 import { EnvEditor, joinEnvLines, parseEnvLines, type KvPair } from "@/components/kv-editor";
@@ -60,6 +61,7 @@ export function CubesView() {
   const startContainer = useWslc((s) => s.startContainer);
   const stopContainer = useWslc((s) => s.stopContainer);
   const [editing, setEditing] = useState<ContainerGroup | null>(null);
+  const [cloning, setCloning] = useState<ContainerGroup | null>(null);
   const [containerEditor, setContainerEditor] = useState<{ cube: ContainerGroup } | null>(null);
   const [runOpen, setRunOpen] = useState(false);
   const [logCubeId, setLogCubeId] = useState<string | null>(null);
@@ -115,6 +117,7 @@ export function CubesView() {
                 <Button size="sm" disabled={!count.total || busy || (count.running === 0 && !canStart)} onClick={() => count.running ? stopGroup(cube.id) : startGroup(cube.id)}>{busy ? <LoaderCircle className="size-3.5 animate-spin" /> : count.running ? <Square className="size-3.5" /> : <Play className="size-3.5" />}{cubeStatus === "starting" ? "Starting…" : cubeStatus === "stopping" ? "Stopping…" : count.running ? "Stop Cube" : "Start Cube"}</Button>
                 <Button size="icon-sm" variant="ghost" aria-label={`Logs for ${cube.name}`} title={`Logs for ${cube.name}`} onClick={() => setLogCubeId(cube.id)}><FileText className="size-3.5" /></Button>
                 <Button size="sm" variant="outline" disabled={!canConfigure} onClick={() => setContainerEditor({ cube })}><Plus className="size-3.5" />Add Container</Button>
+                <Button size="sm" variant="ghost" onClick={() => setCloning(cube)}><Copy className="size-3.5" />Clone Cube</Button>
                 <Button size="sm" variant="ghost" disabled={!canConfigure} onClick={() => setEditing(syncGroupEnv(cube))}><Pencil className="size-3.5" />Configure</Button>
                 {!cube.builtIn ? <Button size="sm" variant="ghost" className="ml-auto" disabled={!canConfigure} onClick={() => deleteGroup(cube.id)}><Trash2 className="size-3.5" />Delete</Button> : null}
               </div>
@@ -124,6 +127,7 @@ export function CubesView() {
         <CubeDialog cube={editing} onClose={() => setEditing(null)} onSave={(cube) => { saveGroup(syncGroupEnv(cube)); toast(`Saved ${cube.name}`); setEditing(null); }} />
       </div>
       <RunCubeDialog open={runOpen} onOpenChange={setRunOpen} />
+      <CloneCubeDialog cube={cloning} open={Boolean(cloning)} onOpenChange={(open) => { if (!open) setCloning(null); }} />
       <CubeContainerDialog cube={containerEditor?.cube ?? null} open={Boolean(containerEditor)} onOpenChange={(open) => { if (!open) setContainerEditor(null); }} onSave={(spec) => { if (containerEditor && saveMember(containerEditor.cube, spec)) setContainerEditor(null); }} />
     </div>
     {logCube ? (
