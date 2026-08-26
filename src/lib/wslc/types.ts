@@ -4,6 +4,7 @@ export type ViewId =
   | "dashboard"
   | "containers"
   | "terminal"
+  | "logs"
   | "images"
   | "groups"
   | "volumes"
@@ -34,6 +35,14 @@ export interface LogLine {
   ts: number;
   stream: "stdout" | "stderr";
   text: string;
+}
+
+export interface AggregatedLogLine extends LogLine {
+  id: string;
+  containerId: string;
+  containerName: string;
+  cubeId?: string;
+  cubeName?: string;
 }
 
 export interface Container {
