@@ -69,12 +69,9 @@ async fn wslc_invoke(backend: State<'_, Backend>, payload: Value) -> Result<Valu
     #[cfg(windows)] {
         let executor = backend.executor.clone();
         let host = backend.host.clone();
-        tauri::async_runtime::spawn_blocking(move || {
-            let mut host = host.lock().map_err(|_| "host sampler poisoned".to_string())?;
-            wslc_runtime::invoke(&executor, &mut host, payload)
-        })
-        .await
-        .map_err(|e| format!("WSLC executor task failed: {e}"))?
+        tauri::async_runtime::spawn_blocking(move || wslc_runtime::invoke(&executor, &host, payload))
+            .await
+            .map_err(|e| format!("WSLC executor task failed: {e}"))?
     }
     #[cfg(not(windows))] {
         let _ = backend;
