@@ -76,7 +76,7 @@ export const useLogs = create<LogState>((set, get) => ({
         const running = runtime.containers.filter((container) => container.status === "running");
         const settled = await Promise.allSettled(running.map(async (container) => {
           const result = await readContainerLogs(container.name);
-          if (!result.ok) return [];
+          if (!result.ok || generation !== clearGeneration) return [];
           const cube = container.groupId ? runtime.groups.find((group) => group.id === container.groupId) : undefined;
           if (result.timestamped) {
             return parseContainerLogs({
