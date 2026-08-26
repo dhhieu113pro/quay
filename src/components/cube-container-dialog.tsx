@@ -61,6 +61,7 @@ export function CubeContainerDialog({ cube, open, initialSpec, onOpenChange, onS
   }, [open, cube?.id, initialSpec]);
   if (!cube) return null;
 
+  const cubeId = cube.id;
   const cubePath = cube.workspacePath || defaultCubeWorkspacePath(cube.name);
   const workspacePath = spec.workspacePath || defaultCubeContainerWorkspacePath(cubePath, spec.name || "container");
   const resolvedWorkspace = resolveWorkspacePath(workspaceRoot, workspacePath);
@@ -74,7 +75,7 @@ export function CubeContainerDialog({ cube, open, initialSpec, onOpenChange, onS
     const generated = isGeneratedContainerWorkspacePath(spec.workspacePath, cubePath, spec.name || "container");
     applySpec({
       ...next,
-      groupId: cube.id,
+      groupId: cubeId,
       workspacePath: generated ? defaultCubeContainerWorkspacePath(cubePath, next.name || "container") : spec.workspacePath,
     });
   }
