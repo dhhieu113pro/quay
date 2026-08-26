@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { StatusPill } from "@/components/status-pill";
 import { cn, formatUptime } from "@/lib/utils";
-import { useWslc } from "@/lib/wslc/store";
+import { useWslc, type OperationStatus } from "@/lib/wslc/store";
 import type { Container } from "@/lib/wslc/types";
 
 export function ContainersView() {
@@ -93,7 +93,7 @@ export function ContainersView() {
                   c={c}
                   selected={selectedId === c.id && inspectOpen}
                   now={now}
-                  busy={Boolean(operations[`container:${c.name}`])}
+                  status={operations[`container:${c.name}`]}
                   onSelect={selectContainer}
                   onStart={startContainer}
                   onStop={stopContainer}
@@ -113,11 +113,21 @@ export function ContainersView() {
   );
 }
 
+function operationLabel(status: OperationStatus | undefined) {
+  switch (status) {
+    case "starting": return "Starting…";
+    case "stopping": return "Stopping…";
+    case "restarting": return "Restarting…";
+    case "removing": return "Removing…";
+    default: return null;
+  }
+}
+
 function ContainerRow({
   c,
   selected,
   now,
-  busy,
+  status,
   onSelect,
   onStart,
   onStop,
@@ -125,13 +135,14 @@ function ContainerRow({
   c: Container;
   selected: boolean;
   now: number;
-  busy: boolean;
+  status?: OperationStatus;
   onSelect: (id: string) => void;
   onStart: (id: string) => void;
   onStop: (id: string) => void;
 }) {
   const running = c.status === "running";
-  const action = busy ? (running ? "Stopping…" : "Starting…") : running ? `Stop ${c.name}` : `Start ${c.name}`;
+  const statusLabel = operationLabel(status);
+  const action = statusLabel ?? (running ? `Stop ${c.name}` : `Start ${c.name}`);
 
   return (
     <li>
@@ -140,7 +151,7 @@ function ContainerRow({
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-medium">{c.name}</span>
             <StatusPill status={c.status} />
-            {busy ? <span className="text-xs text-muted-foreground">{action}</span> : null}
+            {statusLabel ? <span className="text-xs text-muted-foreground">{statusLabel}</span> : null}
             {c.gpu ? <Badge variant="gpu"><Gpu className="mr-1 size-3" />GPU</Badge> : null}
           </div>
           <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">
@@ -156,13 +167,13 @@ function ContainerRow({
           type="button"
           variant="ghost"
           size="icon-sm"
-          disabled={busy}
+          disabled={Boolean(status)}
           onClick={() => running ? onStop(c.id) : onStart(c.id)}
           aria-label={action}
           title={action}
           className="shrink-0 text-muted-foreground hover:text-foreground"
         >
-          {busy ? <LoaderCircle className="size-4 animate-spin" /> : running ? <Square className="size-4" /> : <Play className="size-4" />}
+          {status ? <LoaderCircle className="size-4 animate-spin" /> : running ? <Square className="size-4" /> : <Play className="size-4" />}
         </Button>
       </div>
     </li>
