@@ -5,6 +5,12 @@ import test from "node:test";
 const runDialog = readFileSync(new URL("../src/components/run-dialog.tsx", import.meta.url), "utf8");
 const cubeDialog = readFileSync(new URL("../src/components/cube-container-dialog.tsx", import.meta.url), "utf8");
 const defaults = readFileSync(new URL("../src/lib/wslc/container-defaults.ts", import.meta.url), "utf8");
+const groupsView = readFileSync(new URL("../src/components/views/groups-view.tsx", import.meta.url), "utf8");
+const inspect = readFileSync(new URL("../src/components/container-inspect.tsx", import.meta.url), "utf8");
+const cloneCubeDialog = readFileSync(new URL("../src/components/clone-cube-dialog.tsx", import.meta.url), "utf8");
+const cloneContainerDialog = readFileSync(new URL("../src/components/clone-container-dialog.tsx", import.meta.url), "utf8");
+let cloneSource = "";
+try { cloneSource = readFileSync(new URL("../src/lib/wslc/clone.ts", import.meta.url), "utf8"); } catch { /* RED until implementation exists */ }
 
 test("container image defaults derive a safe name and reuse trusted catalog presets", () => {
   assert.match(defaults, /containerNameFromImage/);
@@ -26,4 +32,25 @@ test("standalone and Cube dialogs seed an editable environment row when none exi
 test("Cube container image changes use the same runnable defaults helper", () => {
   assert.match(cubeDialog, /applyImageDefaults/);
   assert.match(cubeDialog, /onChange=\{\(event\) => applyImage/);
+});
+
+test("clone helpers generate collision-safe identities and regenerated Cube infrastructure", () => {
+  assert.match(cloneSource, /nextCloneName/);
+  assert.match(cloneSource, /cloneCubeDraft/);
+  assert.match(cloneSource, /cloneContainerSpec/);
+  assert.match(cloneSource, /cubeNetworkName/);
+  assert.match(cloneSource, /defaultCubeWorkspacePath/);
+});
+
+test("Clone Cube dialog only exposes identity editing", () => {
+  assert.match(groupsView, /Clone Cube/);
+  assert.match(groupsView, /CloneCubeDialog/);
+  assert.match(cloneCubeDialog, /Save Clone/);
+  assert.match(cloneCubeDialog, /readOnly/);
+});
+
+test("Clone Container dialog only exposes identity editing", () => {
+  assert.match(inspect, /CloneContainerDialog/);
+  assert.match(cloneContainerDialog, /Create Clone/);
+  assert.match(cloneContainerDialog, /readOnly/);
 });
