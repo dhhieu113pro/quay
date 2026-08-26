@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import {
-  EnvEditor, MountEditor, joinEnvLines, joinMountLines, parseEnvLines, parseMountLines,
+  EnvEditor, MountEditor, joinEnvLines, joinMountLines, parseEnvLines as editableEnvRows, parseMountLines,
   type KvPair, type MountRow,
 } from "@/components/kv-editor";
 import { openWorkspacePath, pickWorkspaceDescendant } from "@/lib/tauri";
@@ -18,6 +18,7 @@ import {
   relativeWorkspacePath,
   resolveWorkspacePath,
 } from "@/lib/workspace";
+import { applyImageDefaults } from "@/lib/wslc/container-defaults";
 import { useWslc } from "@/lib/wslc/store";
 import { cliForRun } from "@/lib/wslc/csharp";
 import type { RunSpec } from "@/lib/wslc/types";
@@ -36,20 +37,30 @@ export function RunDialog() {
   const operations = useWslc((s) => s.operations);
   const workspaceRoot = useWslc((s) => s.workspaceRoot);
   const [spec, setSpec] = useState<RunSpec>(defaultSpec);
-  const [envRows, setEnvRows] = useState<KvPair[]>([]);
-  const [mountRows, setMountRows] = useState<MountRow[]>([]);
+  const [envRows, setEnvRows] = useState<KvPair[]>(() => editableEnvRows(defaultSpec.env));
+  const [mountRows, setMountRows] = useState<MountRow[]>(() => parseMountLines(defaultSpec.mounts));
+  const [nameTouched, setNameTouched] = useState(false);
 
   const pulledImages = useMemo(() => Array.from(new Set(images.map((image) => `${image.repository}:${image.tag}`))).sort(), [images]);
 
   function applySpec(next: RunSpec) {
     const standalone = { ...next, groupId: undefined, workspaceTarget: next.workspaceTarget || DEFAULT_WORKSPACE_TARGET };
     setSpec(standalone);
-    setEnvRows(parseEnvLines(standalone.env));
+    setEnvRows(editableEnvRows(standalone.env));
     setMountRows(parseMountLines(standalone.mounts));
   }
 
-  useEffect(() => { if (open) applySpec(defaultSpec); }, [open]);
+  useEffect(() => { if (open) { setNameTouched(false); applySpec(defaultSpec); } }, [open]);
   function patch(p: Partial<RunSpec>) { setSpec((s) => ({ ...s, ...p, groupId: undefined })); }
+
+  function applyImage(image: string) {
+    const next = applyImageDefaults(spec, image, nameTouched);
+    const generated = isGeneratedContainerWorkspacePath(spec.workspacePath, undefined, spec.name || "container");
+    applySpec({
+      ...next,
+      workspacePath: generated ? defaultStandaloneWorkspacePath(next.name || "container") : spec.workspacePath,
+    });
+  }
 
   const workspacePath = spec.workspacePath || defaultStandaloneWorkspacePath(spec.name || "container");
   const resolvedWorkspace = resolveWorkspacePath(workspaceRoot, workspacePath);
@@ -79,13 +90,14 @@ export function RunDialog() {
             <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto px-5 py-4">
               <div className="grid gap-1.5">
                 <Label htmlFor="image">Image</Label>
-                <Input id="image" list="pulled-image-catalog" value={spec.image} onChange={(event) => patch({ image: event.target.value })} placeholder={pulledImages.length ? "Select or type a pulled image" : "repository/image:tag"} required className="font-mono text-xs" />
+                <Input id="image" list="pulled-image-catalog" value={spec.image} onChange={(event) => applyImage(event.target.value)} placeholder={pulledImages.length ? "Select or type a pulled image" : "repository/image:tag"} required className="font-mono text-xs" />
                 <datalist id="pulled-image-catalog">{pulledImages.map((image) => <option key={image} value={image} />)}</datalist>
               </div>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div className="grid gap-1.5">
                   <Label htmlFor="name">Name</Label>
                   <Input id="name" placeholder="web" value={spec.name} onChange={(event) => {
+                    setNameTouched(true);
                     const name = event.target.value;
                     const generated = isGeneratedContainerWorkspacePath(spec.workspacePath, undefined, spec.name || "container");
                     patch({ name, workspacePath: generated ? defaultStandaloneWorkspacePath(name || "container") : spec.workspacePath });
