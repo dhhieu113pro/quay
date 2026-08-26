@@ -9,8 +9,11 @@ const groupsView = readFileSync(new URL("../src/components/views/groups-view.tsx
 const inspect = readFileSync(new URL("../src/components/container-inspect.tsx", import.meta.url), "utf8");
 const cloneCubeDialog = readFileSync(new URL("../src/components/clone-cube-dialog.tsx", import.meta.url), "utf8");
 const cloneContainerDialog = readFileSync(new URL("../src/components/clone-container-dialog.tsx", import.meta.url), "utf8");
+const envEditor = readFileSync(new URL("../src/components/kv-editor.tsx", import.meta.url), "utf8");
 let cloneSource = "";
+let runtimeEnv = "";
 try { cloneSource = readFileSync(new URL("../src/lib/wslc/clone.ts", import.meta.url), "utf8"); } catch { /* RED until implementation exists */ }
+try { runtimeEnv = readFileSync(new URL("../src/lib/wslc/image-runtime-env.ts", import.meta.url), "utf8"); } catch { /* RED until implementation exists */ }
 
 test("container image defaults derive a safe name and reuse trusted catalog presets", () => {
   assert.match(defaults, /containerNameFromImage/);
@@ -32,6 +35,40 @@ test("standalone and Cube dialogs seed an editable environment row when none exi
 test("Cube container image changes use the same runnable defaults helper", () => {
   assert.match(cubeDialog, /applyImageDefaults/);
   assert.match(cubeDialog, /onChange=\{\(event\) => applyImage/);
+});
+
+test("trusted runtime environment rules cover common images", () => {
+  assert.match(runtimeEnv, /postgres/);
+  assert.match(runtimeEnv, /POSTGRES_PASSWORD/);
+  assert.match(runtimeEnv, /mysql/);
+  assert.match(runtimeEnv, /MYSQL_ROOT_PASSWORD/);
+  assert.match(runtimeEnv, /mariadb/);
+  assert.match(runtimeEnv, /MARIADB_ROOT_PASSWORD/);
+  assert.match(runtimeEnv, /ngrok/);
+  assert.match(runtimeEnv, /NGROK_AUTHTOKEN/);
+  assert.match(runtimeEnv, /local-coding-mcp/);
+});
+
+test("automatic environment merge preserves user values and exposes required validation", () => {
+  assert.match(runtimeEnv, /applyRuntimeEnvDefaults/);
+  assert.match(runtimeEnv, /missingRequiredEnv/);
+  assert.match(runtimeEnv, /source:\s*"Required"/);
+  assert.match(runtimeEnv, /source:\s*"Image default"/);
+});
+
+test("Run Container and Cube member dialogs automatically apply runtime environment defaults", () => {
+  assert.match(runDialog, /applyRuntimeEnvDefaults/);
+  assert.match(runDialog, /missingRequiredEnv/);
+  assert.match(runDialog, /requiredEnvKeys/);
+  assert.match(cubeDialog, /applyRuntimeEnvDefaults/);
+  assert.match(cubeDialog, /missingRequiredEnv/);
+});
+
+test("environment editor can mark auto-generated rows by source and required state", () => {
+  assert.match(envEditor, /sourceByKey/);
+  assert.match(envEditor, /requiredKeys/);
+  assert.match(envEditor, /Required/);
+  assert.match(envEditor, /Image default/);
 });
 
 test("clone helpers generate collision-safe identities and regenerated Cube infrastructure", () => {
