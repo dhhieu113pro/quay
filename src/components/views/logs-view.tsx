@@ -25,7 +25,7 @@ export function LogsView() {
   const refreshAggregatedLogs = useLogs((state) => state.refreshAggregatedLogs);
   const clearLogs = useLogs((state) => state.clearLogs);
   const viewportRef = useRef<HTMLDivElement | null>(null);
-  const previousVisibleCount = useRef(0);
+  const previousNewestVisibleId = useRef<string | null>(null);
   const [follow, setFollow] = useState(true);
   const [newWhilePaused, setNewWhilePaused] = useState(false);
 
@@ -39,6 +39,7 @@ export function LogsView() {
     () => filterAggregatedLogs(lines, cubeFilter, containerFilter),
     [lines, cubeFilter, containerFilter],
   );
+  const newestVisibleId = visible.at(-1)?.id ?? null;
 
   const containerOptions = useMemo(
     () => containerOptionsForCube(containers, groups, cubeFilter),
@@ -47,16 +48,16 @@ export function LogsView() {
 
   useEffect(() => {
     const viewport = viewportRef.current;
-    const grew = visible.length > previousVisibleCount.current;
-    previousVisibleCount.current = visible.length;
-    if (!viewport || !grew) return;
+    const changed = newestVisibleId !== previousNewestVisibleId.current;
+    previousNewestVisibleId.current = newestVisibleId;
+    if (!viewport || !changed || newestVisibleId === null) return;
     if (follow) {
       viewport.scrollTop = viewport.scrollHeight;
       setNewWhilePaused(false);
     } else {
       setNewWhilePaused(true);
     }
-  }, [visible.length, follow]);
+  }, [newestVisibleId, follow]);
 
   function resumeFollow() {
     const viewport = viewportRef.current;
