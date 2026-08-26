@@ -31,7 +31,7 @@ pub fn classify(args: &[String]) -> CommandPolicy {
         ("network", "list" | "inspect") => Lane::Query,
         _ => Lane::Mutation,
     };
-    let timeout = if first == "image" && second == "pull" {
+    let timeout = if first == "pull" || (first == "image" && second == "pull") {
         Duration::from_secs(600)
     } else if lane == Lane::Query {
         Duration::from_secs(15)
@@ -557,6 +557,7 @@ mod tests {
         assert_eq!(classify(&strings(&["container", "list"])).timeout, Duration::from_secs(15));
         assert_eq!(classify(&strings(&["container", "start", "demo"])).timeout, Duration::from_secs(60));
         assert_eq!(classify(&strings(&["image", "pull", "ubuntu:24.04"])).timeout, Duration::from_secs(600));
+        assert_eq!(classify(&strings(&["pull", "ubuntu:24.04"])).timeout, Duration::from_secs(600));
     }
 
     #[test]
