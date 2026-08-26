@@ -28,5 +28,8 @@ test("Cube log inspector overlays the page without shrinking Cube content", () =
   assert.match(groupsView, /shadow-/);
   assert.doesNotMatch(groupsView, /md:static/);
   assert.doesNotMatch(groupsView, /md:w-\[48%\]/);
+  assert.doesNotMatch(groupsView, /lg:w-\[[^\]]+\]/);
+  assert.doesNotMatch(groupsView, /xl:w-\[[^\]]+\]/);
+  assert.doesNotMatch(groupsView, /2xl:w-\[[^\]]+\]/);
   assert.match(panel, /h-full/);
 });
