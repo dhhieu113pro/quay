@@ -11,3 +11,20 @@ test("log polling targets running containers concurrently and isolates failures"
   assert.match(source, /container", "logs"/);
   assert.doesNotMatch(source, /lastError/);
 });
+
+test("untimestamped fallback tails use a stable cursor instead of poll timestamps", async () => {
+  const source = await read("src/lib/wslc/log-store.ts");
+  assert.match(source, /fallbackTails = new Map<string, string\[\]>/);
+  assert.match(source, /newFallbackTail\(previousTail, currentTail\)/);
+  assert.match(source, /fallbackTails\.set\(container\.id, currentTail\)/);
+  assert.match(source, /delta\.join\("\\n"\)/);
+});
+
+test("Clear establishes a durable watermark and invalidates stale refreshes", async () => {
+  const source = await read("src/lib/wslc/log-store.ts");
+  assert.match(source, /clearGeneration \+= 1/);
+  assert.match(source, /clearedAt = Date\.now\(\)/);
+  assert.match(source, /generation !== clearGeneration/);
+  assert.match(source, /line\.ts > clearWatermark/);
+  assert.match(source, /fallbackNeedsBaseline/);
+});
