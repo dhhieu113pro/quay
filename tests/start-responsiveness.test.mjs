@@ -22,11 +22,20 @@ test("WSLC Tauri invocation uses a two-lane executor off the command thread", ()
   assert.doesNotMatch(runtime, /pub struct CliWorker/);
 });
 
+test("host stats lock does not serialize WSLC query and mutation lanes", () => {
+  assert.doesNotMatch(nativeBridge, /host\.lock\([\s\S]{0,200}wslc_runtime::invoke/);
+  assert.match(runtime, /"host_stats"\s*=>\s*host[\s\S]{0,160}\.lock\(\)/);
+});
+
 test("WSLC process execution has bounded timeout and query deduplication", () => {
   assert.match(executor, /timed out after/);
   assert.match(executor, /in_flight/);
   assert.match(executor, /query_key/);
   assert.match(executor, /Duration::from_secs\(600\)/);
+});
+
+test("top-level image pulls receive the long pull timeout", () => {
+  assert.match(executor, /first == "pull"/);
 });
 
 test("container and inventory refreshes coalesce duplicate in-flight requests", () => {
