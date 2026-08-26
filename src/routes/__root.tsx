@@ -40,7 +40,7 @@ export const Route = createRootRoute({
         <HeadContent />
         <script dangerouslySetInnerHTML={{ __html: APPEARANCE_BOOT }} />
       </head>
-      <body className="bg-background text-foreground">
+      <body className="bg-background text-foreground" onContextMenu={(event) => event.preventDefault()}>
         <Outlet />
         <Scripts />
       </body>
