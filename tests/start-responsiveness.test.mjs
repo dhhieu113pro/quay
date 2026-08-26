@@ -10,7 +10,6 @@ const store = readFileSync(new URL("../src/lib/wslc/store.ts", import.meta.url),
 const stackRunner = readFileSync(new URL("../src/lib/wslc/stack-runner.ts", import.meta.url), "utf8");
 const groups = readFileSync(new URL("../src/lib/wslc/groups.ts", import.meta.url), "utf8");
 const groupsView = readFileSync(new URL("../src/components/views/groups-view.tsx", import.meta.url), "utf8");
-const cubeContainerDialog = readFileSync(new URL("../src/components/cube-container-dialog.tsx", import.meta.url), "utf8");
 
 test("WSLC Tauri invocation uses a two-lane executor off the command thread", () => {
   assert.match(executor, /pub struct WslcExecutor/);
@@ -86,8 +85,8 @@ test("Cube start is disabled until every configured member can run", () => {
   assert.match(groupsView, /configuration before this Cube can start/);
 });
 
-test("stopped Cube members can be edited using their existing RunSpec", () => {
-  assert.match(cubeContainerDialog, /initialSpec\?: RunSpec/);
-  assert.match(cubeContainerDialog, /initialSpec \? "Edit Container"/);
-  assert.match(groupsView, /setContainerEditor\(\{ cube, spec: member\.spec \}\)/);
+test("Cube member configuration is centralized at Cube level", () => {
+  assert.doesNotMatch(groupsView, /setContainerEditor\(\{ cube, spec: member\.spec \}\)/);
+  assert.match(groupsView, /setContainerEditor\(\{ cube \}\)/);
+  assert.match(groupsView, />Configure<\/Button>/);
 });
