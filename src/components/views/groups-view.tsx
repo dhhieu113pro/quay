@@ -60,7 +60,7 @@ export function CubesView() {
   const startContainer = useWslc((s) => s.startContainer);
   const stopContainer = useWslc((s) => s.stopContainer);
   const [editing, setEditing] = useState<ContainerGroup | null>(null);
-  const [containerEditor, setContainerEditor] = useState<{ cube: ContainerGroup; spec?: RunSpec } | null>(null);
+  const [containerEditor, setContainerEditor] = useState<{ cube: ContainerGroup } | null>(null);
   const [runOpen, setRunOpen] = useState(false);
 
   const counts = useMemo(() => new Map(groups.map((cube) => {
@@ -71,7 +71,7 @@ export function CubesView() {
   function saveMember(cube: ContainerGroup, spec: RunSpec) {
     if (!cubeCanConfigure(cube, containers, operations)) { toast.error(`Stop ${cube.name} before changing container configuration`); return false; }
     saveGroup(syncGroupEnv({ ...cube, specs: [...cube.specs.filter((x) => x.name !== spec.name), { ...spec, groupId: cube.id }] }));
-    toast(containerEditor?.spec ? `Saved ${spec.name}` : `Added ${spec.name} to ${cube.name}`);
+    toast(`Added ${spec.name} to ${cube.name}`);
     return true;
   }
 
@@ -101,7 +101,6 @@ export function CubesView() {
               const blocked = needsConfig(cube, member);
               return <li key={member.name} className="flex items-center gap-2 px-4 py-2.5"><span className={`size-2 rounded-full ${running ? "bg-ok" : blocked ? "bg-warn" : "bg-subtle"}`} /><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{member.name}</p><p className="truncate font-mono text-[11px] text-subtle">{member.image}</p></div>
                 {memberStatus ? <span className="text-xs text-muted-foreground">{operationLabel(memberStatus)}</span> : null}
-                {member.spec ? <Button size="icon-sm" variant="ghost" aria-label={`Configure ${member.name}`} disabled={running || memberBusy || !canConfigure} onClick={() => setContainerEditor({ cube, spec: member.spec })}><Pencil className="size-3.5" /></Button> : null}
                 <Button size="icon-sm" variant="ghost" disabled={memberBusy || (!running && blocked)} onClick={() => {
                   if (running && member.container) stopContainer(member.container.id);
                   else if (member.spec) { if (cube.id === "local-coding") applyStackConfig(cube); startGroupContainer(cube.id, member.name); }
@@ -121,7 +120,7 @@ export function CubesView() {
       <CubeDialog cube={editing} onClose={() => setEditing(null)} onSave={(cube) => { saveGroup(syncGroupEnv(cube)); toast(`Saved ${cube.name}`); setEditing(null); }} />
     </div>
     <RunCubeDialog open={runOpen} onOpenChange={setRunOpen} />
-    <CubeContainerDialog cube={containerEditor?.cube ?? null} initialSpec={containerEditor?.spec} open={Boolean(containerEditor)} onOpenChange={(open) => { if (!open) setContainerEditor(null); }} onSave={(spec) => { if (containerEditor && saveMember(containerEditor.cube, spec)) setContainerEditor(null); }} />
+    <CubeContainerDialog cube={containerEditor?.cube ?? null} open={Boolean(containerEditor)} onOpenChange={(open) => { if (!open) setContainerEditor(null); }} onSave={(spec) => { if (containerEditor && saveMember(containerEditor.cube, spec)) setContainerEditor(null); }} />
   </>;
 }
 
