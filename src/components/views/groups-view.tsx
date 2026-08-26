@@ -127,7 +127,7 @@ export function CubesView() {
       <CubeContainerDialog cube={containerEditor?.cube ?? null} open={Boolean(containerEditor)} onOpenChange={(open) => { if (!open) setContainerEditor(null); }} onSave={(spec) => { if (containerEditor && saveMember(containerEditor.cube, spec)) setContainerEditor(null); }} />
     </div>
     {logCube ? (
-      <div className="fixed inset-0 z-40 flex h-dvh flex-col bg-background md:static md:z-0 md:h-full md:w-[48%] md:shrink-0">
+      <div className="fixed inset-0 z-40 flex h-dvh flex-col bg-background shadow-2xl md:inset-y-0 md:left-auto md:right-0 md:top-0 md:bottom-0 md:h-full md:w-[min(50vw,760px)] md:min-w-[520px] md:border-l md:border-border">
         <CubeLogsPanel cubeId={logCube.id} cubeName={logCube.name} onClose={() => setLogCubeId(null)} />
       </div>
     ) : null}
