@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import {
-  EnvEditor, MountEditor, joinEnvLines, joinMountLines, parseEnvLines, parseMountLines,
+  EnvEditor, MountEditor, joinEnvLines, joinMountLines, parseEnvLines as editableEnvRows, parseMountLines,
   type KvPair, type MountRow,
 } from "@/components/kv-editor";
 import { openWorkspacePath, pickWorkspaceDescendant } from "@/lib/tauri";
@@ -20,6 +20,7 @@ import {
   resolveWorkspacePath,
 } from "@/lib/workspace";
 import { catalogPresets, specFromPreset } from "@/lib/wslc/catalog";
+import { applyImageDefaults } from "@/lib/wslc/container-defaults";
 import { withoutEnvKeys } from "@/lib/wslc/groups";
 import { useWslc } from "@/lib/wslc/store";
 import type { ContainerGroup, RunSpec } from "@/lib/wslc/types";
@@ -34,8 +35,9 @@ export function CubeContainerDialog({ cube, open, initialSpec, onOpenChange, onS
   const images = useWslc((s) => s.images);
   const workspaceRoot = useWslc((s) => s.workspaceRoot);
   const [spec, setSpec] = useState<RunSpec>(initialSpec ?? defaultSpec);
-  const [envRows, setEnvRows] = useState<KvPair[]>(() => parseEnvLines((initialSpec ?? defaultSpec).env));
+  const [envRows, setEnvRows] = useState<KvPair[]>(() => editableEnvRows((initialSpec ?? defaultSpec).env));
   const [mountRows, setMountRows] = useState<MountRow[]>(() => parseMountLines((initialSpec ?? defaultSpec).mounts));
+  const [nameTouched, setNameTouched] = useState(Boolean(initialSpec));
   const localImages = Array.from(new Set([...images.map((image) => `${image.repository}:${image.tag}`), ...catalog]));
 
   function applySpec(next: RunSpec) {
@@ -47,12 +49,15 @@ export function CubeContainerDialog({ cube, open, initialSpec, onOpenChange, onS
       workspaceTarget: next.workspaceTarget || DEFAULT_WORKSPACE_TARGET,
     };
     setSpec(normalized);
-    setEnvRows(parseEnvLines(cube ? withoutEnvKeys(normalized.env, cube.env) : normalized.env));
+    setEnvRows(editableEnvRows(cube ? withoutEnvKeys(normalized.env, cube.env) : normalized.env));
     setMountRows(parseMountLines(normalized.mounts));
   }
 
   useEffect(() => {
-    if (open) applySpec({ ...(initialSpec ?? defaultSpec), groupId: cube?.id });
+    if (open) {
+      setNameTouched(Boolean(initialSpec));
+      applySpec({ ...(initialSpec ?? defaultSpec), groupId: cube?.id });
+    }
   }, [open, cube?.id, initialSpec]);
   if (!cube) return null;
 
@@ -61,8 +66,18 @@ export function CubeContainerDialog({ cube, open, initialSpec, onOpenChange, onS
   const resolvedWorkspace = resolveWorkspacePath(workspaceRoot, workspacePath);
   const patch = (value: Partial<RunSpec>) => setSpec((current) => ({ ...current, ...value }));
   const selectedPreset = catalogPresets.find((preset) => preset.image === spec.image);
-  const inheritedRows = parseEnvLines(cube.env).filter((row) => row.key.trim());
+  const inheritedRows = editableEnvRows(cube.env).filter((row) => row.key.trim());
   const editing = Boolean(initialSpec);
+
+  function applyImage(image: string) {
+    const next = applyImageDefaults(spec, image, nameTouched || editing);
+    const generated = isGeneratedContainerWorkspacePath(spec.workspacePath, cubePath, spec.name || "container");
+    applySpec({
+      ...next,
+      groupId: cube.id,
+      workspacePath: generated ? defaultCubeContainerWorkspacePath(cubePath, next.name || "container") : spec.workspacePath,
+    });
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -81,12 +96,13 @@ export function CubeContainerDialog({ cube, open, initialSpec, onOpenChange, onS
         }}>
           <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto px-5 py-4">
             <div className="grid gap-1.5"><Label>Quick pick</Label><div className="flex flex-wrap gap-1.5">
-              {catalogPresets.map((preset) => <button key={preset.image} type="button" onClick={() => applySpec({ ...specFromPreset(preset), groupId: cube.id })}
+              {catalogPresets.map((preset) => <button key={preset.image} type="button" onClick={() => { setNameTouched(false); applySpec({ ...specFromPreset(preset), groupId: cube.id }); }}
                 className={cn("h-9 rounded-md border px-3 text-xs", spec.image === preset.image ? "border-foreground bg-elevated text-foreground" : "border-border text-muted-foreground hover:bg-elevated/70")}>{preset.label}</button>)}
             </div>{selectedPreset ? <p className="text-xs text-subtle">{selectedPreset.hint}</p> : null}</div>
-            <div className="grid gap-1.5"><Label htmlFor="cube-container-image">Image</Label><Input id="cube-container-image" list="cube-image-catalog" value={spec.image} onChange={(event) => patch({ image: event.target.value })} required className="font-mono text-xs" /><datalist id="cube-image-catalog">{localImages.map((image) => <option key={image} value={image} />)}</datalist></div>
+            <div className="grid gap-1.5"><Label htmlFor="cube-container-image">Image</Label><Input id="cube-container-image" list="cube-image-catalog" value={spec.image} onChange={(event) => applyImage(event.target.value)} required className="font-mono text-xs" /><datalist id="cube-image-catalog">{localImages.map((image) => <option key={image} value={image} />)}</datalist></div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="grid gap-1.5"><Label htmlFor="cube-container-name">Name</Label><Input id="cube-container-name" value={spec.name} disabled={editing} onChange={(event) => {
+                setNameTouched(true);
                 const name = event.target.value;
                 const generated = isGeneratedContainerWorkspacePath(spec.workspacePath, cubePath, spec.name || "container");
                 patch({ name, workspacePath: generated ? defaultCubeContainerWorkspacePath(cubePath, name || "container") : spec.workspacePath });
