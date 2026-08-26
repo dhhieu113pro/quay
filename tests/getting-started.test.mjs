@@ -34,6 +34,12 @@ test("getting started view contains approved essential setup", async () => {
   assert.match(source, /Keep existing data/);
 });
 
+test("first-run onboarding starts the WSLC probe", async () => {
+  const source = await read("src/components/views/getting-started-view.tsx");
+  assert.match(source, /const retryProbe = useWslc\(\(s\) => s\.retryProbe\)/);
+  assert.match(source, /useEffect\(\(\) => \{\s*void retryProbe\(\);\s*\}, \[retryProbe\]\)/s);
+});
+
 test("root route gates AppShell until onboarding completes", async () => {
   const source = await read("src/routes/index.tsx");
   assert.match(source, /onboardingCompleted/);
