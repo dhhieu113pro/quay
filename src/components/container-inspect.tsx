@@ -25,7 +25,8 @@ export function ContainerInspect({
   const operations = useWslc((s) => s.operations);
   const now = useWslc((s) => s.now);
   const [tab, setTab] = useState("logs");
-  const busy = Boolean(operations[`container:${container.name}`]);
+  const operation = operations[`container:${container.name}`];
+  const busy = Boolean(operation);
 
   return (
     <aside className="flex h-full min-h-0 flex-col border-border bg-card md:border-l">
@@ -34,6 +35,7 @@ export function ContainerInspect({
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="truncate text-sm font-medium">{container.name}</h2>
             <StatusPill status={container.status} />
+            {operation ? <span className="text-xs text-muted-foreground">{operation === "starting" ? "Starting…" : operation === "stopping" ? "Stopping…" : operation === "restarting" ? "Restarting…" : operation === "removing" ? "Removing…" : null}</span> : null}
             {container.gpu ? <Badge variant="gpu">GPU</Badge> : null}
           </div>
           <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">
@@ -56,8 +58,8 @@ export function ContainerInspect({
               toast(`Stopping ${container.name}`);
             }}
           >
-            {busy ? <LoaderCircle className="size-3.5 animate-spin" /> : <Square className="size-3.5" />}
-            {busy ? "Stopping…" : "Stop"}
+            {operation === "stopping" ? <LoaderCircle className="size-3.5 animate-spin" /> : <Square className="size-3.5" />}
+            {operation === "stopping" ? "Stopping…" : "Stop"}
           </Button>
         ) : (
           <Button
@@ -68,8 +70,8 @@ export function ContainerInspect({
               toast(`Starting ${container.name}`);
             }}
           >
-            {busy ? <LoaderCircle className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
-            {busy ? "Starting…" : "Start"}
+            {operation === "starting" ? <LoaderCircle className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
+            {operation === "starting" ? "Starting…" : "Start"}
           </Button>
         )}
         <Button
@@ -81,8 +83,8 @@ export function ContainerInspect({
             toast(`Restarting ${container.name}`);
           }}
         >
-          <RotateCcw className={busy ? "size-3.5 animate-spin" : "size-3.5"} />
-          Restart
+          <RotateCcw className={operation === "restarting" ? "size-3.5 animate-spin" : "size-3.5"} />
+          {operation === "restarting" ? "Restarting…" : "Restart"}
         </Button>
         <Button
           size="sm"
@@ -94,8 +96,8 @@ export function ContainerInspect({
             toast(`Removing ${container.name}`);
           }}
         >
-          <Trash2 className="size-3.5" />
-          Delete
+          {operation === "removing" ? <LoaderCircle className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
+          {operation === "removing" ? "Removing…" : "Delete"}
         </Button>
       </div>
 
