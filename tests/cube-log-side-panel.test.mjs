@@ -20,3 +20,11 @@ test("Cube log panel reuses aggregated logs with cube scoping and follow behavio
   assert.match(panel, /isNearBottom/);
   assert.match(panel, /onClose/);
 });
+
+test("Cube log panel is large and full-height on desktop", () => {
+  assert.match(groupsView, /md:h-full/);
+  assert.match(groupsView, /md:w-\[48%\]/);
+  assert.doesNotMatch(groupsView, /md:h-auto/);
+  assert.doesNotMatch(groupsView, /lg:w-\[28rem\]/);
+  assert.match(panel, /h-full/);
+});
