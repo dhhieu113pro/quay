@@ -51,7 +51,7 @@ export function CubeLogsPanel({ cubeId, cubeName, onClose }: { cubeId: string; c
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col border-l border-border bg-background">
+    <div className="flex h-full min-h-0 flex-1 flex-col border-l border-border bg-background">
       <div className="flex items-center gap-3 border-b border-border px-4 py-3">
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-sm font-semibold">{cubeName} logs</h2>
