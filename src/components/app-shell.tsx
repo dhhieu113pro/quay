@@ -27,6 +27,7 @@ import { LogsView } from "@/components/views/logs-view";
 import { SessionView } from "@/components/views/session-view";
 import { TerminalView } from "@/components/views/terminal-view";
 import { cn } from "@/lib/utils";
+import { openLogs } from "@/lib/wslc/log-store";
 import { useWslc } from "@/lib/wslc/store";
 import type { ViewId } from "@/lib/wslc/types";
 import { windowAction } from "@/lib/tauri";
@@ -56,6 +57,7 @@ export function AppShell() {
   const lastError = useWslc((s) => s.lastError);
   const clearError = useWslc((s) => s.clearError);
   const gated = gate === "checking" || gate === "missing";
+  const changeView = (next: ViewId) => { if (next === "logs") openLogs(); else setView(next); };
 
   useEffect(() => {
     void retryProbe();
@@ -86,33 +88,13 @@ export function AppShell() {
           <>
         <div className="flex min-h-0 flex-1">
           <nav className="hidden w-52 shrink-0 flex-col border-r border-border bg-card md:flex">
-            <p className="px-4 pb-2 pt-4 text-xs uppercase tracking-widest text-subtle">
-              Workspace
-            </p>
-            {NAV.map((item) => (
-              <NavBtn
-                key={item.id}
-                {...item}
-                active={view === item.id}
-                onClick={() => setView(item.id)}
-              />
-            ))}
+            <p className="px-4 pb-2 pt-4 text-xs uppercase tracking-widest text-subtle">Workspace</p>
+            {NAV.map((item) => <NavBtn key={item.id} {...item} active={view === item.id} onClick={() => changeView(item.id)} />)}
           </nav>
-          <main
-            className={cn(
-              "min-h-0 min-w-0 flex-1 pb-20 md:pb-0",
-              view === "containers" || view === "terminal" || view === "logs"
-                ? "flex overflow-hidden"
-                : "overflow-y-auto",
-            )}
-          >
+          <main className={cn("min-h-0 min-w-0 flex-1 pb-20 md:pb-0", view === "containers" || view === "terminal" || view === "logs" ? "flex overflow-hidden" : "overflow-y-auto")}>
             {view === "dashboard" ? <DashboardView /> : null}
             {view === "groups" ? <CubesView /> : null}
-            {view === "containers" ? (
-              <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
-                <ContainersView />
-              </div>
-            ) : null}
+            {view === "containers" ? <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col"><ContainersView /></div> : null}
             {view === "terminal" ? <TerminalView /> : null}
             {view === "logs" ? <LogsView /> : null}
             {view === "images" ? <ImagesView /> : null}
@@ -121,7 +103,7 @@ export function AppShell() {
           </main>
         </div>
         <StatusBar />
-        <MobileNav view={view} onChange={setView} />
+        <MobileNav view={view} onChange={changeView} />
         <RunDialog />
           </>
         )}
@@ -134,15 +116,7 @@ export function AppShell() {
 
 function ThemedToaster() {
   const { scheme } = useAppearance();
-  return (
-    <Toaster
-      theme={scheme}
-      position="bottom-right"
-      toastOptions={{
-        className: "!bg-card !text-foreground !border-border !font-sans text-sm",
-      }}
-    />
-  );
+  return <Toaster theme={scheme} position="bottom-right" toastOptions={{ className: "!bg-card !text-foreground !border-border !font-sans text-sm" }} />;
 }
 
 function Titlebar() {
@@ -151,48 +125,16 @@ function Titlebar() {
   const gated = gate === "checking" || gate === "missing";
   const live = session.running && !gated;
   return (
-    <header
-      data-tauri-drag-region
-      className="flex h-12 shrink-0 items-center border-b border-border bg-card pl-3 pr-1"
-    >
+    <header data-tauri-drag-region className="flex h-12 shrink-0 items-center border-b border-border bg-card pl-3 pr-1">
       <Mark className="size-6" />
-      <div className="ml-2 min-w-0">
-        <p className="truncate text-sm font-medium leading-none">Quay</p>
-        <p className="mt-0.5 hidden truncate text-xs text-subtle sm:block">
-          WSL container manager
-        </p>
-      </div>
+      <div className="ml-2 min-w-0"><p className="truncate text-sm font-medium leading-none">Quay</p><p className="mt-0.5 hidden truncate text-xs text-subtle sm:block">WSL container manager</p></div>
       <div className="ml-auto flex items-center gap-2">
-        <span
-          className={cn(
-            "hidden items-center gap-1.5 rounded-full px-2 py-1 text-xs sm:inline-flex",
-            live ? "bg-ok/15 text-ok" : gated ? "bg-warn/15 text-warn" : "bg-elevated text-muted-foreground",
-          )}
-        >
-          <span
-            className={cn(
-              "size-1.5 rounded-full",
-              live ? "bg-ok" : gated ? "bg-warn" : "bg-subtle",
-            )}
-          />
-          {gated ? "wslc missing" : live ? "session up" : "session down"}
-        </span>
+        <span className={cn("hidden items-center gap-1.5 rounded-full px-2 py-1 text-xs sm:inline-flex", live ? "bg-ok/15 text-ok" : gated ? "bg-warn/15 text-warn" : "bg-elevated text-muted-foreground")}><span className={cn("size-1.5 rounded-full", live ? "bg-ok" : gated ? "bg-warn" : "bg-subtle")} />{gated ? "wslc missing" : live ? "session up" : "session down"}</span>
         <AppearanceToggle compact />
         <div className="hidden md:flex">
-          <CaptionBtn label="Minimize" onClick={() => void windowAction("minimize")}>
-            <Minus className="size-3.5" />
-          </CaptionBtn>
-          <CaptionBtn label="Maximize" onClick={() => void windowAction("toggleMaximize")}>
-            <Square className="size-3" />
-          </CaptionBtn>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <CaptionBtn label="Hide to tray" danger onClick={() => void windowAction("close")}>
-                <X className="size-3.5" />
-              </CaptionBtn>
-            </TooltipTrigger>
-            <TooltipContent>Hide to tray</TooltipContent>
-          </Tooltip>
+          <CaptionBtn label="Minimize" onClick={() => void windowAction("minimize")}><Minus className="size-3.5" /></CaptionBtn>
+          <CaptionBtn label="Maximize" onClick={() => void windowAction("toggleMaximize")}><Square className="size-3" /></CaptionBtn>
+          <Tooltip><TooltipTrigger asChild><CaptionBtn label="Hide to tray" danger onClick={() => void windowAction("close")}><X className="size-3.5" /></CaptionBtn></TooltipTrigger><TooltipContent>Hide to tray</TooltipContent></Tooltip>
         </div>
       </div>
     </header>
@@ -212,27 +154,9 @@ function StatusBar() {
   const containers = useWslc((s) => s.containers);
   const last = useWslc((s) => s.calls[0]);
   const running = containers.filter((c) => c.status === "running").length;
-
-  return (
-    <footer className="hidden h-8 shrink-0 items-center gap-4 border-t border-border bg-card px-3 font-mono text-xs text-muted-foreground md:flex">
-      <span className="text-foreground">Quay v{QUAY_VERSION}</span>
-      <span className={session.running ? "text-ok" : "text-warn"}>
-        {session.running ? "WSLC" : "DOWN"} {wslcVersionLabel(session.version)}
-      </span>
-      <span>{running} running</span>
-      <span className="ml-auto truncate text-subtle">{last ? last.method : "idle"}</span>
-    </footer>
-  );
+  return <footer className="hidden h-8 shrink-0 items-center gap-4 border-t border-border bg-card px-3 font-mono text-xs text-muted-foreground md:flex"><span className="text-foreground">Quay v{QUAY_VERSION}</span><span className={session.running ? "text-ok" : "text-warn"}>{session.running ? "WSLC" : "DOWN"} {wslcVersionLabel(session.version)}</span><span>{running} running</span><span className="ml-auto truncate text-subtle">{last ? last.method : "idle"}</span></footer>;
 }
 
 function MobileNav({ view, onChange }: { view: ViewId; onChange: (v: ViewId) => void }) {
-  return (
-    <nav className="fixed inset-x-0 bottom-0 z-30 flex border-t border-border bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
-      {NAV.map((item) => {
-        const Icon = item.icon;
-        const active = view === item.id;
-        return <Tooltip key={item.id}><TooltipTrigger asChild><button type="button" onClick={() => onChange(item.id)} className={cn("flex h-14 min-h-11 flex-1 flex-col items-center justify-center gap-1 text-xs", active ? "text-foreground" : "text-muted-foreground")}><Icon className="size-4" />{item.label}</button></TooltipTrigger><TooltipContent>{item.label}</TooltipContent></Tooltip>;
-      })}
-    </nav>
-  );
+  return <nav className="fixed inset-x-0 bottom-0 z-30 flex border-t border-border bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">{NAV.map((item) => { const Icon = item.icon; const active = view === item.id; return <Tooltip key={item.id}><TooltipTrigger asChild><button type="button" onClick={() => onChange(item.id)} className={cn("flex h-14 min-h-11 flex-1 flex-col items-center justify-center gap-1 text-xs", active ? "text-foreground" : "text-muted-foreground")}><Icon className="size-4" />{item.label}</button></TooltipTrigger><TooltipContent>{item.label}</TooltipContent></Tooltip>; })}</nav>;
 }
