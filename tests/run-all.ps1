@@ -1,6 +1,8 @@
 param(
     [string]$NgrokAuthtoken = $env:NGROK_AUTHTOKEN,
-    [switch]$SkipInstall
+    [switch]$SkipInstall,
+    [int]$MaxQueryLatencyMs = 5000,
+    [string]$ResponsivenessImage = "alpine:3.20"
 )
 
 $ErrorActionPreference = "Stop"
@@ -10,6 +12,7 @@ Set-Location $root
 $results = [System.Collections.Generic.List[object]]::new()
 $startedAt = Get-Date
 $workspace = Join-Path $env:TEMP "quay-local-coding-test"
+$responsivenessContainer = "quay-responsiveness-test"
 
 function Run-Step([string]$Name, [scriptblock]$Action) {
     Write-Host ""
@@ -56,6 +59,37 @@ function Wait-Http([string]$Url, [string]$Contains = "", [int]$TimeoutSeconds = 
     throw "Timed out waiting for $Url. Last error: $last"
 }
 
+function Assert-WslcQueriesResponsive([System.Management.Automation.Job]$Job, [int]$MinimumSamples = 3) {
+    $samples = [System.Collections.Generic.List[double]]::new()
+    while ($Job.State -in @("NotStarted", "Running") -or $samples.Count -lt $MinimumSamples) {
+        $sw = [System.Diagnostics.Stopwatch]::StartNew()
+        $output = wslc container list --all 2>&1 | Out-String
+        $exitCode = $LASTEXITCODE
+        $sw.Stop()
+        if ($exitCode -ne 0) { throw "wslc container list failed during concurrent operation: $output" }
+        $samples.Add($sw.Elapsed.TotalMilliseconds)
+        if ($sw.Elapsed.TotalMilliseconds -gt $MaxQueryLatencyMs) {
+            throw "WSLC query latency $([math]::Round($sw.Elapsed.TotalMilliseconds))ms exceeded MaxQueryLatencyMs=$MaxQueryLatencyMs while mutation was active."
+        }
+        if ($Job.State -notin @("NotStarted", "Running") -and $samples.Count -ge $MinimumSamples) { break }
+        Start-Sleep -Milliseconds 150
+    }
+    $max = ($samples | Measure-Object -Maximum).Maximum
+    Write-Host "Concurrent WSLC query samples=$($samples.Count), max=$([math]::Round($max))ms (limit ${MaxQueryLatencyMs}ms)"
+}
+
+function Complete-BackgroundWslcJob([System.Management.Automation.Job]$Job, [string]$Description) {
+    Wait-Job $Job -Timeout 700 | Out-Null
+    if ($Job.State -in @("NotStarted", "Running")) {
+        Stop-Job $Job -ErrorAction SilentlyContinue
+        throw "$Description did not finish before the validation timeout."
+    }
+    $output = Receive-Job $Job -ErrorAction SilentlyContinue | Out-String
+    if ($Job.State -ne "Completed") { throw "$Description failed with state $($Job.State): $output" }
+    if ($output.Trim()) { Write-Host $output.Trim() }
+    Remove-Job $Job -Force -ErrorAction SilentlyContinue
+}
+
 try {
     Run-Step "Prerequisites" {
         Require-Command "node"; Require-Command "pnpm"; Require-Command "cargo"; Require-Command "wslc"
@@ -83,6 +117,45 @@ try {
     Run-Step "Rust/Tauri backend tests" {
         cargo test --manifest-path src-tauri/Cargo.toml
         if ($LASTEXITCODE -ne 0) { throw "cargo test failed" }
+    }
+
+    Run-Step "WSLC responsiveness under mutation" {
+        Remove-WslcContainer $responsivenessContainer
+        wslc pull $ResponsivenessImage | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "could not prepare responsiveness image $ResponsivenessImage" }
+        $job = Start-Job -ScriptBlock {
+            param($Name, $Image)
+            & wslc run --name $Name $Image sh -c "sleep 8" 2>&1
+            if ($LASTEXITCODE -ne 0) { throw "wslc run responsiveness mutation failed" }
+        } -ArgumentList $responsivenessContainer, $ResponsivenessImage
+        try {
+            Start-Sleep -Milliseconds 300
+            Assert-WslcQueriesResponsive $job 5
+            Complete-BackgroundWslcJob $job "WSLC responsiveness mutation"
+        } finally {
+            if ($job -and (Get-Job -Id $job.Id -ErrorAction SilentlyContinue)) {
+                Stop-Job $job -ErrorAction SilentlyContinue
+                Remove-Job $job -Force -ErrorAction SilentlyContinue
+            }
+            Remove-WslcContainer $responsivenessContainer
+        }
+    }
+
+    Run-Step "WSLC responsiveness during image pull" {
+        $job = Start-Job -ScriptBlock {
+            param($Image)
+            & wslc pull $Image 2>&1
+            if ($LASTEXITCODE -ne 0) { throw "wslc pull failed for $Image" }
+        } -ArgumentList $ResponsivenessImage
+        try {
+            Assert-WslcQueriesResponsive $job 3
+            Complete-BackgroundWslcJob $job "WSLC image pull"
+        } finally {
+            if ($job -and (Get-Job -Id $job.Id -ErrorAction SilentlyContinue)) {
+                Stop-Job $job -ErrorAction SilentlyContinue
+                Remove-Job $job -Force -ErrorAction SilentlyContinue
+            }
+        }
     }
 
     Run-Step "Default WSLC session nginx HTTP" {
@@ -130,6 +203,7 @@ try {
     }
 }
 finally {
+    Remove-WslcContainer $responsivenessContainer
     Remove-WslcContainer "local-coding-mcp-ngrok"
     Remove-WslcContainer "local-coding-mcp"
     Remove-WslcContainer "quay-test-nginx"
