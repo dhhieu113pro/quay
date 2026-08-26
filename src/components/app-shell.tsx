@@ -3,6 +3,7 @@ import {
   Box,
   Boxes,
   Cpu,
+  FileText,
   LayoutGrid,
   Layers,
   Minus,
@@ -22,9 +23,11 @@ import { ContainersView } from "@/components/views/containers-view";
 import { DashboardView } from "@/components/views/dashboard-view";
 import { CubesView } from "@/components/views/groups-view";
 import { ImagesView } from "@/components/views/images-view";
+import { LogsView } from "@/components/views/logs-view";
 import { SessionView } from "@/components/views/session-view";
 import { TerminalView } from "@/components/views/terminal-view";
 import { cn } from "@/lib/utils";
+import { openLogs } from "@/lib/wslc/log-store";
 import { useWslc } from "@/lib/wslc/store";
 import type { ViewId } from "@/lib/wslc/types";
 import { windowAction } from "@/lib/tauri";
@@ -36,6 +39,7 @@ const NAV: Array<{ id: ViewId; label: string; icon: typeof Box }> = [
   { id: "groups", label: "Cubes", icon: Boxes },
   { id: "containers", label: "Containers", icon: Box },
   { id: "terminal", label: "Terminal", icon: SquareTerminal },
+  { id: "logs", label: "Logs", icon: FileText },
   { id: "images", label: "Images", icon: Layers },
   { id: "session", label: "Settings", icon: Cpu },
 ];
@@ -53,6 +57,10 @@ export function AppShell() {
   const lastError = useWslc((s) => s.lastError);
   const clearError = useWslc((s) => s.clearError);
   const gated = gate === "checking" || gate === "missing";
+  const changeView = (next: ViewId) => {
+    if (next === "logs") openLogs();
+    else setView(next);
+  };
 
   useEffect(() => {
     void retryProbe();
@@ -91,14 +99,14 @@ export function AppShell() {
                 key={item.id}
                 {...item}
                 active={view === item.id}
-                onClick={() => setView(item.id)}
+                onClick={() => changeView(item.id)}
               />
             ))}
           </nav>
           <main
             className={cn(
               "min-h-0 min-w-0 flex-1 pb-20 md:pb-0",
-              view === "containers" || view === "terminal"
+              view === "containers" || view === "terminal" || view === "logs"
                 ? "flex overflow-hidden"
                 : "overflow-y-auto",
             )}
@@ -111,13 +119,14 @@ export function AppShell() {
               </div>
             ) : null}
             {view === "terminal" ? <TerminalView /> : null}
+            {view === "logs" ? <LogsView /> : null}
             {view === "images" ? <ImagesView /> : null}
             {view === "volumes" ? <ImagesView /> : null}
             {view === "session" ? <SessionView /> : null}
           </main>
         </div>
         <StatusBar />
-        <MobileNav view={view} onChange={setView} />
+        <MobileNav view={view} onChange={changeView} />
         <RunDialog />
           </>
         )}

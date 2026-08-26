@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Boxes, FolderOpen, LoaderCircle, Pencil, Play, Plus, Square, Trash2 } from "lucide-react";
+import { Boxes, FileText, FolderOpen, LoaderCircle, Pencil, Play, Plus, Square, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { CubeContainerDialog } from "@/components/cube-container-dialog";
 import { EnvEditor, joinEnvLines, parseEnvLines, type KvPair } from "@/components/kv-editor";
@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { moveWorkspaceEntry, openWorkspacePath, pickWorkspaceDescendant } from "@/lib/tauri";
 import { defaultCubeWorkspacePath, isGeneratedCubeWorkspacePath, relativeWorkspacePath, resolveWorkspacePath } from "@/lib/workspace";
 import { cubeCanConfigure, cubeCanStart, defaultGroupNetwork, effectiveSpec, slugGroupName, specConfigured, syncGroupEnv } from "@/lib/wslc/groups";
+import { openLogs } from "@/lib/wslc/log-store";
 import { useWslc, type OperationStatus } from "@/lib/wslc/store";
 import type { Container, ContainerGroup, RunSpec } from "@/lib/wslc/types";
 
@@ -109,6 +110,7 @@ export function CubesView() {
             })}</ul>
             <div className="flex flex-wrap gap-2 p-4">
               <Button size="sm" disabled={!count.total || busy || (count.running === 0 && !canStart)} onClick={() => count.running ? stopGroup(cube.id) : startGroup(cube.id)}>{busy ? <LoaderCircle className="size-3.5 animate-spin" /> : count.running ? <Square className="size-3.5" /> : <Play className="size-3.5" />}{cubeStatus === "starting" ? "Starting…" : cubeStatus === "stopping" ? "Stopping…" : count.running ? "Stop Cube" : "Start Cube"}</Button>
+              <Button size="icon-sm" variant="ghost" aria-label={`Logs for ${cube.name}`} title={`Logs for ${cube.name}`} onClick={() => openLogs({ cubeId: cube.id })}><FileText className="size-3.5" /></Button>
               <Button size="sm" variant="outline" disabled={!canConfigure} onClick={() => setContainerEditor({ cube })}><Plus className="size-3.5" />Add Container</Button>
               <Button size="sm" variant="ghost" disabled={!canConfigure} onClick={() => setEditing(syncGroupEnv(cube))}><Pencil className="size-3.5" />Configure</Button>
               {!cube.builtIn ? <Button size="sm" variant="ghost" className="ml-auto" disabled={!canConfigure} onClick={() => deleteGroup(cube.id)}><Trash2 className="size-3.5" />Delete</Button> : null}
