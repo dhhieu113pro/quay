@@ -7,6 +7,8 @@ const cubeDialog = readFileSync(new URL("../src/components/cube-container-dialog
 const defaults = readFileSync(new URL("../src/lib/wslc/container-defaults.ts", import.meta.url), "utf8");
 const groupsView = readFileSync(new URL("../src/components/views/groups-view.tsx", import.meta.url), "utf8");
 const inspect = readFileSync(new URL("../src/components/container-inspect.tsx", import.meta.url), "utf8");
+const cloneCubeDialog = readFileSync(new URL("../src/components/clone-cube-dialog.tsx", import.meta.url), "utf8");
+const cloneContainerDialog = readFileSync(new URL("../src/components/clone-container-dialog.tsx", import.meta.url), "utf8");
 let cloneSource = "";
 try { cloneSource = readFileSync(new URL("../src/lib/wslc/clone.ts", import.meta.url), "utf8"); } catch { /* RED until implementation exists */ }
 
@@ -43,12 +45,12 @@ test("clone helpers generate collision-safe identities and regenerated Cube infr
 test("Clone Cube dialog only exposes identity editing", () => {
   assert.match(groupsView, /Clone Cube/);
   assert.match(groupsView, /CloneCubeDialog/);
-  assert.match(groupsView, /Save Clone/);
-  assert.match(groupsView, /readOnly/);
+  assert.match(cloneCubeDialog, /Save Clone/);
+  assert.match(cloneCubeDialog, /readOnly/);
 });
 
 test("Clone Container dialog only exposes identity editing", () => {
   assert.match(inspect, /CloneContainerDialog/);
-  assert.match(inspect, /Create Clone/);
-  assert.match(inspect, /readOnly/);
+  assert.match(cloneContainerDialog, /Create Clone/);
+  assert.match(cloneContainerDialog, /readOnly/);
 });
