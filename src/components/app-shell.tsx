@@ -3,6 +3,7 @@ import {
   Box,
   Boxes,
   Cpu,
+  FileText,
   LayoutGrid,
   Layers,
   Minus,
@@ -22,6 +23,7 @@ import { ContainersView } from "@/components/views/containers-view";
 import { DashboardView } from "@/components/views/dashboard-view";
 import { CubesView } from "@/components/views/groups-view";
 import { ImagesView } from "@/components/views/images-view";
+import { LogsView } from "@/components/views/logs-view";
 import { SessionView } from "@/components/views/session-view";
 import { TerminalView } from "@/components/views/terminal-view";
 import { cn } from "@/lib/utils";
@@ -36,6 +38,7 @@ const NAV: Array<{ id: ViewId; label: string; icon: typeof Box }> = [
   { id: "groups", label: "Cubes", icon: Boxes },
   { id: "containers", label: "Containers", icon: Box },
   { id: "terminal", label: "Terminal", icon: SquareTerminal },
+  { id: "logs", label: "Logs", icon: FileText },
   { id: "images", label: "Images", icon: Layers },
   { id: "session", label: "Settings", icon: Cpu },
 ];
@@ -98,7 +101,7 @@ export function AppShell() {
           <main
             className={cn(
               "min-h-0 min-w-0 flex-1 pb-20 md:pb-0",
-              view === "containers" || view === "terminal"
+              view === "containers" || view === "terminal" || view === "logs"
                 ? "flex overflow-hidden"
                 : "overflow-y-auto",
             )}
@@ -111,6 +114,7 @@ export function AppShell() {
               </div>
             ) : null}
             {view === "terminal" ? <TerminalView /> : null}
+            {view === "logs" ? <LogsView /> : null}
             {view === "images" ? <ImagesView /> : null}
             {view === "volumes" ? <ImagesView /> : null}
             {view === "session" ? <SessionView /> : null}
