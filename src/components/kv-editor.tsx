@@ -37,12 +37,14 @@ export function EnvEditor({
   label = "Environment",
   suggestions = [],
   inheritedRows = [],
+  protectedKeys = new Set<string>(),
 }: {
   rows: KvPair[];
   onChange: (rows: KvPair[]) => void;
   label?: string;
   suggestions?: EnvSuggestion[];
   inheritedRows?: KvPair[];
+  protectedKeys?: ReadonlySet<string>;
 }) {
   function patch(id: string, next: Partial<KvPair>) {
     onChange(rows.map((r) => (r.id === id ? { ...r, ...next } : r)));
@@ -102,7 +104,7 @@ export function EnvEditor({
           <li key={row.id} className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_2.75rem]">
             <Input value={row.key} onChange={(e) => patch(row.id, { key: e.target.value })} placeholder="NAME" aria-label="Variable name" className="font-mono text-xs" autoComplete="off" spellCheck={false} />
             <Input value={row.value} onChange={(e) => patch(row.id, { value: e.target.value })} placeholder="value" aria-label={`Value for ${row.key || "variable"}`} className="font-mono text-xs" autoComplete="off" spellCheck={false} />
-            <Button type="button" variant="ghost" size="icon" aria-label="Remove variable" disabled={rows.length <= 1 && !row.key && !row.value} onClick={() => { const next = rows.filter((r) => r.id !== row.id); onChange(next.length ? next : [{ id: rid(), key: "", value: "" }]); }}><Trash2 className="size-3.5" /></Button>
+            {!protectedKeys.has(row.key.trim()) ? <Button type="button" variant="ghost" size="icon" aria-label="Remove variable" disabled={rows.length <= 1 && !row.key && !row.value} onClick={() => { const next = rows.filter((r) => r.id !== row.id); onChange(next.length ? next : [{ id: rid(), key: "", value: "" }]); }}><Trash2 className="size-3.5" /></Button> : <span aria-label="Protected container variable" />}
           </li>
         ))}
       </ul>

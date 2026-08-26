@@ -149,6 +149,7 @@ export interface ContainerGroup {
   builtIn: boolean;
   autoStart: boolean;
   workspacePath?: string;
+  protectedEnvKeys?: string[];
   specs: RunSpec[];
 }
 

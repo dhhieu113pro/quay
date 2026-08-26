@@ -11,10 +11,14 @@ const GROUPS_KEY = "quay.groups.v1";
 const BUILTIN_OVERRIDES_KEY = "quay.group-overrides.v1";
 const ASSIGNMENTS_KEY = "quay.container-groups.v1";
 
+export function cubeNetworkName(name: string) {
+  return `${name.trim().replace(/\s+/g, "")}NetWork`;
+}
+
 const localCoding: ContainerGroup = {
   id: "local-coding",
   name: "LocalCoding",
-  network: "mcp-net",
+  network: cubeNetworkName("LocalCoding"),
   env: "",
   builtIn: true,
   autoStart: false,
@@ -50,7 +54,7 @@ function mergeSpecs(base: RunSpec[], extras: RunSpec[] = []) {
 
 export function normalizeGroupWorkspace(group: ContainerGroup): ContainerGroup {
   const workspacePath = normalizeWorkspacePath(group.workspacePath || defaultCubeWorkspacePath(group.name));
-  return { ...group, workspacePath, specs: (group.specs ?? []).map((spec) => ({ ...spec, groupId: group.id,
+  return { ...group, network: cubeNetworkName(group.name), workspacePath, specs: (group.specs ?? []).map((spec) => ({ ...spec, groupId: group.id,
     workspacePath: normalizeWorkspacePath(spec.workspacePath || defaultCubeContainerWorkspacePath(workspacePath, spec.name || spec.image)),
     workspaceTarget: spec.workspaceTarget?.trim() || DEFAULT_WORKSPACE_TARGET })) };
 }
@@ -59,12 +63,13 @@ export function loadGroups(): ContainerGroup[] {
   const overrides = safeParse<Record<string, Partial<ContainerGroup>>>(BUILTIN_OVERRIDES_KEY, {});
   const builtIns = builtInGroups.map((group) => {
     const override = overrides[group.id] ?? {};
-    return normalizeGroupWorkspace({ ...group, network: override.network || group.network, env: override.env ?? group.env,
+    return normalizeGroupWorkspace({ ...group, env: override.env ?? group.env,
       autoStart: override.autoStart ?? group.autoStart, workspacePath: override.workspacePath ?? group.workspacePath,
+      protectedEnvKeys: override.protectedEnvKeys ?? group.protectedEnvKeys,
       specs: mergeSpecs(group.specs, override.specs) });
   });
   const users = safeParse<ContainerGroup[]>(GROUPS_KEY, []).filter((group) => group && group.id && group.name)
-    .map((group) => normalizeGroupWorkspace({ ...group, builtIn: false, env: group.env ?? "", network: group.network || defaultGroupNetwork(group.id), specs: group.specs ?? [] }));
+    .map((group) => normalizeGroupWorkspace({ ...group, builtIn: false, env: group.env ?? "", specs: group.specs ?? [] }));
   return [...builtIns, ...users];
 }
 
@@ -76,7 +81,8 @@ export function saveGroup(input: ContainerGroup) {
     const base = builtInGroups.find((item) => item.id === group.id);
     const baseNames = new Set(base?.specs.map((spec) => spec.name) ?? []);
     const extras = group.specs.filter((spec) => !baseNames.has(spec.name));
-    overrides[group.id] = { network: group.network, env: group.env, autoStart: group.autoStart, workspacePath: group.workspacePath, specs: extras };
+    overrides[group.id] = { env: group.env, autoStart: group.autoStart, workspacePath: group.workspacePath,
+      protectedEnvKeys: group.protectedEnvKeys, specs: extras };
     localStorage.setItem(BUILTIN_OVERRIDES_KEY, JSON.stringify(overrides));
     return;
   }
@@ -112,9 +118,15 @@ export function withoutEnvKeys(env: string, inheritedEnv: string) {
 export function syncGroupEnv(group: ContainerGroup): ContainerGroup {
   const normalized = normalizeGroupWorkspace(group);
   const values = new Map(envEntries(normalized.env));
-  for (const spec of normalized.specs) for (const [key, value] of envEntries(spec.env)) if (!values.has(key)) values.set(key, value);
+  const protectedEnvKeys = new Set(normalized.protectedEnvKeys ?? []);
+  for (const spec of normalized.specs) {
+    for (const [key, value] of envEntries(spec.env)) {
+      protectedEnvKeys.add(key);
+      if (!values.has(key)) values.set(key, value);
+    }
+  }
   const env = Array.from(values, ([key, value]) => `${key}=${value}`).join("\n");
-  return { ...normalized, env, specs: normalized.specs.map((spec) => ({ ...spec, env: withoutEnvKeys(spec.env, env) })) };
+  return { ...normalized, env, protectedEnvKeys: Array.from(protectedEnvKeys), specs: normalized.specs.map((spec) => ({ ...spec, env: withoutEnvKeys(spec.env, env) })) };
 }
 export function effectiveSpec(spec: RunSpec, group?: ContainerGroup): RunSpec {
   if (!group) return spec;
