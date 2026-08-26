@@ -21,12 +21,17 @@ export function GettingStartedView({ rerun = false, onDone, onCancel }: {
   const gate = useWslc((s) => s.gate);
   const session = useWslc((s) => s.session);
   const probeNote = useWslc((s) => s.probeNote);
+  const retryProbe = useWslc((s) => s.retryProbe);
   const startSession = useWslc((s) => s.startSession);
   const operations = useWslc((s) => s.operations);
   const [draftRoot, setDraftRoot] = useState(workspaceRoot);
   const [launchAtSignIn, setLaunchAtSignIn] = useState(rerun ? currentLaunchAtSignIn : false);
   const [saving, setSaving] = useState(false);
   const [migrationPending, setMigrationPending] = useState(false);
+
+  useEffect(() => {
+    void retryProbe();
+  }, [retryProbe]);
 
   useEffect(() => {
     if (workspaceRoot.trim()) {
