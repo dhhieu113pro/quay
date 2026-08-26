@@ -1,4 +1,5 @@
 import { createRootRoute, HeadContent, Outlet, Scripts } from "@tanstack/react-router";
+import { AppearanceProvider } from "@/components/appearance-provider";
 import { APPEARANCE_BOOT } from "@/lib/appearance";
 import appCss from "../styles.css?url";
 
@@ -41,7 +42,9 @@ export const Route = createRootRoute({
         <script dangerouslySetInnerHTML={{ __html: APPEARANCE_BOOT }} />
       </head>
       <body className="bg-background text-foreground">
-        <Outlet />
+        <AppearanceProvider>
+          <Outlet />
+        </AppearanceProvider>
         <Scripts />
       </body>
     </html>
