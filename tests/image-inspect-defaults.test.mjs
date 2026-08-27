@@ -70,6 +70,37 @@ test("image inspect success is cached and failure remains non-blocking and retry
   assert.equal(loads, 1);
 });
 
+test("image command suggestion combines entrypoint and cmd without overwriting custom command", () => {
+  assert.equal(typeof inspectModule.imageCommandSuggestion, "function");
+  const inspect = { env: {}, exposedPorts: [], workingDir: "", entrypoint: ["/entrypoint.sh"], cmd: ["serve", "--port", "8080"], volumes: [] };
+  assert.equal(inspectModule.imageCommandSuggestion(inspect), "/entrypoint.sh serve --port 8080");
+  assert.equal(inspectModule.applyImageCommandSuggestion("custom --flag", inspect), "custom --flag");
+  assert.equal(inspectModule.applyImageCommandSuggestion("", inspect), "/entrypoint.sh serve --port 8080");
+});
+
+test("image volume suggestions require an explicit host source and prevent duplicate destinations", () => {
+  assert.equal(typeof inspectModule.addImageVolumeMount, "function");
+  const inspect = { env: {}, exposedPorts: [], workingDir: "", entrypoint: [], cmd: [], volumes: ["/data"] };
+  assert.deepEqual(inspectModule.imageVolumeSuggestions(inspect), ["/data"]);
+  const rows = [{ id: "one", source: "workspace/data", destination: "/data", mode: "rw" }];
+  assert.deepEqual(inspectModule.addImageVolumeMount(rows, "", "/cache"), rows, "empty host source must not create a mount");
+  assert.deepEqual(inspectModule.addImageVolumeMount(rows, "workspace/other", "/data"), rows, "duplicate destination must not be added");
+  const added = inspectModule.addImageVolumeMount(rows, "workspace/cache", "/cache");
+  assert.equal(added.length, 2);
+  assert.equal(added[1].source, "workspace/cache");
+  assert.equal(added[1].destination, "/cache");
+});
+
+test("Run Container and Cube member flows expose image-default command and volume actions", () => {
+  for (const source of [runDialog, cubeDialog]) {
+    assert.match(source, /Image defaults/);
+    assert.match(source, /Use command/);
+    assert.match(source, /Add mount/);
+    assert.match(source, /imageCommandSuggestion/);
+    assert.match(source, /addImageVolumeMount/);
+  }
+});
+
 test("Run Container and Cube member flows request inspect defaults", () => {
   assert.match(runDialog, /inspectImage/);
   assert.match(runDialog, /applyImageInspectDefaults/);
