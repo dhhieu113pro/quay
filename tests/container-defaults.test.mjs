@@ -71,9 +71,11 @@ test("catalog presets cannot bypass trusted required-secret validation", () => {
   assert.ok(runtimeEnvModule, "runtime environment helper must load");
   const postgres = catalogModule.catalogPresets.find((preset) => preset.image === "postgres:16");
   assert.ok(postgres, "postgres preset must exist");
-  const spec = catalogModule.specFromPreset(postgres);
-  assert.doesNotMatch(spec.env, /POSTGRES_PASSWORD=quay/);
-  assert.deepEqual(runtimeEnvModule.missingRequiredEnv(spec.env, postgres.image), ["POSTGRES_PASSWORD"]);
+  const baseSpec = catalogModule.specFromPreset(postgres);
+  assert.equal(baseSpec.env, "");
+  const effectiveEnv = runtimeEnvModule.applyRuntimeEnvDefaults(baseSpec.env, postgres.image);
+  assert.doesNotMatch(effectiveEnv, /POSTGRES_PASSWORD=quay/);
+  assert.deepEqual(runtimeEnvModule.missingRequiredEnv(effectiveEnv, postgres.image), ["POSTGRES_PASSWORD"]);
 });
 
 test("catalog quick-pick and manual image selection share one runtime env source of truth", () => {
@@ -82,11 +84,13 @@ test("catalog quick-pick and manual image selection share one runtime env source
   for (const image of ["postgres:16", "ngrok/ngrok:latest", "ghcr.io/dhhieu113pro/local-coding-mcp:latest"]) {
     const preset = catalogModule.catalogPresets.find((item) => item.image === image);
     assert.ok(preset, `preset must exist for ${image}`);
-    const quickPick = catalogModule.specFromPreset(preset).env;
+    const presetSpec = catalogModule.specFromPreset(preset);
+    const quickPick = runtimeEnvModule.applyRuntimeEnvDefaults(presetSpec.env, image);
     const manual = runtimeEnvModule.applyRuntimeEnvDefaults("", image);
     assert.equal(quickPick, manual, `${image} quick-pick env must match manual image defaults`);
   }
-  assert.match(catalogSource, /applyRuntimeEnvDefaults/);
+  assert.doesNotMatch(catalogSource, /POSTGRES_PASSWORD=quay/);
+  assert.match(cubeDialog, /applyRuntimeEnvDefaults\(presetSpec\.env, preset\.image\)/);
 });
 
 test("automatic environment merge preserves existing user values", () => {
