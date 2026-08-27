@@ -5,6 +5,7 @@ import test from "node:test";
 const runDialog = readFileSync(new URL("../src/components/run-dialog.tsx", import.meta.url), "utf8");
 const cubeDialog = readFileSync(new URL("../src/components/cube-container-dialog.tsx", import.meta.url), "utf8");
 const defaults = readFileSync(new URL("../src/lib/wslc/container-defaults.ts", import.meta.url), "utf8");
+const catalogSource = readFileSync(new URL("../src/lib/wslc/catalog.ts", import.meta.url), "utf8");
 const groupsView = readFileSync(new URL("../src/components/views/groups-view.tsx", import.meta.url), "utf8");
 const inspect = readFileSync(new URL("../src/components/container-inspect.tsx", import.meta.url), "utf8");
 const cloneCubeDialog = readFileSync(new URL("../src/components/clone-cube-dialog.tsx", import.meta.url), "utf8");
@@ -16,6 +17,7 @@ let runtimeEnvModule = null;
 let imageInspectDefaults = "";
 let imageInspectClient = "";
 let imageInspectModule = null;
+let catalogModule = null;
 try { cloneSource = readFileSync(new URL("../src/lib/wslc/clone.ts", import.meta.url), "utf8"); } catch { /* RED until implementation exists */ }
 try {
   const runtimeEnvUrl = new URL("../src/lib/wslc/image-runtime-env.ts", import.meta.url);
@@ -28,6 +30,7 @@ try {
   imageInspectModule = await import(imageInspectUrl);
   imageInspectClient = readFileSync(new URL("../src/lib/wslc/image-inspect-client.ts", import.meta.url), "utf8");
 } catch { /* RED until implementation exists */ }
+try { catalogModule = await import(new URL("../src/lib/wslc/catalog.ts", import.meta.url)); } catch { /* RED until implementation exists */ }
 
 test("container image defaults derive a safe name and reuse trusted catalog presets", () => {
   assert.match(defaults, /containerNameFromImage/);
@@ -61,6 +64,29 @@ test("trusted runtime environment rules cover common images", () => {
   assert.match(runtimeEnv, /ngrok/);
   assert.match(runtimeEnv, /NGROK_AUTHTOKEN/);
   assert.match(runtimeEnv, /local-coding-mcp/);
+});
+
+test("catalog presets cannot bypass trusted required-secret validation", () => {
+  assert.ok(catalogModule, "catalog module must load");
+  assert.ok(runtimeEnvModule, "runtime environment helper must load");
+  const postgres = catalogModule.catalogPresets.find((preset) => preset.image === "postgres:16");
+  assert.ok(postgres, "postgres preset must exist");
+  const spec = catalogModule.specFromPreset(postgres);
+  assert.doesNotMatch(spec.env, /POSTGRES_PASSWORD=quay/);
+  assert.deepEqual(runtimeEnvModule.missingRequiredEnv(spec.env, postgres.image), ["POSTGRES_PASSWORD"]);
+});
+
+test("catalog quick-pick and manual image selection share one runtime env source of truth", () => {
+  assert.ok(catalogModule, "catalog module must load");
+  assert.ok(runtimeEnvModule, "runtime environment helper must load");
+  for (const image of ["postgres:16", "ngrok/ngrok:latest", "ghcr.io/dhhieu113pro/local-coding-mcp:latest"]) {
+    const preset = catalogModule.catalogPresets.find((item) => item.image === image);
+    assert.ok(preset, `preset must exist for ${image}`);
+    const quickPick = catalogModule.specFromPreset(preset).env;
+    const manual = runtimeEnvModule.applyRuntimeEnvDefaults("", image);
+    assert.equal(quickPick, manual, `${image} quick-pick env must match manual image defaults`);
+  }
+  assert.match(catalogSource, /applyRuntimeEnvDefaults/);
 });
 
 test("automatic environment merge preserves existing user values", () => {
