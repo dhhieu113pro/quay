@@ -50,10 +50,11 @@ export function EnvEditor({ rows, onChange, label = "Environment", suggestions =
       const source = sourceByKey[key];
       const required = requiredKeys.has(key);
       const sourceLabel = required ? "Required" : (source ?? (key ? "Custom" : ""));
+      const displaySourceLabel = sourceLabel === "image" ? "Image default" : sourceLabel;
       return <li key={row.id} className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_5.5rem_2.75rem]">
         <Input value={row.key} onChange={(e) => patch(row.id, { key: e.target.value })} placeholder="NAME" aria-label="Variable name" className="font-mono text-xs" autoComplete="off" spellCheck={false} />
         <Input value={row.value} onChange={(e) => patch(row.id, { value: e.target.value })} placeholder={required ? "required" : "value"} aria-invalid={required && !row.value.trim()} aria-label={`Value for ${row.key || "variable"}`} className="font-mono text-xs" autoComplete="off" spellCheck={false} />
-        <span className={required && !row.value.trim() ? "grid place-items-center rounded-md border border-destructive/40 px-1 text-center text-[10px] text-destructive" : "grid place-items-center text-center text-[10px] text-subtle"}>{sourceLabel}</span>
+        <span className={required && !row.value.trim() ? "grid place-items-center rounded-md border border-destructive/40 px-1 text-center text-[10px] text-destructive" : "grid place-items-center text-center text-[10px] text-subtle"}>{displaySourceLabel}</span>
         {!protectedKeys.has(row.key.trim()) ? <Button type="button" variant="ghost" size="icon" aria-label="Remove variable" disabled={rows.length <= 1 && !row.key && !row.value} onClick={() => { const next = rows.filter((r) => r.id !== row.id); onChange(next.length ? next : [{ id: rid(), key: "", value: "" }]); }}><Trash2 className="size-3.5" /></Button> : <span aria-label="Protected container variable" />}
       </li>;
     })}</ul>
