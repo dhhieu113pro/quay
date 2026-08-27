@@ -132,8 +132,9 @@ test("trusted env reconciliation cleans known defaults when switching to an unkn
 });
 
 test("Run Container and Cube image changes reconcile trusted runtime env", () => {
-  assert.match(runDialog, /reconcileRuntimeEnvDefaults/);
-  assert.match(cubeDialog, /reconcileRuntimeEnvDefaults/);
+  const imageChangeCall = /reconcileRuntimeEnvDefaults\(withImageDefaults\.env, current\.image, image\)/;
+  assert.match(runDialog, imageChangeCall);
+  assert.match(cubeDialog, imageChangeCall);
 });
 
 test("known required environment variables block submission until populated", () => {
