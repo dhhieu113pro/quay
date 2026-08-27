@@ -16,6 +16,9 @@ export default defineConfig({
     host: "127.0.0.1",
     port: 8080,
     strictPort: true,
+    headers: {
+      "Permissions-Policy": "geolocation=()",
+    },
     watch: { ignored: ["**/src-tauri/**"] },
   },
 });
