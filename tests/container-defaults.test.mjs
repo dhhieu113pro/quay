@@ -12,8 +12,13 @@ const cloneContainerDialog = readFileSync(new URL("../src/components/clone-conta
 const envEditor = readFileSync(new URL("../src/components/kv-editor.tsx", import.meta.url), "utf8");
 let cloneSource = "";
 let runtimeEnv = "";
+let runtimeEnvModule = null;
 try { cloneSource = readFileSync(new URL("../src/lib/wslc/clone.ts", import.meta.url), "utf8"); } catch { /* RED until implementation exists */ }
-try { runtimeEnv = readFileSync(new URL("../src/lib/wslc/image-runtime-env.ts", import.meta.url), "utf8"); } catch { /* RED until implementation exists */ }
+try {
+  const runtimeEnvUrl = new URL("../src/lib/wslc/image-runtime-env.ts", import.meta.url);
+  runtimeEnv = readFileSync(runtimeEnvUrl, "utf8");
+  runtimeEnvModule = await import(runtimeEnvUrl);
+} catch { /* RED until implementation exists */ }
 
 test("container image defaults derive a safe name and reuse trusted catalog presets", () => {
   assert.match(defaults, /containerNameFromImage/);
@@ -49,19 +54,28 @@ test("trusted runtime environment rules cover common images", () => {
   assert.match(runtimeEnv, /local-coding-mcp/);
 });
 
-test("automatic environment merge preserves user values and exposes required validation", () => {
-  assert.match(runtimeEnv, /applyRuntimeEnvDefaults/);
-  assert.match(runtimeEnv, /missingRequiredEnv/);
-  assert.match(runtimeEnv, /source:\s*"Required"/);
-  assert.match(runtimeEnv, /source:\s*"Image default"/);
+test("automatic environment merge preserves existing user values", () => {
+  assert.ok(runtimeEnvModule, "runtime environment helper must load");
+  const merged = runtimeEnvModule.applyRuntimeEnvDefaults("POSTGRES_USER=custom-user\nPOSTGRES_PASSWORD=secret", "postgres:16");
+  assert.match(merged, /POSTGRES_USER=custom-user/);
+  assert.match(merged, /POSTGRES_PASSWORD=secret/);
+  assert.match(merged, /POSTGRES_DB=app/);
+});
+
+test("known required environment variables block submission until populated", () => {
+  assert.ok(runtimeEnvModule, "runtime environment helper must load");
+  assert.deepEqual(runtimeEnvModule.missingRequiredEnv("NGROK_AUTHTOKEN=", "ngrok:latest"), ["NGROK_AUTHTOKEN"]);
+  assert.deepEqual(runtimeEnvModule.missingRequiredEnv("NGROK_AUTHTOKEN=token-value", "ngrok:latest"), []);
+  assert.match(runDialog, /disabled=\{busy \|\| !spec\.image\.trim\(\) \|\| missing\.length > 0\}/);
+  assert.match(runDialog, /if \(busy \|\| missing\.length\) return/);
+  assert.match(cubeDialog, /disabled=\{missing\.length > 0\}/);
+  assert.match(cubeDialog, /if \(missing\.length\)/);
 });
 
 test("Run Container and Cube member dialogs automatically apply runtime environment defaults", () => {
   assert.match(runDialog, /applyRuntimeEnvDefaults/);
-  assert.match(runDialog, /missingRequiredEnv/);
   assert.match(runDialog, /requiredEnvKeys/);
   assert.match(cubeDialog, /applyRuntimeEnvDefaults/);
-  assert.match(cubeDialog, /missingRequiredEnv/);
 });
 
 test("environment editor can mark auto-generated rows by source and required state", () => {
