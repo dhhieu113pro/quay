@@ -5,6 +5,7 @@ import test from "node:test";
 const runDialog = readFileSync(new URL("../src/components/run-dialog.tsx", import.meta.url), "utf8");
 const cubeDialog = readFileSync(new URL("../src/components/cube-container-dialog.tsx", import.meta.url), "utf8");
 const defaults = readFileSync(new URL("../src/lib/wslc/container-defaults.ts", import.meta.url), "utf8");
+const store = readFileSync(new URL("../src/lib/wslc/store.ts", import.meta.url), "utf8");
 const groupsView = readFileSync(new URL("../src/components/views/groups-view.tsx", import.meta.url), "utf8");
 const inspect = readFileSync(new URL("../src/components/container-inspect.tsx", import.meta.url), "utf8");
 const cloneCubeDialog = readFileSync(new URL("../src/components/clone-cube-dialog.tsx", import.meta.url), "utf8");
@@ -13,12 +14,14 @@ const envEditor = readFileSync(new URL("../src/components/kv-editor.tsx", import
 let cloneSource = "";
 let runtimeEnv = "";
 let runtimeEnvModule = null;
+let imageInspectDefaults = "";
 try { cloneSource = readFileSync(new URL("../src/lib/wslc/clone.ts", import.meta.url), "utf8"); } catch { /* RED until implementation exists */ }
 try {
   const runtimeEnvUrl = new URL("../src/lib/wslc/image-runtime-env.ts", import.meta.url);
   runtimeEnv = readFileSync(runtimeEnvUrl, "utf8");
   runtimeEnvModule = await import(runtimeEnvUrl);
 } catch { /* RED until implementation exists */ }
+try { imageInspectDefaults = readFileSync(new URL("../src/lib/wslc/image-inspect-defaults.ts", import.meta.url), "utf8"); } catch { /* RED until implementation exists */ }
 
 test("container image defaults derive a safe name and reuse trusted catalog presets", () => {
   assert.match(defaults, /containerNameFromImage/);
@@ -75,6 +78,22 @@ test("known required environment variables block submission until populated", ()
 test("Run Container and Cube member dialogs automatically apply runtime environment defaults", () => {
   assert.match(runDialog, /applyRuntimeEnvDefaults/);
   assert.match(runDialog, /requiredEnvKeys/);
+  assert.match(cubeDialog, /applyRuntimeEnvDefaults/);
+});
+
+test("image inspect defaults extend pulled images without weakening trusted required rules", () => {
+  assert.match(imageInspectDefaults, /parseImageInspect/);
+  assert.match(imageInspectDefaults, /applyImageInspectDefaults/);
+  assert.match(imageInspectDefaults, /ExposedPorts/);
+  assert.match(imageInspectDefaults, /WorkingDir/);
+  assert.match(imageInspectDefaults, /PATH/);
+  assert.match(store, /inspectImage/);
+  assert.match(store, /imageInspectCache/);
+  assert.match(runDialog, /inspectImage/);
+  assert.match(runDialog, /applyImageInspectDefaults/);
+  assert.match(cubeDialog, /inspectImage/);
+  assert.match(cubeDialog, /applyImageInspectDefaults/);
+  assert.match(runDialog, /applyRuntimeEnvDefaults/);
   assert.match(cubeDialog, /applyRuntimeEnvDefaults/);
 });
 
