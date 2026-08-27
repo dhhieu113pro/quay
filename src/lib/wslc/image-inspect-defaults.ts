@@ -1,3 +1,19 @@
+export type ImageHealthcheck = {
+  test: string[];
+  intervalMs: number;
+  timeoutMs: number;
+  retries: number;
+  startPeriodMs: number;
+};
+
+export type ImageOciLabels = {
+  title?: string;
+  description?: string;
+  version?: string;
+  source?: string;
+  vendor?: string;
+};
+
 export type ImageInspectDefaults = {
   env: Record<string, string>;
   exposedPorts: string[];
@@ -5,6 +21,8 @@ export type ImageInspectDefaults = {
   entrypoint: string[];
   cmd: string[];
   volumes: string[];
+  labels?: ImageOciLabels;
+  healthcheck?: ImageHealthcheck;
 };
 
 export type ImageInspectLoader = (reference: string) => Promise<string | null | undefined>;
@@ -17,6 +35,13 @@ export type ImageMountRow = {
 };
 
 const NOISY_ENV_KEYS = new Set(["PATH", "HOME", "HOSTNAME", "PWD", "SHLVL", "TERM", "_"]);
+const OCI_LABELS = {
+  "org.opencontainers.image.title": "title",
+  "org.opencontainers.image.description": "description",
+  "org.opencontainers.image.version": "version",
+  "org.opencontainers.image.source": "source",
+  "org.opencontainers.image.vendor": "vendor",
+} as const;
 
 function record(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
@@ -53,6 +78,39 @@ function volumeList(value: unknown): string[] {
   return volumes ? Object.keys(volumes) : [];
 }
 
+function imageLabels(value: unknown): ImageOciLabels | undefined {
+  const labels = record(value);
+  if (!labels) return undefined;
+  const result: ImageOciLabels = {};
+  for (const [source, target] of Object.entries(OCI_LABELS)) {
+    const raw = labels[source];
+    if (raw === undefined || raw === null) continue;
+    const text = String(raw).trim();
+    if (text) result[target] = text;
+  }
+  return Object.keys(result).length ? result : undefined;
+}
+
+function durationMs(value: unknown) {
+  const nanoseconds = typeof value === "number" ? value : Number(value ?? 0);
+  return Number.isFinite(nanoseconds) && nanoseconds > 0 ? Math.round(nanoseconds / 1_000_000) : 0;
+}
+
+function imageHealthcheck(value: unknown): ImageHealthcheck | undefined {
+  const healthcheck = record(value);
+  if (!healthcheck) return undefined;
+  const test = stringList(healthcheck.Test ?? healthcheck.test);
+  if (!test.length || (test.length === 1 && test[0]?.toUpperCase() === "NONE")) return undefined;
+  const retriesValue = Number(healthcheck.Retries ?? healthcheck.retries ?? 0);
+  return {
+    test,
+    intervalMs: durationMs(healthcheck.Interval ?? healthcheck.interval),
+    timeoutMs: durationMs(healthcheck.Timeout ?? healthcheck.timeout),
+    retries: Number.isFinite(retriesValue) && retriesValue > 0 ? Math.trunc(retriesValue) : 0,
+    startPeriodMs: durationMs(healthcheck.StartPeriod ?? healthcheck.startPeriod ?? healthcheck.start_period),
+  };
+}
+
 export function parseImageInspect(raw: string | unknown): ImageInspectDefaults {
   let parsed: unknown = raw;
   if (typeof raw === "string") {
@@ -69,6 +127,8 @@ export function parseImageInspect(raw: string | unknown): ImageInspectDefaults {
     entrypoint: stringList(config.Entrypoint ?? config.entrypoint),
     cmd: stringList(config.Cmd ?? config.cmd),
     volumes: volumeList(config.Volumes ?? config.volumes),
+    labels: imageLabels(config.Labels ?? config.labels),
+    healthcheck: imageHealthcheck(config.Healthcheck ?? config.healthcheck),
   };
 }
 
@@ -119,6 +179,13 @@ export function addImageVolumeMount<T extends ImageMountRow>(rows: T[], source: 
     destination: containerDestination,
     mode: "rw",
   } as T];
+}
+
+export function imageReadinessMetadata(inspect: ImageInspectDefaults | null) {
+  return {
+    ...(inspect?.labels ?? {}),
+    healthcheck: inspect?.healthcheck,
+  };
 }
 
 export function imageInspectEnvSourceByKey(inspect: ImageInspectDefaults | null) {
