@@ -9,6 +9,13 @@ export type ImageInspectDefaults = {
 
 export type ImageInspectLoader = (reference: string) => Promise<string | null | undefined>;
 
+export type ImageMountRow = {
+  id: string;
+  source: string;
+  destination: string;
+  mode: "rw" | "ro";
+};
+
 const NOISY_ENV_KEYS = new Set(["PATH", "HOME", "HOSTNAME", "PWD", "SHLVL", "TERM", "_"]);
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -87,6 +94,31 @@ export function applyImageInspectDefaults<T extends { env: string; ports: string
   const ports = spec.ports.trim() || inspect.exposedPorts.map(publishedPort).filter(Boolean).join(",");
   const workdir = spec.workdir.trim() && spec.workdir.trim() !== "/" ? spec.workdir : (inspect.workingDir.trim() || spec.workdir);
   return { ...spec, env: mergedEnv, ports, workdir };
+}
+
+export function imageCommandSuggestion(inspect: ImageInspectDefaults | null) {
+  if (!inspect) return "";
+  return [...inspect.entrypoint, ...inspect.cmd].map((part) => part.trim()).filter(Boolean).join(" ");
+}
+
+export function applyImageCommandSuggestion(currentCommand: string, inspect: ImageInspectDefaults | null) {
+  return currentCommand.trim() ? currentCommand : imageCommandSuggestion(inspect);
+}
+
+export function imageVolumeSuggestions(inspect: ImageInspectDefaults | null) {
+  return inspect ? Array.from(new Set(inspect.volumes.map((volume) => volume.trim()).filter(Boolean))) : [];
+}
+
+export function addImageVolumeMount<T extends ImageMountRow>(rows: T[], source: string, destination: string): T[] {
+  const hostSource = source.trim();
+  const containerDestination = destination.trim();
+  if (!hostSource || !containerDestination || rows.some((row) => row.destination.trim() === containerDestination)) return rows;
+  return [...rows, {
+    id: Math.random().toString(16).slice(2, 10),
+    source: hostSource,
+    destination: containerDestination,
+    mode: "rw",
+  } as T];
 }
 
 export function imageInspectEnvSourceByKey(inspect: ImageInspectDefaults | null) {
