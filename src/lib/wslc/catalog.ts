@@ -1,4 +1,3 @@
-import { applyRuntimeEnvDefaults } from "./image-runtime-env";
 import type { RunSpec } from "./types";
 
 export interface CatalogPreset {
@@ -19,6 +18,6 @@ export const mcpStack = catalogPresets.slice(0, 2);
 
 export function specFromPreset(p: CatalogPreset): RunSpec {
   return { image: p.image, name: p.name, command: p.command ?? "", ports: p.ports,
-    env: applyRuntimeEnvDefaults("", p.image), mounts: p.mounts, gpu: Boolean(p.gpu), remove: false, detach: true,
+    env: "", mounts: p.mounts, gpu: Boolean(p.gpu), remove: false, detach: true,
     workdir: p.workdir, groupId: p.groupId };
 }
