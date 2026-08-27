@@ -11,7 +11,7 @@ import { openWorkspacePath, pickWorkspaceDescendant } from "@/lib/tauri";
 import { DEFAULT_WORKSPACE_TARGET, defaultStandaloneWorkspacePath, isGeneratedContainerWorkspacePath, relativeWorkspacePath, resolveWorkspacePath } from "@/lib/workspace";
 import { applyImageDefaults } from "@/lib/wslc/container-defaults";
 import { inspectImage } from "@/lib/wslc/image-inspect-client";
-import { applyImageInspectDefaults, imageInspectEnvSourceByKey, type ImageInspectDefaults } from "@/lib/wslc/image-inspect-defaults";
+import { addImageVolumeMount, applyImageCommandSuggestion, applyImageInspectDefaults, imageCommandSuggestion, imageInspectEnvSourceByKey, imageVolumeSuggestions, type ImageInspectDefaults } from "@/lib/wslc/image-inspect-defaults";
 import { applyRuntimeEnvDefaults, missingRequiredEnv, requiredEnvKeys, runtimeEnvSourceByKey } from "@/lib/wslc/image-runtime-env";
 import { useWslc } from "@/lib/wslc/store";
 import { cliForRun } from "@/lib/wslc/csharp";
@@ -30,6 +30,7 @@ export function RunDialog() {
   const specRef = useRef<RunSpec>(defaultSpec);
   const inspectRequest = useRef(0);
   const [imageInspect, setImageInspect] = useState<ImageInspectDefaults | null>(null);
+  const [imageVolumeSources, setImageVolumeSources] = useState<Record<string, string>>({});
   const [envRows, setEnvRows] = useState<KvPair[]>(() => editableEnvRows(defaultSpec.env));
   const [mountRows, setMountRows] = useState<MountRow[]>(() => parseMountLines(defaultSpec.mounts));
   const [nameTouched, setNameTouched] = useState(false);
@@ -40,7 +41,7 @@ export function RunDialog() {
     specRef.current = standalone;
     setSpec(standalone); setEnvRows(editableEnvRows(standalone.env)); setMountRows(parseMountLines(standalone.mounts));
   }
-  useEffect(() => { if (open) { inspectRequest.current += 1; setImageInspect(null); setNameTouched(false); applySpec(defaultSpec); } }, [open]);
+  useEffect(() => { if (open) { inspectRequest.current += 1; setImageInspect(null); setImageVolumeSources({}); setNameTouched(false); applySpec(defaultSpec); } }, [open]);
   function patch(p: Partial<RunSpec>) { setSpec((s) => { const next = { ...s, ...p, groupId: undefined }; specRef.current = next; return next; }); }
 
   function applyImage(image: string) {
@@ -49,6 +50,7 @@ export function RunDialog() {
     const generated = isGeneratedContainerWorkspacePath(specRef.current.workspacePath, undefined, specRef.current.name || "container");
     applySpec({ ...next, workspacePath: generated ? defaultStandaloneWorkspacePath(next.name || "container") : specRef.current.workspacePath });
     setImageInspect(null);
+    setImageVolumeSources({});
     const request = ++inspectRequest.current;
     if (!image.trim()) return;
     void inspectImage(image).then((inspected) => {
@@ -69,6 +71,9 @@ export function RunDialog() {
   const missing = missingRequiredEnv(env, spec.image);
   const sourceByKey = { ...imageInspectEnvSourceByKey(imageInspect), ...runtimeEnvSourceByKey(spec.image) };
   const requiredKeys = requiredEnvKeys(spec.image);
+  const suggestedCommand = imageCommandSuggestion(imageInspect);
+  const suggestedVolumes = imageVolumeSuggestions(imageInspect);
+  const hasImageActions = Boolean(suggestedCommand || suggestedVolumes.length);
 
   return <Dialog open={open} onOpenChange={(next) => { if (!busy) setRunOpen(next); }}>
     <DialogContent className="flex max-h-[90dvh] max-w-2xl flex-col gap-0 overflow-hidden p-0">
@@ -82,6 +87,15 @@ export function RunDialog() {
               <div className="grid gap-1.5"><Label htmlFor="ports">Publish ports</Label><Input id="ports" placeholder="8080:80" value={spec.ports} onChange={(event) => patch({ ports: event.target.value })} /></div>
             </div>
             <div className="grid gap-1.5"><Label htmlFor="cmd">Command</Label><Input id="cmd" placeholder="optional override" value={spec.command} onChange={(event) => patch({ command: event.target.value })} /></div>
+            {hasImageActions ? <div className="grid gap-3 rounded-lg border border-border bg-elevated/30 p-3">
+              <div><Label>Image defaults</Label><p className="text-xs text-subtle">Optional OCI defaults from the selected image. Quay never replaces your explicit command or invents a host mount source.</p></div>
+              {suggestedCommand ? <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]"><div className="rounded-md border border-border bg-background px-3 py-2 font-mono text-xs">{suggestedCommand}</div><Button type="button" variant="secondary" disabled={Boolean(spec.command.trim())} onClick={() => patch({ command: applyImageCommandSuggestion(spec.command, imageInspect) })}>Use command</Button></div> : null}
+              {suggestedVolumes.map((destination) => {
+                const duplicate = mountRows.some((row) => row.destination.trim() === destination);
+                const source = imageVolumeSources[destination] ?? "";
+                return <div key={destination} className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"><div className="rounded-md border border-border bg-background px-3 py-2 font-mono text-xs">{destination}</div><Input value={source} onChange={(event) => setImageVolumeSources((current) => ({ ...current, [destination]: event.target.value }))} placeholder="Host source" aria-label={`Host source for ${destination}`} className="font-mono text-xs" /><Button type="button" variant="secondary" disabled={duplicate || !source.trim()} onClick={() => { const nextRows = addImageVolumeMount(mountRows, source, destination); setMountRows(nextRows); patch({ mounts: joinMountLines(nextRows) }); }}>Add mount</Button></div>;
+              })}
+            </div> : null}
             <div className="grid gap-2 rounded-lg border border-border p-3"><Label>Workspace folder</Label><div className="flex flex-col gap-2 sm:flex-row"><Input value={workspacePath} onChange={(event) => patch({ workspacePath: event.target.value })} className="font-mono text-xs" aria-label="Workspace folder" /><Button type="button" variant="secondary" onClick={() => void (async () => { const selected = await pickWorkspaceDescendant(workspaceRoot, resolvedWorkspace); if (selected) patch({ workspacePath: relativeWorkspacePath(workspaceRoot, selected) }); })()}>Choose folder</Button><Button type="button" variant="ghost" onClick={() => void openWorkspacePath(workspaceRoot, workspacePath)}><FolderOpen className="size-4" /> Open</Button></div><p className="font-mono text-[11px] text-subtle">{resolvedWorkspace}</p><div className="grid gap-1.5 sm:max-w-xs"><Label htmlFor="workspace-target">Container destination</Label><Input id="workspace-target" value={spec.workspaceTarget || DEFAULT_WORKSPACE_TARGET} onChange={(event) => patch({ workspaceTarget: event.target.value })} className="font-mono text-xs" /></div><p className="text-xs text-subtle">This managed mount is separate from Mounts below and cannot be deleted there.</p></div>
             <EnvEditor rows={envRows} sourceByKey={sourceByKey} requiredKeys={requiredKeys} onChange={(rows) => { setEnvRows(rows); patch({ env: joinEnvLines(rows) }); }} />
             {missing.length ? <p className="text-xs text-destructive">Fill required environment: {missing.join(", ")}</p> : null}
