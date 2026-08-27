@@ -2,12 +2,16 @@ import { useEffect, useRef, useState } from "react";
 import { Copy, LoaderCircle, Play, RotateCcw, Square, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { CloneContainerDialog } from "@/components/clone-container-dialog";
+import { EnvEditor, joinEnvLines, parseEnvLines as editableEnvRows, type KvPair } from "@/components/kv-editor";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusPill } from "@/components/status-pill";
 import { formatUptime } from "@/lib/utils";
+import { loadExistingContainerConfig, recreateContainerWithEnv } from "@/lib/wslc/existing-container-env-client";
+import type { ExistingContainerConfig } from "@/lib/wslc/existing-container-env";
+import { withoutEnvKeys } from "@/lib/wslc/groups";
 import { execInContainer } from "@/lib/wslc/terminal";
 import { useWslc } from "@/lib/wslc/store";
 import type { Container } from "@/lib/wslc/types";
@@ -23,12 +27,15 @@ export function ContainerInspect({
   const stopContainer = useWslc((s) => s.stopContainer);
   const restartContainer = useWslc((s) => s.restartContainer);
   const deleteContainer = useWslc((s) => s.deleteContainer);
+  const groups = useWslc((s) => s.groups);
+  const tick = useWslc((s) => s.tick);
   const operations = useWslc((s) => s.operations);
   const now = useWslc((s) => s.now);
   const [tab, setTab] = useState("logs");
   const [cloneOpen, setCloneOpen] = useState(false);
   const operation = operations[`container:${container.name}`];
   const busy = Boolean(operation);
+  const cube = groups.find((group) => group.id === container.groupId);
 
   return (
     <>
@@ -74,9 +81,10 @@ export function ContainerInspect({
         </div>
 
         <Tabs value={tab} onValueChange={setTab} className="flex min-h-0 flex-1 flex-col px-4 py-3">
-          <TabsList className="w-full justify-start"><TabsTrigger value="logs">Logs</TabsTrigger><TabsTrigger value="exec">Exec</TabsTrigger><TabsTrigger value="inspect">Inspect</TabsTrigger></TabsList>
+          <TabsList className="w-full justify-start"><TabsTrigger value="logs">Logs</TabsTrigger><TabsTrigger value="exec">Exec</TabsTrigger><TabsTrigger value="environment">Environment</TabsTrigger><TabsTrigger value="inspect">Inspect</TabsTrigger></TabsList>
           <TabsContent value="logs" className="min-h-0 flex-1">{tab === "logs" ? <LogPane container={container} /> : null}</TabsContent>
           <TabsContent value="exec" className="min-h-0 flex-1"><ExecPane container={container} /></TabsContent>
+          <TabsContent value="environment" className="min-h-0 flex-1">{tab === "environment" ? <EnvironmentPane container={container} inheritedEnv={cube?.env ?? ""} onSaved={async () => { await tick(); onClose(); }} /> : null}</TabsContent>
           <TabsContent value="inspect" className="min-h-0 flex-1 overflow-y-auto">
             <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-xs">
               <Row k="Status" v={container.status} /><Row k="Image" v={container.image} /><Row k="Command" v={container.command.join(" ") || "—"} mono /><Row k="User" v={container.user || "—"} /><Row k="Workdir" v={container.workdir || "/"} mono />
@@ -92,6 +100,54 @@ export function ContainerInspect({
       <CloneContainerDialog container={container} open={cloneOpen} onOpenChange={setCloneOpen} />
     </>
   );
+}
+
+function EnvironmentPane({ container, inheritedEnv, onSaved }: { container: Container; inheritedEnv: string; onSaved: () => Promise<void> }) {
+  const [config, setConfig] = useState<ExistingContainerConfig | null>(null);
+  const [rows, setRows] = useState<KvPair[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const inheritedRows = editableEnvRows(inheritedEnv).filter((row) => row.key.trim());
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true); setError(null);
+    void loadExistingContainerConfig(container.name)
+      .then((loaded) => {
+        if (!active) return;
+        setConfig(loaded);
+        setRows(editableEnvRows(withoutEnvKeys(loaded.env, inheritedEnv)));
+      })
+      .catch((reason) => { if (active) setError(reason instanceof Error ? reason.message : String(reason)); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [container.name, inheritedEnv]);
+
+  async function save() {
+    if (!config || saving) return;
+    setSaving(true); setError(null);
+    const localEnv = joinEnvLines(rows);
+    const effectiveEnv = [inheritedEnv, localEnv].filter(Boolean).join("\n");
+    try {
+      await recreateContainerWithEnv(config, effectiveEnv, container.status === "running");
+      toast.success(`Recreated ${container.name} with updated environment`);
+      await onSaved();
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : String(reason);
+      setError(message); toast.error(message);
+    } finally { setSaving(false); }
+  }
+
+  if (loading) return <div className="flex h-40 items-center justify-center text-sm text-subtle"><LoaderCircle className="mr-2 size-4 animate-spin" />Loading environment…</div>;
+  if (!config) return <div className="grid gap-3"><p className="text-sm text-destructive">{error || "Could not inspect container environment."}</p></div>;
+
+  return <div className="grid max-h-full gap-3 overflow-y-auto pb-2">
+    <div className="rounded-md border border-border bg-elevated/30 p-3 text-xs text-subtle">Environment changes require container recreation. {container.status === "running" ? "Quay will stop it, recreate it, and leave the replacement running." : "Quay will recreate it and keep the replacement stopped."}</div>
+    <EnvEditor rows={rows} inheritedRows={inheritedRows} onChange={setRows} />
+    {error ? <p className="text-xs text-destructive">{error}</p> : null}
+    <div className="flex justify-end"><Button onClick={() => void save()} disabled={saving}>{saving ? <LoaderCircle className="size-4 animate-spin" /> : null}{saving ? "Recreating…" : "Save & recreate"}</Button></div>
+  </div>;
 }
 
 function Row({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
