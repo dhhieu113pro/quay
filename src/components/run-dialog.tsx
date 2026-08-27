@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { FolderOpen, LoaderCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -10,6 +10,8 @@ import { EnvEditor, MountEditor, joinEnvLines, joinMountLines, parseEnvLines as 
 import { openWorkspacePath, pickWorkspaceDescendant } from "@/lib/tauri";
 import { DEFAULT_WORKSPACE_TARGET, defaultStandaloneWorkspacePath, isGeneratedContainerWorkspacePath, relativeWorkspacePath, resolveWorkspacePath } from "@/lib/workspace";
 import { applyImageDefaults } from "@/lib/wslc/container-defaults";
+import { inspectImage } from "@/lib/wslc/image-inspect-client";
+import { applyImageInspectDefaults, imageInspectEnvSourceByKey, type ImageInspectDefaults } from "@/lib/wslc/image-inspect-defaults";
 import { applyRuntimeEnvDefaults, missingRequiredEnv, requiredEnvKeys, runtimeEnvSourceByKey } from "@/lib/wslc/image-runtime-env";
 import { useWslc } from "@/lib/wslc/store";
 import { cliForRun } from "@/lib/wslc/csharp";
@@ -25,6 +27,9 @@ export function RunDialog() {
   const operations = useWslc((s) => s.operations);
   const workspaceRoot = useWslc((s) => s.workspaceRoot);
   const [spec, setSpec] = useState<RunSpec>(defaultSpec);
+  const specRef = useRef<RunSpec>(defaultSpec);
+  const inspectRequest = useRef(0);
+  const [imageInspect, setImageInspect] = useState<ImageInspectDefaults | null>(null);
   const [envRows, setEnvRows] = useState<KvPair[]>(() => editableEnvRows(defaultSpec.env));
   const [mountRows, setMountRows] = useState<MountRow[]>(() => parseMountLines(defaultSpec.mounts));
   const [nameTouched, setNameTouched] = useState(false);
@@ -32,16 +37,26 @@ export function RunDialog() {
 
   function applySpec(next: RunSpec) {
     const standalone = { ...next, groupId: undefined, workspaceTarget: next.workspaceTarget || DEFAULT_WORKSPACE_TARGET };
+    specRef.current = standalone;
     setSpec(standalone); setEnvRows(editableEnvRows(standalone.env)); setMountRows(parseMountLines(standalone.mounts));
   }
-  useEffect(() => { if (open) { setNameTouched(false); applySpec(defaultSpec); } }, [open]);
-  function patch(p: Partial<RunSpec>) { setSpec((s) => ({ ...s, ...p, groupId: undefined })); }
+  useEffect(() => { if (open) { inspectRequest.current += 1; setImageInspect(null); setNameTouched(false); applySpec(defaultSpec); } }, [open]);
+  function patch(p: Partial<RunSpec>) { setSpec((s) => { const next = { ...s, ...p, groupId: undefined }; specRef.current = next; return next; }); }
 
   function applyImage(image: string) {
-    const withImageDefaults = applyImageDefaults(spec, image, nameTouched);
+    const withImageDefaults = applyImageDefaults(specRef.current, image, nameTouched);
     const next = { ...withImageDefaults, env: applyRuntimeEnvDefaults(withImageDefaults.env, image) };
-    const generated = isGeneratedContainerWorkspacePath(spec.workspacePath, undefined, spec.name || "container");
-    applySpec({ ...next, workspacePath: generated ? defaultStandaloneWorkspacePath(next.name || "container") : spec.workspacePath });
+    const generated = isGeneratedContainerWorkspacePath(specRef.current.workspacePath, undefined, specRef.current.name || "container");
+    applySpec({ ...next, workspacePath: generated ? defaultStandaloneWorkspacePath(next.name || "container") : specRef.current.workspacePath });
+    setImageInspect(null);
+    const request = ++inspectRequest.current;
+    if (!image.trim()) return;
+    void inspectImage(image).then((inspected) => {
+      if (!inspected || request !== inspectRequest.current || specRef.current.image !== image) return;
+      setImageInspect(inspected);
+      const inspectedSpec = applyImageInspectDefaults(specRef.current, inspected);
+      applySpec({ ...inspectedSpec, env: applyRuntimeEnvDefaults(inspectedSpec.env, image) });
+    });
   }
 
   const workspacePath = spec.workspacePath || defaultStandaloneWorkspacePath(spec.name || "container");
@@ -52,12 +67,12 @@ export function RunDialog() {
   const operationKey = `container:${spec.name.trim() || spec.image.trim()}`;
   const busy = Boolean(operations[operationKey]);
   const missing = missingRequiredEnv(env, spec.image);
-  const sourceByKey = runtimeEnvSourceByKey(spec.image);
+  const sourceByKey = { ...imageInspectEnvSourceByKey(imageInspect), ...runtimeEnvSourceByKey(spec.image) };
   const requiredKeys = requiredEnvKeys(spec.image);
 
   return <Dialog open={open} onOpenChange={(next) => { if (!busy) setRunOpen(next); }}>
     <DialogContent className="flex max-h-[90dvh] max-w-2xl flex-col gap-0 overflow-hidden p-0">
-      <DialogHeader className="border-b border-border px-5 py-4"><DialogTitle>Run Container</DialogTitle><DialogDescription>Run one standalone container. Known images get the environment they need automatically.</DialogDescription></DialogHeader>
+      <DialogHeader className="border-b border-border px-5 py-4"><DialogTitle>Run Container</DialogTitle><DialogDescription>Run one standalone container. Pulled image metadata and trusted rules fill safe runtime defaults automatically.</DialogDescription></DialogHeader>
       <form className="flex min-h-0 flex-1 flex-col" onSubmit={(event) => { event.preventDefault(); if (busy || missing.length) return; runContainer(submittedSpec); toast(`Creating ${spec.name || spec.image}`); }}>
         <fieldset disabled={busy} className="contents">
           <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto px-5 py-4">
