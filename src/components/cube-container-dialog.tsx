@@ -13,7 +13,7 @@ import { catalogPresets, specFromPreset } from "@/lib/wslc/catalog";
 import { applyImageDefaults } from "@/lib/wslc/container-defaults";
 import { inspectImage } from "@/lib/wslc/image-inspect-client";
 import { addImageVolumeMount, applyImageCommandSuggestion, applyImageInspectDefaults, imageCommandSuggestion, imageInspectEnvSourceByKey, imageReadinessMetadata, imageVolumeSuggestions, type ImageInspectDefaults } from "@/lib/wslc/image-inspect-defaults";
-import { applyRuntimeEnvDefaults, missingRequiredEnv, requiredEnvKeys, runtimeEnvSourceByKey } from "@/lib/wslc/image-runtime-env";
+import { applyRuntimeEnvDefaults, missingRequiredEnv, reconcileRuntimeEnvDefaults, requiredEnvKeys, runtimeEnvSourceByKey } from "@/lib/wslc/image-runtime-env";
 import { withoutEnvKeys } from "@/lib/wslc/groups";
 import { useWslc } from "@/lib/wslc/store";
 import type { ContainerGroup, RunSpec } from "@/lib/wslc/types";
@@ -68,7 +68,7 @@ export function CubeContainerDialog({ cube, open, initialSpec, onOpenChange, onS
   function applyImage(image: string) {
     const current = specRef.current;
     const withImageDefaults = applyImageDefaults(current, image, nameTouched || editing);
-    const next = { ...withImageDefaults, env: applyRuntimeEnvDefaults(withImageDefaults.env, image) };
+    const next = { ...withImageDefaults, env: reconcileRuntimeEnvDefaults(withImageDefaults.env, current.image, image) };
     const generated = isGeneratedContainerWorkspacePath(current.workspacePath, cubePath, current.name || "container");
     applySpec({ ...next, groupId: cubeId, workspacePath: generated ? defaultCubeContainerWorkspacePath(cubePath, next.name || "container") : current.workspacePath });
     setImageInspect(null);
