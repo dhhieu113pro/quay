@@ -12,7 +12,7 @@ import { DEFAULT_WORKSPACE_TARGET, defaultStandaloneWorkspacePath, isGeneratedCo
 import { applyImageDefaults } from "@/lib/wslc/container-defaults";
 import { inspectImage } from "@/lib/wslc/image-inspect-client";
 import { addImageVolumeMount, applyImageCommandSuggestion, applyImageInspectDefaults, imageCommandSuggestion, imageInspectEnvSourceByKey, imageReadinessMetadata, imageVolumeSuggestions, type ImageInspectDefaults } from "@/lib/wslc/image-inspect-defaults";
-import { applyRuntimeEnvDefaults, missingRequiredEnv, requiredEnvKeys, runtimeEnvSourceByKey } from "@/lib/wslc/image-runtime-env";
+import { applyRuntimeEnvDefaults, missingRequiredEnv, reconcileRuntimeEnvDefaults, requiredEnvKeys, runtimeEnvSourceByKey } from "@/lib/wslc/image-runtime-env";
 import { useWslc } from "@/lib/wslc/store";
 import { cliForRun } from "@/lib/wslc/csharp";
 import type { RunSpec } from "@/lib/wslc/types";
@@ -45,10 +45,11 @@ export function RunDialog() {
   function patch(p: Partial<RunSpec>) { setSpec((s) => { const next = { ...s, ...p, groupId: undefined }; specRef.current = next; return next; }); }
 
   function applyImage(image: string) {
-    const withImageDefaults = applyImageDefaults(specRef.current, image, nameTouched);
-    const next = { ...withImageDefaults, env: applyRuntimeEnvDefaults(withImageDefaults.env, image) };
-    const generated = isGeneratedContainerWorkspacePath(specRef.current.workspacePath, undefined, specRef.current.name || "container");
-    applySpec({ ...next, workspacePath: generated ? defaultStandaloneWorkspacePath(next.name || "container") : specRef.current.workspacePath });
+    const current = specRef.current;
+    const withImageDefaults = applyImageDefaults(current, image, nameTouched);
+    const next = { ...withImageDefaults, env: reconcileRuntimeEnvDefaults(withImageDefaults.env, current.image, image) };
+    const generated = isGeneratedContainerWorkspacePath(current.workspacePath, undefined, current.name || "container");
+    applySpec({ ...next, workspacePath: generated ? defaultStandaloneWorkspacePath(next.name || "container") : current.workspacePath });
     setImageInspect(null);
     setImageVolumeSources({});
     const request = ++inspectRequest.current;
