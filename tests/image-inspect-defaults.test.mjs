@@ -101,6 +101,61 @@ test("Run Container and Cube member flows expose image-default command and volum
   }
 });
 
+test("image inspect parser normalizes OCI healthcheck and filters useful labels", () => {
+  const parsed = inspectModule.parseImageInspect({ Config: {
+    Labels: {
+      "org.opencontainers.image.title": "Example API",
+      "org.opencontainers.image.description": "Example service",
+      "org.opencontainers.image.version": "1.2.3",
+      "org.opencontainers.image.source": "https://example.invalid/source",
+      "org.opencontainers.image.vendor": "Example Corp",
+      "com.docker.compose.project": "noise",
+      "build.timestamp": "noise",
+    },
+    Healthcheck: {
+      Test: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"],
+      Interval: 30000000000,
+      Timeout: 5000000000,
+      Retries: 3,
+      StartPeriod: 10000000000,
+    },
+  } });
+  assert.deepEqual(parsed.labels, {
+    title: "Example API",
+    description: "Example service",
+    version: "1.2.3",
+    source: "https://example.invalid/source",
+    vendor: "Example Corp",
+  });
+  assert.deepEqual(parsed.healthcheck, {
+    test: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"],
+    intervalMs: 30000,
+    timeoutMs: 5000,
+    retries: 3,
+    startPeriodMs: 10000,
+  });
+});
+
+test("readiness metadata is display-only unless runtime support is explicitly available", () => {
+  assert.equal(typeof inspectModule.imageReadinessMetadata, "function");
+  const metadata = inspectModule.imageReadinessMetadata({
+    env: {}, exposedPorts: [], workingDir: "", entrypoint: [], cmd: [], volumes: [],
+    labels: { title: "Worker", version: "2.0" },
+    healthcheck: { test: ["CMD", "check"], intervalMs: 1000, timeoutMs: 500, retries: 2, startPeriodMs: 0 },
+  });
+  assert.equal(metadata.title, "Worker");
+  assert.equal(metadata.version, "2.0");
+  assert.equal(metadata.healthcheck?.retries, 2);
+});
+
+test("Run Container and Cube member flows display image readiness metadata", () => {
+  for (const source of [runDialog, cubeDialog]) {
+    assert.match(source, /Healthcheck/);
+    assert.match(source, /Image labels/);
+    assert.match(source, /imageReadinessMetadata/);
+  }
+});
+
 test("Run Container and Cube member flows request inspect defaults", () => {
   assert.match(runDialog, /inspectImage/);
   assert.match(runDialog, /applyImageInspectDefaults/);
@@ -113,7 +168,7 @@ test("trusted required-env rules remain authoritative over conflicting image met
   const trustedFirst = runtimeModule.applyRuntimeEnvDefaults("", image);
   const inspected = inspectModule.applyImageInspectDefaults({ env: trustedFirst, ports: "", workdir: "/" }, {
     env: { POSTGRES_PASSWORD: "baked-secret", POSTGRES_USER: "image-user" },
-    exposedPorts: [], workingDir: "", entrypoint: [], cmd: [], volumes: [],
+    exposedPorts: [], workingDir: "", entrypoint: [], cmd: [], volumes: [], labels: {}, healthcheck: null,
   });
   const finalEnv = runtimeModule.applyRuntimeEnvDefaults(inspected.env, image);
   assert.match(finalEnv, /POSTGRES_PASSWORD=\n|POSTGRES_PASSWORD=$/m);
