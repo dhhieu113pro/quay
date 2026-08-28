@@ -507,14 +507,14 @@ impl PullManager {
             };
             let was_cancelling = state.jobs[index].status == PullJobStatus::Cancelling;
             match result {
-                Ok(PullExecution::Completed) if !was_cancelling => {
-                    state.jobs[index].status = PullJobStatus::Completed;
-                    state.jobs[index].message = Some("Completed".into());
-                    state.jobs[index].error = None;
-                }
-                Ok(PullExecution::Completed | PullExecution::Cancelled) if was_cancelling => {
-                    state.jobs[index].status = PullJobStatus::Cancelled;
-                    state.jobs[index].message = Some("Cancelled".into());
+                Ok(PullExecution::Completed) => {
+                    if was_cancelling {
+                        state.jobs[index].status = PullJobStatus::Cancelled;
+                        state.jobs[index].message = Some("Cancelled".into());
+                    } else {
+                        state.jobs[index].status = PullJobStatus::Completed;
+                        state.jobs[index].message = Some("Completed".into());
+                    }
                     state.jobs[index].error = None;
                 }
                 Ok(PullExecution::Cancelled) => {
@@ -522,16 +522,16 @@ impl PullManager {
                     state.jobs[index].message = Some("Cancelled".into());
                     state.jobs[index].error = None;
                 }
-                Err(error) if was_cancelling => {
-                    state.jobs[index].status = PullJobStatus::Cancelled;
-                    state.jobs[index].message = Some("Cancelled".into());
-                    state.jobs[index].error = None;
-                    let _ = error;
-                }
                 Err(error) => {
-                    state.jobs[index].status = PullJobStatus::Failed;
-                    state.jobs[index].message = Some("Failed".into());
-                    state.jobs[index].error = Some(error);
+                    if was_cancelling {
+                        state.jobs[index].status = PullJobStatus::Cancelled;
+                        state.jobs[index].message = Some("Cancelled".into());
+                        state.jobs[index].error = None;
+                    } else {
+                        state.jobs[index].status = PullJobStatus::Failed;
+                        state.jobs[index].message = Some("Failed".into());
+                        state.jobs[index].error = Some(error);
+                    }
                 }
             }
             state.jobs[index].updated_at = now;
