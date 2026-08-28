@@ -141,10 +141,11 @@ test("known required environment variables block submission until populated", ()
   assert.ok(runtimeEnvModule, "runtime environment helper must load");
   assert.deepEqual(runtimeEnvModule.missingRequiredEnv("NGROK_AUTHTOKEN=", "ngrok/ngrok:latest"), ["NGROK_AUTHTOKEN"]);
   assert.deepEqual(runtimeEnvModule.missingRequiredEnv("NGROK_AUTHTOKEN=token-value", "ngrok/ngrok:latest"), []);
-  assert.match(runDialog, /disabled=\{busy \|\| !spec\.image\.trim\(\) \|\| missing\.length > 0\}/);
-  assert.match(runDialog, /if \(busy \|\| missing\.length\) return/);
-  assert.match(cubeDialog, /disabled=\{missing\.length > 0\}/);
+  assert.match(runDialog, /disabled=\{busy \|\| !spec\.image\.trim\(\) \|\| missing\.length > 0 \|\| invalidPorts\}/);
+  assert.match(runDialog, /if \(busy \|\| missing\.length \|\| invalidPorts\) return/);
+  assert.match(cubeDialog, /disabled=\{missing\.length > 0 \|\| invalidPorts\}/);
   assert.match(cubeDialog, /if \(missing\.length\)/);
+  assert.match(cubeDialog, /if \(invalidPorts\) return/);
 });
 
 test("Run Container and Cube member dialogs automatically apply runtime environment defaults", () => {
