@@ -20,7 +20,8 @@ test("container actions render the exact operation status and disable conflictin
 });
 
 test("image pulling is not tracked by generic operations", () => {
-  assert.doesNotMatch(store, /runOperation\(`image:\$\{ref\}`/);
+  assert.doesNotMatch(store, /runOperation\(`image:\$\{[^}]+\}`,\s*"pulling"/);
+  assert.doesNotMatch(store, /execute\(\["pull"/);
   assert.match(images, /removeImage/);
 });
 
