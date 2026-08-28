@@ -1,4 +1,6 @@
 use serde::{Deserialize, Serialize};
+use std::cmp::Reverse;
+use std::path::Path;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -36,6 +38,105 @@ pub struct ProgressUpdate {
     pub total_bytes: Option<u64>,
     pub progress: Option<f64>,
     pub message: Option<String>,
+}
+
+fn parse_size(token: &str, unit: &str) -> Option<u64> {
+    let value = token.trim().parse::<f64>().ok()?;
+    if !value.is_finite() || value < 0.0 {
+        return None;
+    }
+    let multiplier = match unit.trim().to_ascii_uppercase().as_str() {
+        "B" => 1.0,
+        "KB" => 1024.0,
+        "MB" => 1024.0 * 1024.0,
+        "GB" => 1024.0 * 1024.0 * 1024.0,
+        _ => return None,
+    };
+    Some((value * multiplier) as u64)
+}
+
+pub fn parse_progress_fragment(fragment: &str) -> ProgressUpdate {
+    let text = fragment.trim();
+    let words: Vec<&str> = text.split_whitespace().collect();
+    if words.len() >= 5 {
+        for i in 0..=words.len() - 5 {
+            if words.get(i + 2) != Some(&"/") {
+                continue;
+            }
+            let current = parse_size(words[i], words[i + 1]);
+            let total = parse_size(words[i + 3], words[i + 4]);
+            if let (Some(current), Some(total)) = (current, total) {
+                if total > 0 {
+                    return ProgressUpdate {
+                        current_bytes: Some(current),
+                        total_bytes: Some(total),
+                        progress: Some(
+                            ((current as f64 / total as f64) * 100.0).clamp(0.0, 100.0),
+                        ),
+                        message: Some(text.to_string()),
+                    };
+                }
+            }
+        }
+    }
+    ProgressUpdate {
+        message: (!text.is_empty()).then(|| text.to_string()),
+        ..Default::default()
+    }
+}
+
+pub fn is_terminal(status: &PullJobStatus) -> bool {
+    matches!(
+        status,
+        PullJobStatus::Completed
+            | PullJobStatus::Failed
+            | PullJobStatus::Cancelled
+            | PullJobStatus::Interrupted
+    )
+}
+
+pub fn prune_history(jobs: Vec<PullJob>) -> Vec<PullJob> {
+    let (mut active, mut terminal): (Vec<_>, Vec<_>) = jobs
+        .into_iter()
+        .partition(|job| !is_terminal(&job.status));
+    terminal.sort_by_key(|job| Reverse(job.updated_at));
+    terminal.truncate(50);
+    active.extend(terminal);
+    active.sort_by_key(|job| Reverse(job.updated_at));
+    active
+}
+
+pub fn normalize_loaded_jobs(mut jobs: Vec<PullJob>, now: u64) -> Vec<PullJob> {
+    for job in &mut jobs {
+        if !is_terminal(&job.status) {
+            job.status = PullJobStatus::Interrupted;
+            job.updated_at = now;
+            job.finished_at = Some(now);
+            job.error = Some("Quay exited before this pull finished".into());
+        }
+    }
+    prune_history(jobs)
+}
+
+pub fn load_jobs(path: &Path, now: u64) -> Vec<PullJob> {
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    let Ok(jobs) = serde_json::from_str::<Vec<PullJob>>(&raw) else {
+        return Vec::new();
+    };
+    normalize_loaded_jobs(jobs, now)
+}
+
+pub fn save_jobs(path: &Path, jobs: &[PullJob]) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("could not create pull history directory: {e}"))?;
+    }
+    let retained = prune_history(jobs.to_vec());
+    let raw = serde_json::to_string_pretty(&retained)
+        .map_err(|e| format!("could not serialize pull history: {e}"))?;
+    std::fs::write(path, raw).map_err(|e| format!("could not persist pull history: {e}"))
 }
 
 #[cfg(test)]
