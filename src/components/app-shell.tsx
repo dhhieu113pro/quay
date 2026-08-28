@@ -15,6 +15,7 @@ import { toast, Toaster } from "sonner";
 import packageJson from "../../package.json";
 import { AppearanceProvider, useAppearance } from "@/components/appearance-provider";
 import { AppearanceToggle } from "@/components/appearance-toggle";
+import { DownloadsButton } from "@/components/downloads-button";
 import { ImageSearch } from "@/components/image-search";
 import { Mark } from "@/components/mark";
 import { RunDialog } from "@/components/run-dialog";
@@ -31,7 +32,7 @@ import { cn } from "@/lib/utils";
 import { openLogs } from "@/lib/wslc/log-store";
 import { useWslc } from "@/lib/wslc/store";
 import type { ViewId } from "@/lib/wslc/types";
-import { windowAction } from "@/lib/tauri";
+import { onPullJobUpdated, windowAction } from "@/lib/tauri";
 
 const QUAY_VERSION = packageJson.version;
 
@@ -57,6 +58,8 @@ export function AppShell() {
   const retryProbe = useWslc((s) => s.retryProbe);
   const lastError = useWslc((s) => s.lastError);
   const clearError = useWslc((s) => s.clearError);
+  const syncPullJobs = useWslc((s) => s.syncPullJobs);
+  const applyPullJobUpdate = useWslc((s) => s.applyPullJobUpdate);
   const gated = gate === "checking" || gate === "missing";
   const changeView = (next: ViewId) => {
     if (next === "logs") openLogs();
@@ -66,6 +69,20 @@ export function AppShell() {
   useEffect(() => {
     void retryProbe();
   }, [retryProbe]);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void syncPullJobs();
+    void onPullJobUpdated(applyPullJobUpdate).then((dispose) => {
+      if (disposed) dispose();
+      else unlisten = dispose;
+    });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [syncPullJobs, applyPullJobUpdate]);
 
   useEffect(() => {
     if (!lastError) return;
@@ -186,6 +203,7 @@ function Titlebar() {
           />
           {gated ? "wslc missing" : live ? "session up" : "session down"}
         </span>
+        {!gated ? <DownloadsButton /> : null}
         <AppearanceToggle compact />
         <div className="hidden md:flex">
           <CaptionBtn label="Minimize" onClick={() => void windowAction("minimize")}>
