@@ -6,6 +6,10 @@ import {
   getLaunchAtSignIn,
   invokeWslcHost,
   moveWorkspaceRoot,
+  pullCancel,
+  pullClearHistory,
+  pullList,
+  pullStart,
   setLaunchAtSignIn as setNativeLaunchAtSignIn,
 } from "@/lib/tauri";
 import {
@@ -38,7 +42,7 @@ const CATALOG = [
 const LOCAL_CODING_WORKSPACE = "D:\\wslc\\workspaces";
 const LAB_WORKSPACE_ROOT = "D:\\QuayAppData\\workspace";
 
-export type OperationStatus = "starting" | "stopping" | "restarting" | "pulling" | "removing" | "creating";
+export type OperationStatus = "starting" | "stopping" | "restarting" | "removing" | "creating";
 
 export type CompleteOnboardingInput = {
   workspaceRoot: string;
@@ -64,7 +68,12 @@ interface WslcState {
   refreshLogs: (id: string) => Promise<void>;
   startSession: () => void; stopSession: () => void;
   updateSession: (patch: Partial<SessionInfo>) => void;
-  pullImage: (reference: string) => void; removeImage: (id: string) => void;
+  startPull: (reference: string) => Promise<PullJob | null>;
+  cancelPull: (id: string) => Promise<void>;
+  clearPullHistory: () => Promise<void>;
+  syncPullJobs: () => Promise<void>;
+  applyPullJobUpdate: (job: PullJob) => void;
+  removeImage: (id: string) => void;
   runContainer: (spec: RunSpec) => void; startContainer: (id: string) => void;
   stopContainer: (id: string) => void; restartContainer: (id: string) => void;
   deleteContainer: (id: string) => void;
@@ -208,6 +217,16 @@ const apiCall = (args: string[], ok: boolean, result: string): ApiCall => ({
   cli: `wslc ${args.join(" ")}`, result, ok,
 });
 
+const upsertPull = (pulls: PullJob[], job: PullJob) => {
+  const index = pulls.findIndex((item) => item.id === job.id);
+  if (index < 0) return [job, ...pulls];
+  const next = pulls.slice();
+  next[index] = job;
+  return next;
+};
+
+const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
+
 const prefs = loadPrefs();
 export const useWslc = create<WslcState>((set, get) => {
   let containersRefreshInFlight: Promise<void> | null = null;
@@ -327,7 +346,7 @@ export const useWslc = create<WslcState>((set, get) => {
     if (get().operations[key]) return;
     setOperation(key, status);
     try { await work(); }
-    catch (error) { set({ lastError: error instanceof Error ? error.message : String(error) }); }
+    catch (error) { set({ lastError: errorMessage(error) }); }
     finally { setOperation(key); }
   };
 
@@ -350,9 +369,39 @@ export const useWslc = create<WslcState>((set, get) => {
     startSession: () => { void runOperation("session", "starting", async () => { await execute(["system", "session", "start"]); await refreshAfterMutation(); }); },
     stopSession: () => { void runOperation("session", "stopping", async () => { await execute(["system", "session", "terminate"]); await refreshAfterMutation(); }); },
     updateSession: (patch) => set((state) => ({ session: { ...state.session, ...patch } })),
-    pullImage: (reference) => {
+    startPull: async (reference) => {
       const ref = reference.trim();
-      if (ref) void runOperation(`image:${ref}`, "pulling", async () => { await execute(["pull", ref]); await refreshAfterMutation(); });
+      if (!ref) return null;
+      try {
+        const job = await pullStart(ref);
+        set((state) => ({ pulls: upsertPull(state.pulls, job), lastError: null }));
+        return job;
+      } catch (error) {
+        set({ lastError: errorMessage(error) });
+        return null;
+      }
+    },
+    cancelPull: async (id) => {
+      try {
+        const job = await pullCancel(id);
+        set((state) => ({ pulls: upsertPull(state.pulls, job) }));
+      } catch (error) { set({ lastError: errorMessage(error) }); }
+    },
+    clearPullHistory: async () => {
+      try { set({ pulls: await pullClearHistory() }); }
+      catch (error) { set({ lastError: errorMessage(error) }); }
+    },
+    syncPullJobs: async () => {
+      try { set({ pulls: await pullList() }); }
+      catch (error) { set({ lastError: errorMessage(error) }); }
+    },
+    applyPullJobUpdate: (job) => {
+      const previous = get().pulls.find((item) => item.id === job.id);
+      set((state) => ({ pulls: upsertPull(state.pulls, job) }));
+      if (job.status === "completed" && previous?.status !== "completed") void refreshInventory();
+      if (job.status === "failed" && previous?.status !== "failed") {
+        set({ lastError: job.error || `Pull ${job.reference} failed` });
+      }
     },
     removeImage: (id) => {
       const image = get().images.find((item) => item.id === id);
@@ -406,7 +455,7 @@ export const useWslc = create<WslcState>((set, get) => {
         try { workspaceRoot = await getDefaultWorkspaceRoot(); } catch { workspaceRoot = LAB_WORKSPACE_ROOT; }
       }
       try { await ensureWorkspaceRoot(workspaceRoot); }
-      catch (error) { set({ lastError: error instanceof Error ? error.message : String(error) }); }
+      catch (error) { set({ lastError: errorMessage(error) }); }
       set({ gate: "checking", probeNote: "Checking WSL and wslc.exe…", containers: [], images: [], volumes: [], metrics: [], groups: loadGroups(), launchAtSignIn: nativeLaunchAtSignIn, workspaceRoot });
       savePrefs({ launchAtSignIn: nativeLaunchAtSignIn, groupAuto: {}, workspaceRoot, onboardingCompleted: get().onboardingCompleted });
       const result = await checkHost();
@@ -486,7 +535,7 @@ export const useWslc = create<WslcState>((set, get) => {
           const nativeLaunchAtSignIn = await setNativeLaunchAtSignIn(launchAtSignIn);
           set({ launchAtSignIn: nativeLaunchAtSignIn });
           saveCurrentPrefs({ launchAtSignIn: nativeLaunchAtSignIn });
-        } catch (error) { set({ lastError: error instanceof Error ? error.message : String(error) }); }
+        } catch (error) { set({ lastError: errorMessage(error) }); }
       })();
     },
     setWorkspaceRoot: (workspaceRoot) => {
@@ -514,7 +563,7 @@ export const useWslc = create<WslcState>((set, get) => {
         set({ workspaceRoot: nextRoot, lastError: null });
         savePrefs({ launchAtSignIn: get().launchAtSignIn, groupAuto: {}, workspaceRoot: nextRoot, onboardingCompleted: get().onboardingCompleted });
       } catch (error) {
-        set({ lastError: error instanceof Error ? error.message : String(error) });
+        set({ lastError: errorMessage(error) });
         throw error;
       }
     },
