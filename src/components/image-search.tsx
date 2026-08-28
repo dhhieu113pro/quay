@@ -100,13 +100,6 @@ export function ImageSearch({ disabled = false, className }: { disabled?: boolea
   const pullResult = (result: ImageSuggestion) => {
     if (disabled) return;
     void startPull(result.reference);
-    setQuery(result.reference);
-    setOpen(false);
-    setHighlighted(-1);
-  };
-
-  const selectResult = (result: ImageSuggestion) => {
-    setQuery(result.reference);
     setOpen(false);
     setHighlighted(-1);
   };
@@ -132,7 +125,7 @@ export function ImageSearch({ disabled = false, className }: { disabled?: boolea
     if (event.key === "Enter") {
       event.preventDefault();
       const result = highlighted >= 0 ? results[highlighted] : undefined;
-      if (result) selectResult(result);
+      if (result) pullResult(result);
       else pullTyped();
     }
   };
