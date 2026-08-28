@@ -59,10 +59,11 @@ Behavior:
    - pull/star/popularity metadata when returned by Docker Hub.
 6. Keyboard support:
    - Up/Down changes selection;
-   - Enter starts a pull for the selected suggestion;
+   - Enter starts a pull for the selected suggestion when one is actively selected;
+   - otherwise Enter starts a pull for the exact non-empty trimmed text in the search field;
    - Escape closes the suggestion list.
 7. Mouse click on a suggestion starts that image pull.
-8. If the typed value looks like a direct image reference, Enter starts that exact reference even if it is not in Docker Hub results.
+8. Direct typed references do not need to exist in Docker Hub search results.
 9. Examples that must remain valid:
    - `nginx:latest`
    - `redis:7`
@@ -88,7 +89,7 @@ Add a short hint near the Images heading only if needed: image pulls are started
 
 Add a Downloads button immediately before the appearance toggle in `Titlebar`.
 
-Badge count = number of jobs in `queued` or `pulling` states.
+Badge count = number of jobs in `queued`, `pulling`, or `cancelling` states.
 
 The button remains visible from every main Quay view while WSLC is ready.
 
@@ -98,7 +99,7 @@ Clicking the Downloads button opens a compact panel anchored under the icon.
 
 Sections:
 
-- Active: queued and pulling jobs;
+- Active: queued, pulling, and cancelling jobs;
 - Recent: completed, failed, cancelled, and interrupted jobs.
 
 Each job row shows as much as is available:
@@ -116,7 +117,7 @@ Actions:
 
 - cancel queued job;
 - cancel active job;
-- clear terminal history;
+- clear terminal job history;
 - optionally open the Images view after a completed pull.
 
 If byte totals cannot be derived from WSLC output, render an indeterminate progress bar and status text. Quay must never fabricate a percentage.
@@ -182,7 +183,7 @@ Additional jobs remain `queued` and begin automatically as slots become free.
 Duplicate handling:
 
 - do not enqueue a second non-terminal job for the exact same normalized reference;
-- selecting the same reference while it is queued/pulling focuses or exposes the existing job in Downloads rather than spawning a duplicate.
+- selecting the same reference while it is queued/pulling/cancelling exposes the existing job in Downloads rather than spawning a duplicate.
 
 Completed images may be pulled again later.
 
@@ -269,8 +270,8 @@ Persist:
 Retention:
 
 - keep the most recent 50 terminal jobs;
-- `Clear completed` removes terminal history from both memory and disk;
-- active jobs are never removed by history cleanup.
+- `Clear history` removes completed, failed, cancelled, and interrupted jobs from both memory and disk;
+- active/non-terminal jobs are never removed by history cleanup.
 
 Lifecycle rules:
 
@@ -279,7 +280,7 @@ Lifecycle rules:
 - closing the main window: existing Quay behavior hides to tray; jobs continue;
 - restoring from tray: frontend re-requests `pull_list()` and reconciles state;
 - application process restart: persisted `queued`, `pulling`, or `cancelling` jobs become `interrupted`; Quay does not claim to resume them;
-- explicit Quit: active child processes are terminated cleanly before executor shutdown.
+- explicit Quit: the tray/menu quit path calls `PullManager.shutdown()` and terminates owned child processes before `app.exit(...)`; executor shutdown then follows the existing application shutdown path.
 
 ## Frontend State
 
@@ -366,9 +367,9 @@ Add tests matching the repository's existing Node-based wiring/component contrac
 - image search is rendered in the title bar;
 - old Images pull form is removed;
 - Downloads button is beside AppearanceToggle;
-- active badge counts queued + pulling only;
+- active badge counts queued + pulling + cancelling only;
 - Enter submits selected Docker Hub suggestion;
-- Enter submits typed custom registry reference;
+- Enter submits exact non-empty typed custom registry reference when no suggestion is selected;
 - stale search responses do not replace newer results;
 - pull update events upsert jobs;
 - completed pull refreshes image inventory;
@@ -437,7 +438,7 @@ The feature is complete when:
 
 1. the image search input is in the top bar and the Images page no longer owns the pull form;
 2. Docker Hub suggestions appear after debounced typing;
-3. custom registry references can be pulled directly;
+3. any non-empty direct registry/image reference can be submitted from the search field;
 4. pulls execute outside the existing WSLC mutation mutex;
 5. up to two pulls can run concurrently and excess jobs queue;
 6. live job state is visible from a Downloads icon beside the theme toggle from any view;
@@ -446,6 +447,6 @@ The feature is complete when:
 9. queued/running pulls are cancellable;
 10. completed pulls refresh image inventory automatically;
 11. recent terminal history is persisted and stale active jobs become `interrupted` after process restart;
-12. explicit Quit terminates Quay-owned active pull children;
+12. explicit Quit terminates Quay-owned active pull children before process exit;
 13. automated Rust and frontend tests cover the state machine, queueing, parser, native bridge, and critical UI wiring;
 14. the existing container/session/image inventory workflows remain green.
