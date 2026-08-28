@@ -4,6 +4,8 @@
 
 mod docker_hub;
 #[cfg(windows)]
+mod pull_manager;
+#[cfg(windows)]
 mod wslc_executor;
 #[cfg(windows)]
 mod wslc_runtime;
