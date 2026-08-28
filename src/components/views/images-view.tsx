@@ -11,7 +11,8 @@ export function ImagesView() {
   const images = useWslc((s) => s.images);
   const volumes = useWslc((s) => s.volumes);
   const operations = useWslc((s) => s.operations);
-  const pullImage = useWslc((s) => s.pullImage);
+  const pulls = useWslc((s) => s.pulls);
+  const startPull = useWslc((s) => s.startPull);
   const removeImage = useWslc((s) => s.removeImage);
   const createVolume = useWslc((s) => s.createVolume);
   const deleteVolume = useWslc((s) => s.deleteVolume);
@@ -19,8 +20,8 @@ export function ImagesView() {
   const now = useWslc((s) => s.now);
   const [ref, setRef] = useState("ghcr.io/dhhieu113pro/local-coding-mcp:latest");
   const [volName, setVolName] = useState("");
-  const pullStatus = operations[`image:${ref.trim()}`];
-  const pulling = pullStatus === "pulling";
+  const reference = ref.trim();
+  const activePull = pulls.find((item) => item.reference === reference && ["queued", "pulling", "cancelling"].includes(item.status));
   const volumeStatus = volName.trim() ? operations[`volume:${volName.trim()}`] : undefined;
   const creatingVolume = volumeStatus === "creating";
 
@@ -44,8 +45,8 @@ export function ImagesView() {
             onSubmit={(event) => {
               event.preventDefault();
               const value = ref.trim();
-              if (!value || pullStatus) return;
-              pullImage(value);
+              if (!value || activePull) return;
+              void startPull(value);
               toast(`Pulling ${value}`);
             }}
           >
@@ -55,21 +56,21 @@ export function ImagesView() {
               onChange={(event) => setRef(event.target.value)}
               placeholder="nginx:latest"
               className="font-mono"
-              disabled={Boolean(pullStatus)}
+              disabled={Boolean(activePull)}
             />
             <datalist id="pull-catalog">
               {catalog.map((item) => <option key={item} value={item} />)}
             </datalist>
-            <Button type="submit" disabled={Boolean(pullStatus) || !ref.trim()}>
-              {pulling ? <LoaderCircle className="size-4 animate-spin" /> : <Download className="size-4" />}
-              {pulling ? "Pulling…" : pullStatus === "removing" ? "Removing…" : "Pull"}
+            <Button type="submit" disabled={Boolean(activePull) || !ref.trim()}>
+              {activePull ? <LoaderCircle className="size-4 animate-spin" /> : <Download className="size-4" />}
+              {activePull?.status === "queued" ? "Queued…" : activePull?.status === "cancelling" ? "Cancelling…" : activePull ? "Pulling…" : "Pull"}
             </Button>
           </form>
 
           <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
             {images.length ? images.map((img) => {
-              const reference = `${img.repository}:${img.tag}`;
-              const status = operations[`image:${reference}`];
+              const imageReference = `${img.repository}:${img.tag}`;
+              const status = operations[`image:${imageReference}`];
               const busy = Boolean(status);
               return (
                 <li key={img.id} className="flex items-center gap-3 px-4 py-3">
@@ -81,16 +82,15 @@ export function ImagesView() {
                       {img.id} · {formatBytes(img.sizeBytes)} · {relativeTime(img.createdAt, now)}
                     </p>
                   </div>
-                  {status === "pulling" ? <span className="text-xs text-muted-foreground">Pulling…</span> : null}
                   {status === "removing" ? <span className="text-xs text-muted-foreground">Removing…</span> : null}
                   <Button
                     size="icon-sm"
                     variant="ghost"
                     disabled={busy}
-                    aria-label={`Remove ${reference}`}
+                    aria-label={`Remove ${imageReference}`}
                     onClick={() => {
                       removeImage(img.id);
-                      toast(`Removing ${reference}`);
+                      toast(`Removing ${imageReference}`);
                     }}
                   >
                     {busy ? <LoaderCircle className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
