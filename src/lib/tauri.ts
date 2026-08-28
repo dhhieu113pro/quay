@@ -1,3 +1,5 @@
+import type { ImageSearchResult, PullJob } from "@/lib/wslc/types";
+
 export function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
@@ -36,6 +38,36 @@ export type WslcInvokeResult = {
 async function invokeNative<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   const { invoke } = await import("@tauri-apps/api/core");
   return invoke<T>(command, args);
+}
+
+export async function imageSearch(query: string): Promise<ImageSearchResult[]> {
+  if (!query.trim() || !isTauri()) return [];
+  return invokeNative<ImageSearchResult[]>("image_search", { query: query.trim() });
+}
+
+export async function pullStart(reference: string): Promise<PullJob> {
+  if (!reference.trim()) throw new Error("image reference is empty");
+  return invokeNative<PullJob>("pull_start", { reference: reference.trim() });
+}
+
+export async function pullList(): Promise<PullJob[]> {
+  if (!isTauri()) return [];
+  return invokeNative<PullJob[]>("pull_list");
+}
+
+export async function pullCancel(id: string): Promise<PullJob> {
+  return invokeNative<PullJob>("pull_cancel", { id });
+}
+
+export async function pullClearHistory(): Promise<PullJob[]> {
+  if (!isTauri()) return [];
+  return invokeNative<PullJob[]>("pull_clear_history");
+}
+
+export async function onPullJobUpdated(handler: (job: PullJob) => void): Promise<() => void> {
+  if (!isTauri()) return () => undefined;
+  const { listen } = await import("@tauri-apps/api/event");
+  return listen<PullJob>("quay://pull-job-updated", (event) => handler(event.payload));
 }
 
 export async function invokeWslcHost(payload: Record<string, unknown>): Promise<WslcInvokeResult> {
