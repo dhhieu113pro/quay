@@ -2,6 +2,7 @@
 //! Quay calls the installed `wslc.exe` directly and uses the default WSLC session.
 //! Close hides to tray; Quit actually exits.
 
+mod docker_hub;
 #[cfg(windows)]
 mod wslc_executor;
 #[cfg(windows)]
