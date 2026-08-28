@@ -34,6 +34,12 @@ export type ImageMountRow = {
   mode: "rw" | "ro";
 };
 
+export type PublishedPortRow = {
+  hostPort: string;
+  containerPort: string;
+  protocol: "tcp" | "udp";
+};
+
 const NOISY_ENV_KEYS = new Set(["PATH", "HOME", "HOSTNAME", "PWD", "SHLVL", "TERM", "_"]);
 const OCI_LABELS = {
   "org.opencontainers.image.title": "title",
@@ -145,6 +151,42 @@ function publishedPort(exposed: string) {
   const [port, protocol = "tcp"] = exposed.split("/");
   if (!port) return "";
   return protocol.toLowerCase() === "udp" ? `${port}:${port}/udp` : `${port}:${port}`;
+}
+
+function splitPublishedPort(binding: string): PublishedPortRow | null {
+  const trimmed = binding.trim();
+  if (!trimmed) return null;
+  const slash = trimmed.lastIndexOf("/");
+  const mapping = slash === -1 ? trimmed : trimmed.slice(0, slash);
+  const protocolText = slash === -1 ? "tcp" : trimmed.slice(slash + 1).trim().toLowerCase();
+  const parts = mapping.split(":").map((part) => part.trim());
+  const containerPort = parts.pop() ?? "";
+  const hostPort = parts.pop() ?? containerPort;
+  if (!containerPort) return null;
+  return {
+    hostPort,
+    containerPort,
+    protocol: protocolText === "udp" ? "udp" : "tcp",
+  };
+}
+
+export function publishedPortRows(raw: string): PublishedPortRow[] {
+  return raw.split(",").map(splitPublishedPort).filter((row): row is PublishedPortRow => Boolean(row));
+}
+
+export function updatePublishedHostPort(raw: string, index: number, hostPort: string) {
+  const bindings = raw.split(",").map((binding) => binding.trim()).filter(Boolean);
+  const target = bindings[index];
+  if (!target) return raw;
+
+  const slash = target.lastIndexOf("/");
+  const mapping = slash === -1 ? target : target.slice(0, slash);
+  const suffix = slash === -1 ? "" : target.slice(slash);
+  const parts = mapping.split(":");
+  if (parts.length === 1) parts.unshift(hostPort.trim());
+  else parts[parts.length - 2] = hostPort.trim();
+  bindings[index] = `${parts.join(":")}${suffix}`;
+  return bindings.join(",");
 }
 
 export function applyImageInspectDefaults<T extends { env: string; ports: string; workdir: string }>(spec: T, inspect: ImageInspectDefaults): T {
