@@ -13,6 +13,8 @@ test("LocalCoding relies on the managed Cube workspace instead of a duplicate mo
 test("Cube container names are prefixed with the Cube display name", () => {
   assert.match(groups, /export function cubeContainerName\(/);
   assert.match(groups, /name: cubeContainerName\(group\.name, spec\.name \|\| spec\.image\)/);
+  assert.match(groups, /const name = cubeContainerName\(group\.name, spec\.name \|\| spec\.image\)/);
+  assert.match(groups, /filter\(\(item\) => item\.name !== name\)/);
 });
 
 test("LocalCoding ngrok targets the prefixed MCP container", () => {
