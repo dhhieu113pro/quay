@@ -101,6 +101,42 @@ test("automatic environment merge preserves existing user values", () => {
   assert.match(merged, /POSTGRES_DB=app/);
 });
 
+test("trusted env reconciliation removes previous automatic defaults when image changes", () => {
+  assert.ok(runtimeEnvModule, "runtime environment helper must load");
+  assert.equal(typeof runtimeEnvModule.reconcileRuntimeEnvDefaults, "function");
+  const postgres = runtimeEnvModule.applyRuntimeEnvDefaults("MY_SETTING=hello", "postgres:16");
+  const mysql = runtimeEnvModule.reconcileRuntimeEnvDefaults(postgres, "postgres:16", "mysql:8");
+  assert.doesNotMatch(mysql, /POSTGRES_USER=/);
+  assert.doesNotMatch(mysql, /POSTGRES_DB=/);
+  assert.doesNotMatch(mysql, /POSTGRES_PASSWORD=/);
+  assert.match(mysql, /MYSQL_ROOT_PASSWORD=/);
+  assert.match(mysql, /MY_SETTING=hello/);
+});
+
+test("trusted env reconciliation preserves user-overridden previous-image values", () => {
+  assert.ok(runtimeEnvModule, "runtime environment helper must load");
+  const raw = "POSTGRES_USER=my-user\nPOSTGRES_DB=app\nPOSTGRES_PASSWORD=secret\nMY_SETTING=hello";
+  const next = runtimeEnvModule.reconcileRuntimeEnvDefaults(raw, "postgres:16", "mysql:8");
+  assert.match(next, /POSTGRES_USER=my-user/);
+  assert.match(next, /POSTGRES_PASSWORD=secret/);
+  assert.doesNotMatch(next, /POSTGRES_DB=app/);
+  assert.match(next, /MYSQL_ROOT_PASSWORD=/);
+  assert.match(next, /MY_SETTING=hello/);
+});
+
+test("trusted env reconciliation cleans known defaults when switching to an unknown image", () => {
+  assert.ok(runtimeEnvModule, "runtime environment helper must load");
+  const postgres = runtimeEnvModule.applyRuntimeEnvDefaults("CUSTOM=1", "postgres:16");
+  const unknown = runtimeEnvModule.reconcileRuntimeEnvDefaults(postgres, "postgres:16", "example/custom:latest");
+  assert.equal(unknown, "CUSTOM=1");
+});
+
+test("Run Container and Cube image changes reconcile trusted runtime env", () => {
+  const imageChangeCall = /reconcileRuntimeEnvDefaults\(withImageDefaults\.env, current\.image, image\)/;
+  assert.match(runDialog, imageChangeCall);
+  assert.match(cubeDialog, imageChangeCall);
+});
+
 test("known required environment variables block submission until populated", () => {
   assert.ok(runtimeEnvModule, "runtime environment helper must load");
   assert.deepEqual(runtimeEnvModule.missingRequiredEnv("NGROK_AUTHTOKEN=", "ngrok:latest"), ["NGROK_AUTHTOKEN"]);

@@ -47,13 +47,24 @@ function parseEnv(raw: string) {
   });
 }
 
+function joinEnv(values: Map<string, string>) {
+  return Array.from(values, ([key, value]) => `${key}=${value}`).join("\n");
+}
+
 export function applyRuntimeEnvDefaults(raw: string, image: string) {
-  const existing = parseEnv(raw);
-  const values = new Map(existing);
+  const values = new Map(parseEnv(raw));
   for (const variable of runtimeEnvForImage(image)) {
     if (!values.has(variable.key)) values.set(variable.key, variable.value);
   }
-  return Array.from(values, ([key, value]) => `${key}=${value}`).join("\n");
+  return joinEnv(values);
+}
+
+export function reconcileRuntimeEnvDefaults(raw: string, previousImage: string, nextImage: string) {
+  const values = new Map(parseEnv(raw));
+  for (const variable of runtimeEnvForImage(previousImage)) {
+    if (values.get(variable.key) === variable.value) values.delete(variable.key);
+  }
+  return applyRuntimeEnvDefaults(joinEnv(values), nextImage);
 }
 
 export function runtimeEnvSourceByKey(image: string) {
