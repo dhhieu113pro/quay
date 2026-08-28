@@ -15,6 +15,14 @@ export function cubeNetworkName(name: string) {
   return `${name.trim().replace(/\s+/g, "")}NetWork`;
 }
 
+export function cubeContainerName(cubeName: string, name: string) {
+  const cube = cubeName.trim();
+  const member = name.trim();
+  if (!cube || !member) return member;
+  const prefix = `${cube}-`;
+  return member.toLowerCase().startsWith(prefix.toLowerCase()) ? member : `${prefix}${member}`;
+}
+
 const localCoding: ContainerGroup = {
   id: "local-coding",
   name: "LocalCoding",
@@ -23,7 +31,7 @@ const localCoding: ContainerGroup = {
   builtIn: true,
   autoStart: false,
   workspacePath: defaultCubeWorkspacePath("LocalCoding"),
-  specs: mcpStack.map((preset) => ({ ...specFromPreset(preset), groupId: "local-coding" })),
+  specs: mcpStack.map((preset) => ({ ...specFromPreset(preset), name: cubeContainerName("LocalCoding", preset.name), groupId: "local-coding" })),
 };
 
 export const builtInGroups: ContainerGroup[] = [localCoding];
@@ -54,8 +62,8 @@ function mergeSpecs(base: RunSpec[], extras: RunSpec[] = []) {
 
 export function normalizeGroupWorkspace(group: ContainerGroup): ContainerGroup {
   const workspacePath = normalizeWorkspacePath(group.workspacePath || defaultCubeWorkspacePath(group.name));
-  return { ...group, network: cubeNetworkName(group.name), workspacePath, specs: (group.specs ?? []).map((spec) => ({ ...spec, groupId: group.id,
-    workspacePath: normalizeWorkspacePath(spec.workspacePath || defaultCubeContainerWorkspacePath(workspacePath, spec.name || spec.image)),
+  return { ...group, network: cubeNetworkName(group.name), workspacePath, specs: (group.specs ?? []).map((spec) => ({ ...spec, name: cubeContainerName(group.name, spec.name || spec.image), groupId: group.id,
+    workspacePath: normalizeWorkspacePath(spec.workspacePath || defaultCubeContainerWorkspacePath(workspacePath, cubeContainerName(group.name, spec.name || spec.image))),
     workspaceTarget: spec.workspaceTarget?.trim() || DEFAULT_WORKSPACE_TARGET })) };
 }
 
@@ -63,10 +71,11 @@ export function loadGroups(): ContainerGroup[] {
   const overrides = safeParse<Record<string, Partial<ContainerGroup>>>(BUILTIN_OVERRIDES_KEY, {});
   const builtIns = builtInGroups.map((group) => {
     const override = overrides[group.id] ?? {};
+    const overrideSpecs = (override.specs ?? []).map((spec) => ({ ...spec, name: cubeContainerName(group.name, spec.name || spec.image) }));
     return normalizeGroupWorkspace({ ...group, env: override.env ?? group.env,
       autoStart: override.autoStart ?? group.autoStart, workspacePath: override.workspacePath ?? group.workspacePath,
       protectedEnvKeys: override.protectedEnvKeys ?? group.protectedEnvKeys,
-      specs: mergeSpecs(group.specs, override.specs) });
+      specs: mergeSpecs(group.specs, overrideSpecs) });
   });
   const users = safeParse<ContainerGroup[]>(GROUPS_KEY, []).filter((group) => group && group.id && group.name)
     .map((group) => normalizeGroupWorkspace({ ...group, builtIn: false, env: group.env ?? "", specs: group.specs ?? [] }));
@@ -93,8 +102,9 @@ export function saveGroup(input: ContainerGroup) {
 
 export function rememberGroupSpec(group: ContainerGroup, spec: RunSpec) {
   const normalizedGroup = normalizeGroupWorkspace(group);
-  const normalized = { ...spec, groupId: group.id, workspacePath: spec.workspacePath || defaultCubeContainerWorkspacePath(normalizedGroup.workspacePath!, spec.name || spec.image), workspaceTarget: spec.workspaceTarget || DEFAULT_WORKSPACE_TARGET };
-  const updated = syncGroupEnv({ ...normalizedGroup, specs: [...normalizedGroup.specs.filter((item) => item.name !== normalized.name), normalized] });
+  const name = cubeContainerName(group.name, spec.name || spec.image);
+  const normalized = { ...spec, name, groupId: group.id, workspacePath: spec.workspacePath || defaultCubeContainerWorkspacePath(normalizedGroup.workspacePath!, name), workspaceTarget: spec.workspaceTarget || DEFAULT_WORKSPACE_TARGET };
+  const updated = syncGroupEnv({ ...normalizedGroup, specs: [...normalizedGroup.specs.filter((item) => item.name !== name), normalized] });
   saveGroup(updated); return updated;
 }
 
