@@ -81,6 +81,11 @@ async fn wslc_invoke(backend: State<'_, Backend>, payload: Value) -> Result<Valu
     }
 }
 
+#[tauri::command]
+async fn image_search(query: String) -> Result<Vec<docker_hub::ImageSearchResult>, String> {
+    docker_hub::search(&query).await
+}
+
 fn run_capture(program: &str, args: &[&str]) -> Option<String> {
     let mut cmd = Command::new(program);
     cmd.args(args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
@@ -164,7 +169,7 @@ pub fn run() {
             if let WindowEvent::CloseRequested { api, .. } = event { api.prevent_close(); let _ = window.hide(); }
         })
         .invoke_handler(tauri::generate_handler![
-            wslc_invoke, wslc_probe, ensure_host_directory, autostart_enabled, autostart_set,
+            wslc_invoke, image_search, wslc_probe, ensure_host_directory, autostart_enabled, autostart_set,
             workspace::workspace_default_root, workspace::workspace_ensure, workspace::workspace_pick_root,
             workspace::workspace_pick_descendant, workspace::workspace_open,
             workspace::workspace_move_root, workspace::workspace_move_entry
