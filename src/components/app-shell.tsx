@@ -15,6 +15,7 @@ import { toast, Toaster } from "sonner";
 import packageJson from "../../package.json";
 import { AppearanceProvider, useAppearance } from "@/components/appearance-provider";
 import { AppearanceToggle } from "@/components/appearance-toggle";
+import { ImageSearch } from "@/components/image-search";
 import { Mark } from "@/components/mark";
 import { RunDialog } from "@/components/run-dialog";
 import { SetupScreen } from "@/components/setup-screen";
@@ -161,13 +162,16 @@ function Titlebar() {
       className="flex h-12 shrink-0 items-center border-b border-border bg-card pl-3 pr-1"
     >
       <Mark className="size-6" />
-      <div className="ml-2 min-w-0">
+      <div className="ml-2 min-w-0 shrink-0">
         <p className="truncate text-sm font-medium leading-none">Quay</p>
         <p className="mt-0.5 hidden truncate text-xs text-subtle sm:block">
           WSL container manager
         </p>
       </div>
-      <div className="ml-auto flex items-center gap-2">
+      <div className="flex min-w-0 flex-1 justify-center px-4">
+        <ImageSearch disabled={gated} className="w-full max-w-xl" />
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
         <span
           className={cn(
             "hidden items-center gap-1.5 rounded-full px-2 py-1 text-xs sm:inline-flex",
