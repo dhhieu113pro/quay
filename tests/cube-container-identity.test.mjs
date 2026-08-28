@@ -16,13 +16,15 @@ test("Quay does not seed a built-in LocalCoding Cube", () => {
   assert.match(groups, /export const builtInGroups: ContainerGroup\[\] = \[\];/);
 });
 
+test("LocalCoding catalog presets are no longer coupled to the removed Cube", () => {
+  assert.doesNotMatch(catalog, /groupId: "local-coding"/);
+  assert.doesNotMatch(catalog, /export const mcpStack/);
+  assert.match(catalog, /http local-coding-mcp:5000 --log=stdout/);
+});
+
 test("Cube container names are prefixed with the Cube display name", () => {
   assert.match(groups, /export function cubeContainerName\(/);
   assert.match(groups, /name: cubeContainerName\(group\.name, spec\.name \|\| spec\.image\)/);
   assert.match(groups, /const name = cubeContainerName\(group\.name, spec\.name \|\| spec\.image\)/);
   assert.match(groups, /filter\(\(item\) => item\.name !== name\)/);
-});
-
-test("LocalCoding ngrok preset still targets the expected MCP container name", () => {
-  assert.match(catalog, /http LocalCoding-local-coding-mcp:5000 --log=stdout/);
 });
