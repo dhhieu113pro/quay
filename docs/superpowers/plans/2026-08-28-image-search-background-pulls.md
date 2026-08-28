@@ -4,7 +4,7 @@
 
 **Goal:** Move image discovery to the Quay title bar, add Docker Hub suggestions, and run WSLC image pulls as native background jobs with live progress and a global Downloads panel.
 
-**Architecture:** A native Rust `PullManager` owns queueing, process execution, cancellation, persistence, and job events. Docker Hub search is also native to avoid WebView CORS. React/Zustand remains the UI-facing state layer and synchronizes with native pull jobs through focused Tauri commands/events.
+**Architecture:** A native Rust `PullManager` owns queueing, process execution, cancellation, persistence, and job events. Docker Hub search is native to avoid WebView CORS. React/Zustand stays the UI-facing state layer and reconciles native pull jobs through focused Tauri commands/events.
 
 **Tech Stack:** Tauri 2, Rust 2021, `serde`/`serde_json`, `reqwest`, React 19, TypeScript, Zustand 5, Radix Popover, Tailwind CSS 4, Node test runner, existing Quay WSLC CLI integration.
 
@@ -13,57 +13,58 @@
 ## Global Constraints
 
 - Docker Hub is the only search provider in this scope.
-- Any non-empty typed reference can still be pulled directly, including `ghcr.io/...` and custom registries.
-- Maximum concurrent pull count is exactly 2; additional jobs remain queued.
-- A duplicate non-terminal job for the same normalized reference must not be created.
+- Any non-empty typed reference remains directly pullable, including `ghcr.io/...` and custom registries.
+- Maximum concurrent pull count is exactly 2; excess jobs remain `queued`.
+- A duplicate non-terminal job for the same trimmed reference must reuse the existing job.
 - Pulls must execute outside the existing `WslcExecutor` mutation mutex.
-- Never fabricate progress; use determinate progress only when byte totals are trustworthy, otherwise render indeterminate progress plus stage/status text.
+- Never fabricate progress: determinate percentage exists only when trusted byte totals are available; otherwise use indeterminate progress and stage text.
 - Window close continues to hide Quay to tray and must not cancel pulls.
-- Explicit application Quit must terminate Quay-owned active pull processes.
-- Restarted Quay processes mark persisted non-terminal jobs as `interrupted`; this feature does not resume downloads after process exit.
-- Keep at most the latest 50 terminal pull jobs.
-- Preserve the existing image removal, volume, container, session, and cube workflows.
-- Follow TDD: add a failing test first, run it, implement the minimum behavior, rerun tests, then commit.
+- Explicit application Quit must request cancellation and wait for Quay-owned pull processes to terminate before executor shutdown, bounded by a short shutdown timeout.
+- Persisted non-terminal jobs become `interrupted` on process restart; downloads do not resume after process exit.
+- Keep all active jobs plus at most the latest 50 terminal jobs.
+- Pull-history persistence failure is nonfatal: log it and keep the in-memory job running.
+- Preserve existing image removal, volume, container, session, cube, tray, and caption-button behavior.
+- Follow TDD: failing test first, verify failure, minimal implementation, verify passing tests, commit.
 
 ---
 
-## File Structure
+## File Map
 
-### Native backend
+### Native
 
-- `src-tauri/src/docker_hub.rs` — Docker Hub transport, response mapping, and `ImageSearchResult` DTO.
-- `src-tauri/src/pull_manager.rs` — pull job model, persistence, queue scheduler, progress parser, process runner, cancellation, and event sink.
-- `src-tauri/src/lib.rs` — owns `PullManager`, exposes focused Tauri commands, emits updates, and performs shutdown cleanup.
-- `src-tauri/Cargo.toml` — adds HTTP dependency for Docker Hub search.
+- `src-tauri/src/docker_hub.rs` — Docker Hub response DTOs, mapping, HTTP search.
+- `src-tauri/src/pull_manager.rs` — pull model, parser, queue, process executor, cancellation, persistence, event sink.
+- `src-tauri/src/lib.rs` — owns native pull manager, Tauri commands/events, shutdown integration.
+- `src-tauri/Cargo.toml` / `src-tauri/Cargo.lock` — `reqwest` dependency.
 
 ### Frontend bridge/state
 
-- `src/lib/wslc/types.ts` — `PullJobStatus`, expanded `PullJob`, and `ImageSearchResult` contracts.
-- `src/lib/tauri.ts` — `imageSearch`, `pullStart`, `pullList`, `pullCancel`, `pullClearHistory`, and `onPullJobUpdated` wrappers.
-- `src/lib/wslc/store.ts` — synchronizes native jobs into Zustand, starts/cancels/clears jobs, and refreshes image inventory after successful pulls.
+- `src/lib/wslc/types.ts` — `PullJobStatus`, expanded `PullJob`, `ImageSearchResult`.
+- `src/lib/tauri.ts` — focused search/pull commands and pull-event listener.
+- `src/lib/wslc/store.ts` — native job reconciliation, commands, completion inventory refresh, failed-pull toast routing.
 
-### Frontend UI
+### UI
 
-- `src/components/image-search.tsx` — debounced Docker Hub search, stale-result protection, keyboard navigation, and direct-reference submission.
-- `src/components/downloads-button.tsx` — title-bar download icon, active badge, and popover trigger.
-- `src/components/downloads-panel.tsx` — active/recent job lists and actions.
-- `src/components/pull-progress.tsx` — determinate/indeterminate progress presentation.
-- `src/components/ui/popover.tsx` — thin Radix Popover wrapper matching existing Quay UI wrappers.
-- `src/components/app-shell.tsx` — composes global search/downloads and starts native pull synchronization once.
-- `src/components/views/images-view.tsx` — removes page-local pull input/button, retains inventory/volume actions.
+- `src/components/image-search.tsx` — debounced suggestions, stale-response guard, keyboard/mouse selection, direct ref submission.
+- `src/components/ui/popover.tsx` — focused Radix wrapper.
+- `src/components/pull-progress.tsx` — determinate/indeterminate rendering.
+- `src/components/downloads-panel.tsx` — Active/Recent jobs, cancel, clear history, View images.
+- `src/components/downloads-button.tsx` — icon + active badge + popover.
+- `src/components/app-shell.tsx` — top-bar composition and one native event subscription.
+- `src/components/views/images-view.tsx` — inventory/volumes only; page-local pull form removed.
 
 ### Tests
 
-- `tests/image-pull-contracts.test.mjs` — contract/source wiring for new native bridge and Zustand actions.
-- `tests/image-search-ui.test.mjs` — title-bar search and old pull-form removal contracts.
-- `tests/downloads-ui.test.mjs` — download icon/panel/progress contracts.
-- `tests/operation-ux.test.mjs` — updated expectation that pulling is no longer represented by generic `operations`.
-- Rust unit tests live beside `docker_hub.rs` and `pull_manager.rs` so CI exercises them through the existing Cargo test step.
-- `package.json` — adds the new Node tests to `test:autostart` so existing CI runs them on x64 and ARM64 Windows.
+- `tests/image-pull-contracts.test.mjs`
+- `tests/image-search-ui.test.mjs`
+- `tests/downloads-ui.test.mjs`
+- update `tests/operation-ux.test.mjs`
+- native tests colocated in `docker_hub.rs` and `pull_manager.rs`
+- update `package.json` so the existing `test:autostart` CI gate runs the new tests.
 
 ---
 
-### Task 1: Define the frontend contracts and focused Tauri bridge
+### Task 1: Define frontend pull/search contracts and bridge functions
 
 **Files:**
 - Modify: `src/lib/wslc/types.ts`
@@ -71,15 +72,10 @@
 - Create: `tests/image-pull-contracts.test.mjs`
 
 **Interfaces:**
-- Produces: `PullJobStatus`, `PullJob`, `ImageSearchResult`
-- Produces: `imageSearch(query): Promise<ImageSearchResult[]>`
-- Produces: `pullStart(reference): Promise<PullJob>`
-- Produces: `pullList(): Promise<PullJob[]>`
-- Produces: `pullCancel(id): Promise<PullJob>`
-- Produces: `pullClearHistory(): Promise<PullJob[]>`
-- Produces: `onPullJobUpdated(handler): Promise<() => void>`
+- Produces `PullJobStatus`, `PullJob`, `ImageSearchResult`.
+- Produces `imageSearch`, `pullStart`, `pullList`, `pullCancel`, `pullClearHistory`, `onPullJobUpdated`.
 
-- [ ] **Step 1: Write the failing frontend contract test**
+- [ ] **Step 1: Write the failing contract test**
 
 Create `tests/image-pull-contracts.test.mjs`:
 
@@ -91,17 +87,17 @@ import { readFile } from "node:fs/promises";
 const types = await readFile(new URL("../src/lib/wslc/types.ts", import.meta.url), "utf8");
 const tauri = await readFile(new URL("../src/lib/tauri.ts", import.meta.url), "utf8");
 
-test("pull jobs expose the native background lifecycle", () => {
-  assert.match(types, /export type PullJobStatus/);
+test("pull jobs expose the background lifecycle", () => {
   for (const status of ["queued", "pulling", "completed", "failed", "cancelling", "cancelled", "interrupted"]) {
     assert.match(types, new RegExp(`"${status}"`));
   }
-  assert.match(types, /progress\?: number/);
+  assert.match(types, /currentBytes: number/);
   assert.match(types, /totalBytes\?: number/);
+  assert.match(types, /progress\?: number/);
   assert.match(types, /bytesPerSecond\?: number/);
 });
 
-test("frontend bridge uses focused image search and pull commands", () => {
+test("tauri bridge exposes focused search and pull APIs", () => {
   for (const command of ["image_search", "pull_start", "pull_list", "pull_cancel", "pull_clear_history"]) {
     assert.match(tauri, new RegExp(`"${command}"`));
   }
@@ -109,19 +105,17 @@ test("frontend bridge uses focused image search and pull commands", () => {
 });
 ```
 
-- [ ] **Step 2: Run the new test and confirm it fails**
-
-Run:
+- [ ] **Step 2: Verify the test fails**
 
 ```bash
 node --test tests/image-pull-contracts.test.mjs
 ```
 
-Expected: FAIL because the expanded types and focused bridge functions do not exist yet.
+Expected: FAIL because the contracts/bridge are not implemented.
 
-- [ ] **Step 3: Expand the TypeScript pull/search contracts**
+- [ ] **Step 3: Expand `types.ts`**
 
-Replace the current minimal `PullJob` definition in `src/lib/wslc/types.ts` with:
+Replace the minimal `PullJob` with:
 
 ```ts
 export type PullJobStatus =
@@ -159,16 +153,15 @@ export interface ImageSearchResult {
 }
 ```
 
-- [ ] **Step 4: Add focused bridge functions in `src/lib/tauri.ts`**
-
-Import the contracts and add:
+- [ ] **Step 4: Add bridge functions to `tauri.ts`**
 
 ```ts
 import type { ImageSearchResult, PullJob } from "@/lib/wslc/types";
 
 export async function imageSearch(query: string): Promise<ImageSearchResult[]> {
-  if (!query.trim() || !isTauri()) return [];
-  return invokeNative<ImageSearchResult[]>("image_search", { query: query.trim() });
+  const value = query.trim();
+  if (!value || !isTauri()) return [];
+  return invokeNative<ImageSearchResult[]>("image_search", { query: value });
 }
 
 export async function pullStart(reference: string): Promise<PullJob> {
@@ -196,20 +189,18 @@ export async function onPullJobUpdated(handler: (job: PullJob) => void): Promise
 }
 ```
 
-Do not remove `invokeWslcHost`; short generic WSLC operations continue using it.
+Keep `invokeWslcHost` for existing short WSLC operations.
 
-- [ ] **Step 5: Run the contract test and TypeScript check**
-
-Run:
+- [ ] **Step 5: Verify Task 1**
 
 ```bash
 node --test tests/image-pull-contracts.test.mjs
 pnpm typecheck
 ```
 
-Expected: both PASS.
+Expected: PASS.
 
-- [ ] **Step 6: Commit Task 1**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add src/lib/wslc/types.ts src/lib/tauri.ts tests/image-pull-contracts.test.mjs
@@ -224,18 +215,54 @@ git commit -m "feat: define background pull frontend contracts"
 - Create: `src-tauri/src/docker_hub.rs`
 - Modify: `src-tauri/src/lib.rs`
 - Modify: `src-tauri/Cargo.toml`
+- Modify: `src-tauri/Cargo.lock`
 
 **Interfaces:**
-- Consumes: frontend invokes Tauri command `image_search(query)`
-- Produces: Rust `ImageSearchResult` serialized in camelCase to the TypeScript contract from Task 1
-- Produces: `pub async fn search(query: &str) -> Result<Vec<ImageSearchResult>, String>`
+- Produces `pub async fn search(query: &str) -> Result<Vec<ImageSearchResult>, String>`.
+- `ImageSearchResult` serializes with camelCase matching Task 1.
 
-- [ ] **Step 1: Add failing Docker Hub response-mapping tests**
+- [ ] **Step 1: Write failing mapping tests**
 
-Create `src-tauri/src/docker_hub.rs` initially with DTO declarations plus tests that reference a not-yet-implemented mapper:
+Start `docker_hub.rs` with DTOs and:
+
+```rust
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn maps_docker_hub_result() {
+        let raw = r#"{"results":[{"repo_name":"nginx","short_description":"Official build","is_official":true,"star_count":21000,"pull_count":1000000,"last_updated":"2026-08-20T00:00:00Z"}]}"#;
+        let result = map_response(raw).unwrap();
+        assert_eq!(result[0].name, "nginx");
+        assert!(result[0].official);
+        assert_eq!(result[0].pulls, Some(1_000_000));
+    }
+
+    #[test]
+    fn trims_and_rejects_empty_query() {
+        assert_eq!(normalize_query(" nginx ").as_deref(), Some("nginx"));
+        assert!(normalize_query("   ").is_none());
+    }
+}
+```
+
+- [ ] **Step 2: Verify failure**
+
+```bash
+cargo test --manifest-path src-tauri/Cargo.toml docker_hub
+```
+
+Expected: FAIL for missing mapper/normalizer.
+
+- [ ] **Step 3: Implement DTO mapping and search**
+
+Use:
 
 ```rust
 use serde::{Deserialize, Serialize};
+
+const SEARCH_URL: &str = "https://hub.docker.com/v2/search/repositories/";
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -248,12 +275,10 @@ pub struct ImageSearchResult {
     pub updated_at: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
-struct SearchResponse {
-    results: Vec<SearchRow>,
-}
+#[derive(Deserialize)]
+struct SearchResponse { results: Vec<SearchRow> }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 struct SearchRow {
     repo_name: String,
     short_description: Option<String>,
@@ -262,53 +287,6 @@ struct SearchRow {
     pull_count: Option<u64>,
     last_updated: Option<String>,
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn maps_docker_hub_results_into_quay_contract() {
-        let raw = r#"{
-          "results": [{
-            "repo_name": "nginx",
-            "short_description": "Official build of Nginx.",
-            "is_official": true,
-            "star_count": 21000,
-            "pull_count": 1000000,
-            "last_updated": "2026-08-20T00:00:00Z"
-          }]
-        }"#;
-        let mapped = map_response(raw).unwrap();
-        assert_eq!(mapped[0].name, "nginx");
-        assert!(mapped[0].official);
-        assert_eq!(mapped[0].pulls, Some(1_000_000));
-    }
-
-    #[test]
-    fn empty_query_returns_no_results_without_network() {
-        assert!(normalize_query("   ").is_none());
-        assert_eq!(normalize_query(" nginx ").as_deref(), Some("nginx"));
-    }
-}
-```
-
-- [ ] **Step 2: Run Cargo tests and confirm failure**
-
-Run:
-
-```bash
-cargo test --manifest-path src-tauri/Cargo.toml docker_hub
-```
-
-Expected: FAIL because `map_response` and `normalize_query` do not exist.
-
-- [ ] **Step 3: Implement mapping, normalization, and HTTP search**
-
-In `docker_hub.rs`, add:
-
-```rust
-const SEARCH_URL: &str = "https://hub.docker.com/v2/search/repositories/";
 
 fn normalize_query(query: &str) -> Option<String> {
     let query = query.trim();
@@ -334,30 +312,26 @@ pub async fn search(query: &str) -> Result<Vec<ImageSearchResult>, String> {
         .timeout(std::time::Duration::from_secs(5))
         .build()
         .map_err(|e| format!("could not create Docker Hub client: {e}"))?;
-    let response = client
-        .get(SEARCH_URL)
+    let response = client.get(SEARCH_URL)
         .query(&[("query", query.as_str()), ("page_size", "8")])
-        .send()
-        .await
+        .send().await
         .map_err(|e| format!("Docker Hub search failed: {e}"))?;
     if !response.status().is_success() {
         return Err(format!("Docker Hub search returned HTTP {}", response.status()));
     }
-    let raw = response.text().await
-        .map_err(|e| format!("could not read Docker Hub response: {e}"))?;
-    map_response(&raw)
+    map_response(&response.text().await.map_err(|e| format!("could not read Docker Hub response: {e}"))?)
 }
 ```
 
-Add to `src-tauri/Cargo.toml`:
+Add:
 
 ```toml
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 ```
 
-- [ ] **Step 4: Wire `image_search` into Tauri**
+- [ ] **Step 4: Wire `image_search`**
 
-In `src-tauri/src/lib.rs` add:
+In `lib.rs`:
 
 ```rust
 mod docker_hub;
@@ -368,11 +342,9 @@ async fn image_search(query: String) -> Result<Vec<docker_hub::ImageSearchResult
 }
 ```
 
-Add `image_search` to `tauri::generate_handler![...]`.
+Add `image_search` to `tauri::generate_handler!`.
 
-- [ ] **Step 5: Run native tests and TypeScript check**
-
-Run:
+- [ ] **Step 5: Verify Task 2**
 
 ```bash
 cargo test --manifest-path src-tauri/Cargo.toml
@@ -381,7 +353,7 @@ pnpm typecheck
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit Task 2**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add src-tauri/src/docker_hub.rs src-tauri/src/lib.rs src-tauri/Cargo.toml src-tauri/Cargo.lock
@@ -390,35 +362,24 @@ git commit -m "feat: add Docker Hub image search"
 
 ---
 
-### Task 3: Build the pull job model, progress parser, and persistence layer
+### Task 3: Add pull model, progress parser, persistence, and history pruning
 
 **Files:**
 - Create: `src-tauri/src/pull_manager.rs`
 - Modify: `src-tauri/src/lib.rs`
 
 **Interfaces:**
-- Produces: Rust `PullJobStatus`, `PullJob`, `ProgressUpdate`
-- Produces: `parse_progress_fragment(fragment: &str) -> ProgressUpdate`
-- Produces: persistence helpers that store the latest 50 terminal jobs and convert stale non-terminal jobs to `interrupted` on load
+- Produces `PullJobStatus`, `PullJob`, `ProgressUpdate`.
+- Produces `parse_progress_fragment`, `load_jobs`, `save_jobs`, `prune_history`.
 
-- [ ] **Step 1: Write failing parser and persistence tests**
+- [ ] **Step 1: Write failing parser/restart/history tests**
 
-Start `pull_manager.rs` with the public job contract and these tests:
+Use these contract shapes:
 
 ```rust
-use serde::{Deserialize, Serialize};
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
-pub enum PullJobStatus {
-    Queued,
-    Pulling,
-    Completed,
-    Failed,
-    Cancelling,
-    Cancelled,
-    Interrupted,
-}
+pub enum PullJobStatus { Queued, Pulling, Completed, Failed, Cancelling, Cancelled, Interrupted }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -437,7 +398,54 @@ pub struct PullJob {
     pub message: Option<String>,
     pub error: Option<String>,
 }
+```
 
+Tests must assert:
+
+```rust
+#[test]
+fn byte_fraction_is_determinate() {
+    let update = parse_progress_fragment("Downloading 12.5 MB / 50 MB");
+    assert_eq!(update.current_bytes, Some(13_107_200));
+    assert_eq!(update.total_bytes, Some(52_428_800));
+    assert_eq!(update.progress, Some(25.0));
+}
+
+#[test]
+fn stage_only_output_stays_indeterminate() {
+    let update = parse_progress_fragment("Pulling fs layer");
+    assert_eq!(update.progress, None);
+    assert_eq!(update.message.as_deref(), Some("Pulling fs layer"));
+}
+
+#[test]
+fn restart_marks_active_job_interrupted() {
+    let jobs = normalize_loaded_jobs(vec![sample_job(PullJobStatus::Pulling)], 2000);
+    assert_eq!(jobs[0].status, PullJobStatus::Interrupted);
+    assert_eq!(jobs[0].finished_at, Some(2000));
+}
+
+#[test]
+fn pruning_keeps_all_active_and_only_fifty_terminal_jobs() {
+    let mut jobs = (0..55).map(|i| terminal_job(i)).collect::<Vec<_>>();
+    jobs.push(sample_job(PullJobStatus::Pulling));
+    prune_history(&mut jobs);
+    assert_eq!(jobs.iter().filter(|j| is_terminal(&j.status)).count(), 50);
+    assert_eq!(jobs.iter().filter(|j| !is_terminal(&j.status)).count(), 1);
+}
+```
+
+- [ ] **Step 2: Verify failure**
+
+```bash
+cargo test --manifest-path src-tauri/Cargo.toml pull_manager
+```
+
+- [ ] **Step 3: Implement trusted byte parsing**
+
+Implement `B`, `KB`, `MB`, `GB` conversion and only set progress when both sides of `current / total` parse. All unrecognized non-empty text becomes `message` with `progress = None`.
+
+```rust
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ProgressUpdate {
     pub current_bytes: Option<u64>,
@@ -445,177 +453,80 @@ pub struct ProgressUpdate {
     pub progress: Option<f64>,
     pub message: Option<String>,
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parses_byte_fraction_without_inventing_missing_values() {
-        let update = parse_progress_fragment("Downloading 12.5 MB / 50 MB");
-        assert_eq!(update.current_bytes, Some(13_107_200));
-        assert_eq!(update.total_bytes, Some(52_428_800));
-        assert_eq!(update.progress, Some(25.0));
-    }
-
-    #[test]
-    fn stage_only_output_is_indeterminate() {
-        let update = parse_progress_fragment("Pulling fs layer");
-        assert_eq!(update.progress, None);
-        assert_eq!(update.total_bytes, None);
-        assert_eq!(update.message.as_deref(), Some("Pulling fs layer"));
-    }
-
-    #[test]
-    fn persisted_active_jobs_become_interrupted() {
-        let now = 1_700_000_000_000_u64;
-        let loaded = normalize_loaded_jobs(vec![PullJob {
-            id: "pull-1".into(), reference: "nginx:latest".into(), status: PullJobStatus::Pulling,
-            current_bytes: 1, total_bytes: Some(10), progress: Some(10.0), bytes_per_second: None,
-            started_at: Some(now - 10), created_at: now - 20, updated_at: now - 10,
-            finished_at: None, message: None, error: None,
-        }], now);
-        assert_eq!(loaded[0].status, PullJobStatus::Interrupted);
-        assert_eq!(loaded[0].finished_at, Some(now));
-    }
-}
 ```
 
-- [ ] **Step 2: Run the tests and confirm failure**
+Do not assume a WSLC JSON flag. The system executor in Task 4 feeds whatever stdout/stderr WSLC currently emits into this parser.
 
-Run:
+- [ ] **Step 4: Implement persistence and pruning**
 
-```bash
-cargo test --manifest-path src-tauri/Cargo.toml pull_manager
-```
-
-Expected: FAIL because parser/load normalization functions are missing.
-
-- [ ] **Step 3: Implement byte parsing without a new regex dependency**
-
-Implement helpers that recognize `B`, `KB`, `MB`, and `GB`, split only when a trustworthy `current / total` pair exists, and otherwise retain the raw stage text as the message:
-
-```rust
-fn parse_size(token: &str, unit: &str) -> Option<u64> {
-    let value = token.trim().parse::<f64>().ok()?;
-    let multiplier = match unit.trim().to_ascii_uppercase().as_str() {
-        "B" => 1.0,
-        "KB" => 1024.0,
-        "MB" => 1024.0 * 1024.0,
-        "GB" => 1024.0 * 1024.0 * 1024.0,
-        _ => return None,
-    };
-    Some((value * multiplier) as u64)
-}
-
-pub fn parse_progress_fragment(fragment: &str) -> ProgressUpdate {
-    let text = fragment.trim();
-    let words: Vec<&str> = text.split_whitespace().collect();
-    for i in 0..words.len().saturating_sub(4) {
-        if words.get(i + 2) == Some(&"/") {
-            if let (Some(current), Some(total)) = (
-                parse_size(words[i], words[i + 1]),
-                parse_size(words[i + 3], words[i + 4]),
-            ) {
-                if total > 0 {
-                    return ProgressUpdate {
-                        current_bytes: Some(current),
-                        total_bytes: Some(total),
-                        progress: Some(((current as f64 / total as f64) * 100.0).clamp(0.0, 100.0)),
-                        message: Some(text.to_string()),
-                    };
-                }
-            }
-        }
-    }
-    ProgressUpdate { message: (!text.is_empty()).then(|| text.to_string()), ..Default::default() }
-}
-```
-
-- [ ] **Step 4: Implement persistence and restart normalization**
-
-Use a JSON file path provided by the caller. Persist after every state transition, but persistence failure must not fail the pull itself.
-
-Implement:
+Required behavior:
 
 ```rust
 fn is_terminal(status: &PullJobStatus) -> bool {
     matches!(status, PullJobStatus::Completed | PullJobStatus::Failed | PullJobStatus::Cancelled | PullJobStatus::Interrupted)
 }
 
-fn normalize_loaded_jobs(mut jobs: Vec<PullJob>, now: u64) -> Vec<PullJob> {
-    for job in &mut jobs {
-        if !is_terminal(&job.status) {
-            job.status = PullJobStatus::Interrupted;
-            job.updated_at = now;
-            job.finished_at = Some(now);
-            job.error = Some("Quay exited before this pull finished".into());
-        }
-    }
-    jobs.sort_by_key(|job| std::cmp::Reverse(job.updated_at));
-    jobs.into_iter().take(50).collect()
-}
-
-fn load_jobs(path: &std::path::Path, now: u64) -> Vec<PullJob> {
-    let Ok(raw) = std::fs::read_to_string(path) else { return Vec::new(); };
-    let Ok(jobs) = serde_json::from_str::<Vec<PullJob>>(&raw) else { return Vec::new(); };
-    normalize_loaded_jobs(jobs, now)
-}
-
-fn save_jobs(path: &std::path::Path, jobs: &[PullJob]) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("could not create pull history directory: {e}"))?;
-    }
-    let raw = serde_json::to_string_pretty(jobs).map_err(|e| e.to_string())?;
-    std::fs::write(path, raw).map_err(|e| format!("could not persist pull history: {e}"))
+fn prune_history(jobs: &mut Vec<PullJob>) {
+    let mut terminal = jobs.iter().filter(|j| is_terminal(&j.status)).cloned().collect::<Vec<_>>();
+    terminal.sort_by_key(|j| std::cmp::Reverse(j.updated_at));
+    terminal.truncate(50);
+    let mut active = jobs.iter().filter(|j| !is_terminal(&j.status)).cloned().collect::<Vec<_>>();
+    active.extend(terminal);
+    *jobs = active;
 }
 ```
 
-Add a round-trip test using a unique file under `std::env::temp_dir()` and remove it at the end.
+`normalize_loaded_jobs` changes every non-terminal persisted job to `Interrupted`, sets `updated_at`/`finished_at` to `now`, sets error to `Quay exited before this pull finished`, then prunes.
 
-- [ ] **Step 5: Register the module and rerun native tests**
+`save_jobs(path, jobs)` writes pretty JSON and returns `Result<(), String>`. `load_jobs(path, now)` returns `Vec::new()` when the file does not exist and treats malformed history as empty instead of preventing app startup.
 
-Add `#[cfg(windows)] mod pull_manager;` in `src-tauri/src/lib.rs` so the production process runner can remain Windows-only while its unit tests run in the Windows CI matrix.
+Add a round-trip test using a unique `std::env::temp_dir()` file and delete it afterward.
 
-Run:
+- [ ] **Step 5: Register the module without platform-gating the model/tests**
+
+Add:
+
+```rust
+mod pull_manager;
+```
+
+Windows-only process details remain guarded inside `pull_manager.rs`; keeping the module itself unconditional avoids command/type divergence.
+
+- [ ] **Step 6: Verify and commit**
 
 ```bash
 cargo test --manifest-path src-tauri/Cargo.toml
-```
-
-Expected: PASS.
-
-- [ ] **Step 6: Commit Task 3**
-
-```bash
 git add src-tauri/src/pull_manager.rs src-tauri/src/lib.rs
 git commit -m "feat: add pull job model and persistence"
 ```
 
 ---
 
-### Task 4: Implement the native two-slot background pull scheduler and cancellation
+### Task 4: Implement the two-slot native pull scheduler, process runner, cancellation, and blocking shutdown
 
 **Files:**
 - Modify: `src-tauri/src/pull_manager.rs`
 
 **Interfaces:**
-- Produces: `PullExecutor` abstraction for testability
-- Produces: `PullManager::start`, `list`, `cancel`, `clear_history`, `shutdown`
-- Produces: `PullEventSink` abstraction used by Tauri wiring in Task 5
-
-- [ ] **Step 1: Add failing queue/concurrency/cancellation tests with a fake executor**
-
-Define these interfaces before implementing the manager:
+- Produces `PullExecutor`, `PullEventSink`, `PullManager`.
+- `PullManager` API:
 
 ```rust
-use std::sync::{Arc, atomic::AtomicBool};
+pub fn new(history_path: PathBuf, executor: Arc<dyn PullExecutor>, sink: Arc<dyn PullEventSink>, concurrency: usize) -> Self;
+pub fn start(&self, reference: &str) -> Result<PullJob, String>;
+pub fn list(&self) -> Vec<PullJob>;
+pub fn cancel(&self, id: &str) -> Result<PullJob, String>;
+pub fn clear_history(&self) -> Vec<PullJob>;
+pub fn shutdown(&self);
+```
 
+- [ ] **Step 1: Write failing scheduler tests with a fake executor**
+
+Interfaces:
+
+```rust
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PullExecution {
-    Completed,
-    Cancelled,
-}
+pub enum PullExecution { Completed, Cancelled }
 
 pub trait PullExecutor: Send + Sync + 'static {
     fn execute(
@@ -631,56 +542,36 @@ pub trait PullEventSink: Send + Sync + 'static {
 }
 ```
 
-Add tests using a fake executor that blocks each job until the test releases it. Required assertions:
+Fake-executor tests must cover:
 
 ```rust
 #[test]
-fn starts_only_two_jobs_and_queues_the_third() {
-    let (manager, fake) = test_manager(2);
-    manager.start("one:latest").unwrap();
-    manager.start("two:latest").unwrap();
-    manager.start("three:latest").unwrap();
-    fake.wait_for_running(2);
-    let jobs = manager.list();
-    assert_eq!(jobs.iter().filter(|j| j.status == PullJobStatus::Pulling).count(), 2);
-    assert_eq!(jobs.iter().filter(|j| j.status == PullJobStatus::Queued).count(), 1);
-}
+fn two_run_and_third_waits() { /* start 3, fake blocks, assert 2 Pulling + 1 Queued */ }
 
 #[test]
-fn duplicate_active_reference_returns_existing_job() {
-    let (manager, _fake) = test_manager(2);
-    let first = manager.start(" nginx:latest ").unwrap();
-    let second = manager.start("nginx:latest").unwrap();
-    assert_eq!(first.id, second.id);
-    assert_eq!(manager.list().len(), 1);
-}
+fn duplicate_active_reference_reuses_job_id() { /* " nginx:latest " and "nginx:latest" => same id */ }
 
 #[test]
-fn cancelling_running_job_opens_slot_for_next_job() {
-    let (manager, fake) = test_manager(2);
-    let first = manager.start("one:latest").unwrap();
-    manager.start("two:latest").unwrap();
-    manager.start("three:latest").unwrap();
-    fake.wait_for_running(2);
-    manager.cancel(&first.id).unwrap();
-    fake.wait_until_started("three:latest");
-    assert!(manager.list().iter().any(|j| j.reference == "three:latest" && j.status == PullJobStatus::Pulling));
-}
+fn cancelling_running_job_starts_next_queued_job() { /* cancel first, fake observes cancellation, third starts */ }
+
+#[test]
+fn queued_cancel_never_calls_executor() { /* third queued, cancel it, assert fake never starts it */ }
+
+#[test]
+fn shutdown_waits_until_running_fake_jobs_observe_cancellation() { /* shutdown returns only after fake active count reaches zero */ }
 ```
 
-- [ ] **Step 2: Run the scheduler tests and confirm failure**
+Implement the bodies directly in the test module with a `FakeExecutor` using `Mutex`, `Condvar`, and cancellation polling; do not use real WSLC/network in unit tests.
 
-Run:
+- [ ] **Step 2: Verify failure**
 
 ```bash
 cargo test --manifest-path src-tauri/Cargo.toml pull_manager
 ```
 
-Expected: FAIL because `PullManager` and the scheduler do not exist.
+- [ ] **Step 3: Implement queue state**
 
-- [ ] **Step 3: Implement `PullManager` state and scheduling**
-
-Use one shared inner object so background completion can schedule the next queued job:
+Use:
 
 ```rust
 struct PullState {
@@ -690,97 +581,90 @@ struct PullState {
 }
 
 struct PullManagerInner {
-    state: std::sync::Mutex<PullState>,
+    state: Mutex<PullState>,
+    changed: Condvar,
     executor: Arc<dyn PullExecutor>,
     sink: Arc<dyn PullEventSink>,
-    history_path: std::path::PathBuf,
+    history_path: PathBuf,
     concurrency: usize,
-    sequence: std::sync::atomic::AtomicU64,
+    sequence: AtomicU64,
     shutting_down: AtomicBool,
 }
+```
 
-#[derive(Clone)]
-pub struct PullManager {
-    inner: Arc<PullManagerInner>,
+`start` trims, rejects empty, reuses an existing `Queued`/`Pulling`/`Cancelling` job for the same reference, otherwise creates `Queued`, emits, persists, then schedules.
+
+`schedule` starts jobs while `running.len() < concurrency`, marks `Pulling`, sets `started_at`, creates cancellation flag, emits, persists, and spawns one thread per job. Completion updates terminal state, removes running/cancellation entries, calls `changed.notify_all()`, prunes, persists, emits, then schedules the next queued job unless shutting down.
+
+Use a helper:
+
+```rust
+fn persist_nonfatal(&self, jobs: &[PullJob]) {
+    if let Err(error) = save_jobs(&self.inner.history_path, jobs) {
+        eprintln!("pull history: {error}");
+    }
 }
 ```
 
-`start(reference)` must trim the reference, reject only an empty string, reuse an existing job when the exact normalized reference is `queued`, `pulling`, or `cancelling`, create a `queued` job otherwise, persist it, emit it, then call `schedule()`.
+- [ ] **Step 4: Apply progress updates without excessive persistence**
 
-`schedule()` must claim queued jobs while `running.len() < 2`, set them to `pulling`, create cancellation flags, emit/persist each transition, and spawn one Rust thread per active job. Completion must remove the job from `running`/`cancellations`, set `completed`, `failed`, or `cancelled`, emit/persist, then call `schedule()` again.
+Each `ProgressUpdate` updates the in-memory job and emits a job snapshot. Persist progress snapshots no more often than once per second per job; state transitions persist immediately. This keeps crash metadata useful without writing the JSON file on every carriage-return fragment.
 
-- [ ] **Step 4: Implement the real Windows process executor**
+If successive trusted `current_bytes` updates have a positive time delta, compute `bytes_per_second = delta_bytes * 1000 / delta_ms`; otherwise leave it `None`.
 
-Create `SystemPullExecutor` implementing `PullExecutor`. Launch `wslc pull <reference>` with no console window and piped stdout/stderr:
+- [ ] **Step 5: Implement `SystemPullExecutor`**
+
+Launch:
 
 ```rust
-let mut command = std::process::Command::new("wslc");
-command
-    .args(["pull", reference])
-    .stdin(std::process::Stdio::null())
-    .stdout(std::process::Stdio::piped())
-    .stderr(std::process::Stdio::piped());
-use std::os::windows::process::CommandExt;
-command.creation_flags(0x0800_0000);
+let mut command = Command::new("wslc");
+command.args(["pull", reference])
+    .stdin(Stdio::null())
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped());
+#[cfg(windows)] {
+    use std::os::windows::process::CommandExt;
+    command.creation_flags(0x0800_0000);
+}
 ```
 
-Read stdout and stderr concurrently. Split progress fragments on both `\n` and `\r` so carriage-return based progress updates are not lost. Every non-empty fragment calls `parse_progress_fragment` and forwards the normalized update.
+Read stdout/stderr concurrently and split fragments on both `\n` and `\r`. Forward every non-empty fragment through `parse_progress_fragment`.
 
-Poll `child.try_wait()` roughly every 50 ms. When the cancellation flag becomes true, terminate the owned process tree on Windows with:
+Poll `try_wait()` about every 50 ms. On cancellation:
 
 ```rust
-let pid = child.id().to_string();
-let _ = std::process::Command::new("taskkill")
-    .args(["/PID", &pid, "/T", "/F"])
-    .stdin(std::process::Stdio::null())
-    .stdout(std::process::Stdio::null())
-    .stderr(std::process::Stdio::null())
-    .status();
+#[cfg(windows)]
+{
+    let pid = child.id().to_string();
+    let _ = Command::new("taskkill")
+        .args(["/PID", &pid, "/T", "/F"])
+        .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).status();
+}
 let _ = child.kill();
 let _ = child.wait();
 return Ok(PullExecution::Cancelled);
 ```
 
-A zero exit code returns `Completed`. A non-zero exit returns an error containing the collected stderr summary.
+Zero exit => `Completed`; non-zero exit => `Err` containing the stderr summary.
 
-- [ ] **Step 5: Implement cancel, history cleanup, and shutdown**
+- [ ] **Step 6: Implement cancel/clear/shutdown exactly**
 
-Behavior must be exact:
+- Queued cancel: immediately `Cancelled`, never starts.
+- Running cancel: transition to `Cancelling`, emit/persist, then set cancellation flag; executor completion produces `Cancelled`.
+- `clear_history`: remove `Completed`, `Failed`, `Cancelled`, `Interrupted`; never remove active jobs.
+- `shutdown`: set `shutting_down`, mark queued jobs `Cancelled`, set all active cancellation flags, then wait on `changed` until `running.is_empty()` or 5 seconds have elapsed. Log a warning if the timeout expires. Do not schedule new jobs during shutdown.
 
-```rust
-pub fn cancel(&self, id: &str) -> Result<PullJob, String>;
-pub fn clear_history(&self) -> Vec<PullJob>;
-pub fn list(&self) -> Vec<PullJob>;
-pub fn shutdown(&self);
-```
-
-- Queued cancellation immediately sets `cancelled` and never starts the executor.
-- Pulling cancellation first sets `cancelling`, then flips its `AtomicBool`; executor completion sets `cancelled`.
-- `clear_history` removes only terminal jobs; active/queued jobs remain.
-- `shutdown` sets `shutting_down = true`, flips all running cancellation flags, marks queued jobs `cancelled`, and prevents the scheduler from starting another job.
-
-Add tests for queued cancellation, terminal-history cleanup, and shutdown preventing queued work from starting.
-
-- [ ] **Step 6: Run the full native test suite**
-
-Run:
+- [ ] **Step 7: Verify and commit**
 
 ```bash
 cargo test --manifest-path src-tauri/Cargo.toml
-```
-
-Expected: PASS including max-concurrency, duplicate suppression, cancellation, persistence, parser, and shutdown tests.
-
-- [ ] **Step 7: Commit Task 4**
-
-```bash
 git add src-tauri/src/pull_manager.rs
 git commit -m "feat: run image pulls as background jobs"
 ```
 
 ---
 
-### Task 5: Wire native pull commands/events and synchronize Zustand
+### Task 5: Wire native pull commands/events and Zustand reconciliation
 
 **Files:**
 - Modify: `src-tauri/src/lib.rs`
@@ -789,61 +673,36 @@ git commit -m "feat: run image pulls as background jobs"
 - Modify: `tests/operation-ux.test.mjs`
 
 **Interfaces:**
-- Consumes: `PullManager` from Task 4
-- Consumes: bridge functions from Task 1
-- Produces native commands: `pull_start`, `pull_list`, `pull_cancel`, `pull_clear_history`
-- Produces Zustand actions: `startPull`, `cancelPull`, `clearPullHistory`, `syncPullJobs`, `applyPullJobUpdate`
+- Native commands: `pull_start`, `pull_list`, `pull_cancel`, `pull_clear_history`.
+- Zustand actions: `startPull`, `cancelPull`, `clearPullHistory`, `syncPullJobs`, `applyPullJobUpdate`.
 
-- [ ] **Step 1: Extend failing contract tests for the native command wiring and Zustand API**
+- [ ] **Step 1: Extend failing source-contract tests**
 
-Add to `tests/image-pull-contracts.test.mjs`:
+Add assertions that `lib.rs` contains all four pull command functions plus `pull_manager.shutdown()`, and `store.ts` contains all five Zustand actions while no longer routing image pulls through `runOperation`.
 
-```js
-const nativeLib = await readFile(new URL("../src-tauri/src/lib.rs", import.meta.url), "utf8");
-const store = await readFile(new URL("../src/lib/wslc/store.ts", import.meta.url), "utf8");
-
-test("native app exposes focused pull manager commands", () => {
-  for (const command of ["pull_start", "pull_list", "pull_cancel", "pull_clear_history"]) {
-    assert.match(nativeLib, new RegExp(`fn ${command}`));
-  }
-  assert.match(nativeLib, /pull_manager\.shutdown\(\)/);
-});
-
-test("zustand synchronizes native pull jobs instead of generic operations", () => {
-  for (const action of ["startPull", "cancelPull", "clearPullHistory", "syncPullJobs", "applyPullJobUpdate"]) {
-    assert.match(store, new RegExp(`${action}:`));
-  }
-  assert.doesNotMatch(store, /runOperation\(`image:\$\{ref\}`/);
-});
-```
-
-Update `tests/operation-ux.test.mjs` by removing the old `"image pulls show an explicit pulling state"` assertion and replacing it with:
+Replace the old `operation-ux` pull assertion with:
 
 ```js
-test("image pulling is no longer represented by the generic operation map", () => {
+test("image pulling is not tracked by generic operations", () => {
   assert.doesNotMatch(store, /runOperation\(`image:\$\{ref\}`/);
   assert.match(images, /removeImage/);
 });
 ```
 
-- [ ] **Step 2: Run the focused Node tests and confirm failure**
-
-Run:
+- [ ] **Step 2: Verify failure**
 
 ```bash
 node --test tests/image-pull-contracts.test.mjs tests/operation-ux.test.mjs
 ```
 
-Expected: FAIL until native commands and Zustand actions are wired.
+- [ ] **Step 3: Construct the native manager in Tauri setup**
 
-- [ ] **Step 3: Make `Backend` own the pull manager and emit Tauri events**
-
-In `src-tauri/src/lib.rs`, import `tauri::Emitter` and add a Tauri event sink:
+Add a Tauri event sink:
 
 ```rust
 #[cfg(windows)]
 #[derive(Clone)]
-struct TauriPullSink(tauri::AppHandle);
+struct TauriPullSink(AppHandle);
 
 #[cfg(windows)]
 impl pull_manager::PullEventSink for TauriPullSink {
@@ -853,55 +712,50 @@ impl pull_manager::PullEventSink for TauriPullSink {
 }
 ```
 
-Extend `Backend`:
+Extend `Backend` with `#[cfg(windows)] pull_manager: pull_manager::PullManager`.
+
+Change `Backend::new` to accept the manager on Windows. In `.setup`:
 
 ```rust
-pub struct Backend {
-    #[cfg(windows)] executor: wslc_executor::WslcExecutor,
-    #[cfg(windows)] host: Arc<Mutex<wslc_runtime::HostSampler>>,
-    #[cfg(windows)] pull_manager: pull_manager::PullManager,
-}
+#[cfg(windows)]
+let pull_manager = {
+    let history_path = app.path().app_data_dir()?.join("pull-jobs.json");
+    pull_manager::PullManager::new(
+        history_path,
+        Arc::new(pull_manager::SystemPullExecutor),
+        Arc::new(TauriPullSink(app.handle().clone())),
+        2,
+    )
+};
+#[cfg(windows)]
+app.manage(Backend::new(pull_manager));
+#[cfg(not(windows))]
+app.manage(Backend::new());
 ```
 
-Change backend construction in `.setup(...)` so it can use `app.handle()` and `app.path().app_data_dir()` to build `<app-data>/pull-jobs.json`, then `app.manage(Backend::new(app.handle())?)`.
+Keep existing executor/host construction semantics inside `Backend::new`.
 
-- [ ] **Step 4: Add the four native pull commands**
+- [ ] **Step 4: Add platform-safe pull commands**
 
-Use `State<'_, Backend>` and return serialized `PullJob` values directly:
+Follow the same `#[cfg(windows)]` body pattern already used by `wslc_invoke` so command names still compile cross-platform:
 
 ```rust
 #[tauri::command]
 fn pull_start(backend: State<'_, Backend>, reference: String) -> Result<pull_manager::PullJob, String> {
-    backend.pull_manager.start(&reference)
-}
-
-#[tauri::command]
-fn pull_list(backend: State<'_, Backend>) -> Vec<pull_manager::PullJob> {
-    backend.pull_manager.list()
-}
-
-#[tauri::command]
-fn pull_cancel(backend: State<'_, Backend>, id: String) -> Result<pull_manager::PullJob, String> {
-    backend.pull_manager.cancel(&id)
-}
-
-#[tauri::command]
-fn pull_clear_history(backend: State<'_, Backend>) -> Vec<pull_manager::PullJob> {
-    backend.pull_manager.clear_history()
+    #[cfg(windows)] { return backend.pull_manager.start(&reference); }
+    #[cfg(not(windows))] { let _ = backend; let _ = reference; Err("WSLC pulls are only available on Windows".into()) }
 }
 ```
 
-Add all four names to `tauri::generate_handler!`.
+Implement equivalent `pull_list`, `pull_cancel`, `pull_clear_history`, add all four to `generate_handler!`.
 
-Before `executor.shutdown()` in the existing exit handler, call:
+In the existing app exit handler, call `pull_manager.shutdown()` before `executor.shutdown()`.
 
-```rust
-app.state::<Backend>().pull_manager.shutdown();
-```
+- [ ] **Step 5: Replace Zustand `pullImage` with native actions**
 
-- [ ] **Step 5: Replace the old image pull action in Zustand**
+Remove `pullImage` and remove `"pulling"` from `OperationStatus`.
 
-Update imports from `@/lib/tauri` to include the bridge functions. Change the state interface:
+Add:
 
 ```ts
 startPull: (reference: string) => Promise<PullJob | null>;
@@ -911,69 +765,43 @@ syncPullJobs: () => Promise<void>;
 applyPullJobUpdate: (job: PullJob) => void;
 ```
 
-Remove `pullImage` and remove `"pulling"` from `OperationStatus` because image pulls no longer use `operations`.
-
-Implement job upsert by ID:
+Use:
 
 ```ts
 const upsertPull = (pulls: PullJob[], job: PullJob) => {
-  const existing = pulls.findIndex((item) => item.id === job.id);
-  if (existing < 0) return [job, ...pulls];
+  const index = pulls.findIndex((item) => item.id === job.id);
+  if (index < 0) return [job, ...pulls];
   const next = pulls.slice();
-  next[existing] = job;
+  next[index] = job;
   return next;
 };
 ```
 
-Implement actions:
+`applyPullJobUpdate` must:
 
 ```ts
-startPull: async (reference) => {
-  const value = reference.trim();
-  if (!value) return null;
-  try {
-    const job = await pullStart(value);
-    get().applyPullJobUpdate(job);
-    return job;
-  } catch (error) {
-    set({ lastError: error instanceof Error ? error.message : String(error) });
-    return null;
-  }
-},
 applyPullJobUpdate: (job) => {
   const previous = get().pulls.find((item) => item.id === job.id);
   set((state) => ({ pulls: upsertPull(state.pulls, job) }));
   if (job.status === "completed" && previous?.status !== "completed") void refreshInventory();
-},
-syncPullJobs: async () => {
-  try { set({ pulls: await pullList() }); }
-  catch (error) { set({ lastError: error instanceof Error ? error.message : String(error) }); }
-},
-cancelPull: async (id) => {
-  try { get().applyPullJobUpdate(await pullCancel(id)); }
-  catch (error) { set({ lastError: error instanceof Error ? error.message : String(error) }); }
-},
-clearPullHistory: async () => {
-  try { set({ pulls: await pullClearHistory() }); }
-  catch (error) { set({ lastError: error instanceof Error ? error.message : String(error) }); }
+  if (job.status === "failed" && previous?.status !== "failed") {
+    set({ lastError: job.error || `Pull ${job.reference} failed` });
+  }
 },
 ```
 
-- [ ] **Step 6: Run focused tests, TypeScript, and Cargo tests**
+This deliberately reuses the existing `lastError` → Sonner error-toast path for failed pulls. Search errors remain local to the search dropdown.
 
-Run:
+- [ ] **Step 6: Implement the remaining store actions**
+
+`startPull` trims/rejects empty, invokes `pullStart`, then upserts returned job. `syncPullJobs` replaces `pulls` from `pullList`. `cancelPull` upserts returned job. `clearPullHistory` replaces `pulls` with the returned native list. Native bridge errors set `lastError`.
+
+- [ ] **Step 7: Verify and commit**
 
 ```bash
 node --test tests/image-pull-contracts.test.mjs tests/operation-ux.test.mjs
 pnpm typecheck
 cargo test --manifest-path src-tauri/Cargo.toml
-```
-
-Expected: PASS.
-
-- [ ] **Step 7: Commit Task 5**
-
-```bash
 git add src-tauri/src/lib.rs src/lib/wslc/store.ts tests/image-pull-contracts.test.mjs tests/operation-ux.test.mjs
 git commit -m "feat: synchronize native pull jobs with Quay state"
 ```
@@ -989,122 +817,98 @@ git commit -m "feat: synchronize native pull jobs with Quay state"
 - Create: `tests/image-search-ui.test.mjs`
 
 **Interfaces:**
-- Consumes: `imageSearch()` from Task 1
-- Consumes: `startPull()` from Task 5
-- Produces: title-bar global search with direct-reference fallback
+- `ImageSearch({ disabled?: boolean, className?: string })`.
+- Consumes `imageSearch()` and `startPull()`.
 
-- [ ] **Step 1: Write failing title-bar search/UI contract tests**
+- [ ] **Step 1: Write failing UI contracts**
 
-Create `tests/image-search-ui.test.mjs`:
+Create `tests/image-search-ui.test.mjs` asserting:
 
 ```js
-import test from "node:test";
-import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
-
-const shell = await readFile(new URL("../src/components/app-shell.tsx", import.meta.url), "utf8");
-const images = await readFile(new URL("../src/components/views/images-view.tsx", import.meta.url), "utf8");
-const search = await readFile(new URL("../src/components/image-search.tsx", import.meta.url), "utf8").catch(() => "");
-
-test("title bar owns global image search", () => {
-  assert.match(shell, /<ImageSearch/);
-  assert.match(search, /Search Docker Hub images/);
-  assert.match(search, /300/);
-  assert.match(search, /ArrowDown|ArrowUp/);
-  assert.match(search, /Enter/);
-});
-
-test("search preserves direct custom registry pulls", () => {
-  assert.match(search, /startPull\(value\)/);
-  assert.match(search, /imageSearch/);
-});
-
-test("images page no longer contains the image pull form", () => {
-  assert.doesNotMatch(images, /pull-catalog/);
-  assert.doesNotMatch(images, /Pulling…/);
-  assert.doesNotMatch(images, /type="submit"[^>]*>[^<]*Pull/);
-});
+assert.match(shell, /<ImageSearch/);
+assert.match(search, /Search Docker Hub images/);
+assert.match(search, /300/);
+assert.match(search, /ArrowDown|ArrowUp/);
+assert.match(search, /Enter/);
+assert.match(search, /requestId/);
+assert.doesNotMatch(images, /pull-catalog/);
+assert.doesNotMatch(images, /pullImage/);
 ```
 
-- [ ] **Step 2: Run the UI contract test and confirm failure**
+Also assert the search component calls `startPull(value)` for direct typed refs and `${result.name}:latest` for selected Docker Hub results.
 
-Run:
+- [ ] **Step 2: Verify failure**
 
 ```bash
 node --test tests/image-search-ui.test.mjs
 ```
 
-Expected: FAIL because `ImageSearch` does not exist and the Images page still owns the pull form.
+- [ ] **Step 3: Implement debounce/stale-result handling**
 
-- [ ] **Step 3: Implement `ImageSearch` with debounce and stale-result protection**
-
-The component must use component-local query/results/open/error/selection state and `useWslc((s) => s.startPull)`.
-
-Use this request sequencing pattern so slow older responses never overwrite newer ones:
+Use component-local query/results/open/error/highlight state. In the effect, invalidate the request ID before checking whether the query became empty:
 
 ```ts
 const requestId = useRef(0);
 
 useEffect(() => {
+  const id = ++requestId.current;
   const value = query.trim();
-  if (!value) {
+  if (!value || disabled) {
     setResults([]);
     setSearchError(null);
+    setOpen(false);
     return;
   }
-  const id = ++requestId.current;
   const timer = window.setTimeout(() => {
     void imageSearch(value)
       .then((next) => {
         if (id !== requestId.current) return;
-        setResults(next);
+        setResults(next.slice(0, 8));
+        setHighlighted(-1);
         setSearchError(null);
         setOpen(true);
       })
       .catch((error) => {
         if (id !== requestId.current) return;
         setResults([]);
+        setHighlighted(-1);
         setSearchError(error instanceof Error ? error.message : String(error));
         setOpen(true);
       });
   }, 300);
   return () => window.clearTimeout(timer);
-}, [query]);
+}, [query, disabled]);
 ```
 
-Keyboard semantics must be exact:
+Keyboard semantics:
 
-- `ArrowDown`/`ArrowUp`: move highlighted suggestion and prevent default.
-- `Escape`: close results.
-- `Enter`: if a suggestion is highlighted, pull `${result.name}:latest`; otherwise pull the exact non-empty trimmed typed value.
-- Clicking a suggestion pulls `${result.name}:latest`.
-- Search error text is shown inside the dropdown but never disables direct Enter submission.
+- Up/Down changes `highlighted` and prevents default.
+- Escape closes.
+- Enter with highlighted result => `startPull(`${result.name}:latest`)`.
+- Enter without highlighted result => `startPull(query.trim())` for any non-empty value.
+- Clicking result => `startPull(`${result.name}:latest`)`.
 
-Render at most 8 results. Show official badge when `official === true`; show compact pulls/stars metadata only when values are present.
+Search failure is displayed in the dropdown and does not disable direct Enter.
 
-- [ ] **Step 4: Compose search in `Titlebar`**
+Render name, description, Official badge, and pulls/stars/updated metadata only when present.
 
-Import `ImageSearch` in `app-shell.tsx` and place it between the Quay brand block and right-side actions:
+- [ ] **Step 4: Compose search into `Titlebar` and respect WSLC gate**
+
+`Titlebar` already knows `gated`. Place:
 
 ```tsx
 <div className="flex min-w-0 flex-1 justify-center px-4">
-  <ImageSearch className="w-full max-w-xl" />
+  <ImageSearch disabled={gated} className="w-full max-w-xl" />
 </div>
 ```
 
-Keep the existing titlebar height and Windows caption buttons. Search input/dropdown must be normal interactive children and must not receive `data-tauri-drag-region`.
+between Quay identity and right-side controls. Keep interactive search elements free of `data-tauri-drag-region`.
 
-- [ ] **Step 5: Remove image pulling controls from `ImagesView`**
+- [ ] **Step 5: Remove the Images-page pull form**
 
-Remove:
+Remove local image ref state, `catalog`, `pullImage`, datalist, pull status, Pull button/form. Keep image removal and all volume behavior.
 
-- local `ref` state;
-- `catalog` usage;
-- `pullImage` usage;
-- `pullStatus`/`pulling` state;
-- image pull form, datalist, and Pull button.
-
-Retain image inventory, image removal, Images/Volumes tabs, and volume create/remove UI. Change the supporting copy to:
+Change intro copy to:
 
 ```tsx
 <p className="mt-1 text-sm text-muted-foreground">
@@ -1112,27 +916,18 @@ Retain image inventory, image removal, Images/Volumes tabs, and volume create/re
 </p>
 ```
 
-- [ ] **Step 6: Run UI tests and TypeScript check**
-
-Run:
+- [ ] **Step 6: Verify and commit**
 
 ```bash
 node --test tests/image-search-ui.test.mjs
 pnpm typecheck
-```
-
-Expected: PASS.
-
-- [ ] **Step 7: Commit Task 6**
-
-```bash
 git add src/components/image-search.tsx src/components/app-shell.tsx src/components/views/images-view.tsx tests/image-search-ui.test.mjs
 git commit -m "feat: move image search into title bar"
 ```
 
 ---
 
-### Task 7: Add the global Downloads icon, progress UI, and native event subscription
+### Task 7: Add Downloads icon, panel, live progress, and pull-event subscription
 
 **Files:**
 - Create: `src/components/ui/popover.tsx`
@@ -1143,62 +938,34 @@ git commit -m "feat: move image search into title bar"
 - Create: `tests/downloads-ui.test.mjs`
 
 **Interfaces:**
-- Consumes: `pulls`, `cancelPull`, `clearPullHistory`, `syncPullJobs`, `applyPullJobUpdate` from Task 5
-- Consumes: `onPullJobUpdated` from Task 1
-- Produces: Downloads icon immediately before `AppearanceToggle`
-- Produces: active badge count for `queued`, `pulling`, and `cancelling`
+- Downloads badge counts exactly `queued`, `pulling`, `cancelling`.
+- Downloads button is immediately before `AppearanceToggle` and is shown only when WSLC is ready.
 
-- [ ] **Step 1: Write failing Downloads UI contract tests**
+- [ ] **Step 1: Write failing Downloads UI tests**
 
-Create `tests/downloads-ui.test.mjs`:
+Create `tests/downloads-ui.test.mjs` asserting:
 
 ```js
-import test from "node:test";
-import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
-
-const shell = await readFile(new URL("../src/components/app-shell.tsx", import.meta.url), "utf8");
-const button = await readFile(new URL("../src/components/downloads-button.tsx", import.meta.url), "utf8").catch(() => "");
-const panel = await readFile(new URL("../src/components/downloads-panel.tsx", import.meta.url), "utf8").catch(() => "");
-const progress = await readFile(new URL("../src/components/pull-progress.tsx", import.meta.url), "utf8").catch(() => "");
-
-test("downloads button sits before appearance toggle and counts active jobs", () => {
-  assert.match(shell, /<DownloadsButton[\s\S]*<AppearanceToggle compact/);
-  for (const state of ["queued", "pulling", "cancelling"]) assert.match(button, new RegExp(`"${state}"`));
-});
-
-test("downloads panel supports cancellation and history cleanup", () => {
-  assert.match(panel, /cancelPull/);
-  assert.match(panel, /clearPullHistory/);
-  assert.match(panel, /Active/);
-  assert.match(panel, /Recent/);
-});
-
-test("pull progress can be determinate or indeterminate", () => {
-  assert.match(progress, /job\.progress/);
-  assert.match(progress, /animate-pulse|indeterminate/);
-});
-
-test("app shell subscribes once to native pull updates", () => {
-  assert.match(shell, /onPullJobUpdated/);
-  assert.match(shell, /syncPullJobs/);
-  assert.match(shell, /applyPullJobUpdate/);
-});
+assert.match(shell, /<DownloadsButton[\s\S]*<AppearanceToggle compact/);
+for (const state of ["queued", "pulling", "cancelling"]) assert.match(button, new RegExp(`"${state}"`));
+assert.match(panel, /cancelPull/);
+assert.match(panel, /clearPullHistory/);
+assert.match(panel, /View images/);
+assert.match(progress, /job\.progress/);
+assert.match(progress, /indeterminate|animate-pulse/);
+assert.match(shell, /onPullJobUpdated/);
+assert.match(shell, /syncPullJobs/);
 ```
 
-- [ ] **Step 2: Run the Downloads test and confirm failure**
-
-Run:
+- [ ] **Step 2: Verify failure**
 
 ```bash
 node --test tests/downloads-ui.test.mjs
 ```
 
-Expected: FAIL because the components do not exist.
+- [ ] **Step 3: Add Radix Popover wrapper**
 
-- [ ] **Step 3: Add a focused Radix Popover wrapper**
-
-Create `src/components/ui/popover.tsx` matching existing Quay wrapper conventions:
+Create `src/components/ui/popover.tsx`:
 
 ```tsx
 import * as PopoverPrimitive from "@radix-ui/react-popover";
@@ -1223,16 +990,15 @@ export function PopoverContent({ className, align = "end", sideOffset = 8, ...pr
 
 - [ ] **Step 4: Implement `PullProgress`**
 
-Use determinate width only when `job.progress` is finite. Otherwise render an indeterminate bar without showing a percentage:
-
 ```tsx
 export function PullProgress({ job }: { job: PullJob }) {
   const determinate = typeof job.progress === "number" && Number.isFinite(job.progress);
+  const pct = determinate ? Math.max(0, Math.min(100, job.progress!)) : 0;
   return (
     <div className="space-y-1.5">
       <div className="h-1.5 overflow-hidden rounded-full bg-elevated">
         {determinate ? (
-          <div className="h-full rounded-full bg-accent transition-[width]" style={{ width: `${Math.max(0, Math.min(100, job.progress!))}%` }} />
+          <div className="h-full rounded-full bg-accent transition-[width]" style={{ width: `${pct}%` }} />
         ) : (
           <div className="h-full w-1/3 animate-pulse rounded-full bg-accent" data-progress="indeterminate" />
         )}
@@ -1243,96 +1009,87 @@ export function PullProgress({ job }: { job: PullJob }) {
 }
 ```
 
-Below the bar, show `currentBytes / totalBytes` only when `totalBytes` exists; show speed only when `bytesPerSecond` exists.
+Below it, show `formatBytes(currentBytes) / formatBytes(totalBytes)` only when `totalBytes` exists, speed only when `bytesPerSecond` exists, and elapsed seconds when `startedAt` exists using the store's `now` timestamp.
 
 - [ ] **Step 5: Implement `DownloadsPanel`**
-
-Split jobs with:
 
 ```ts
 const active = pulls.filter((job) => ["queued", "pulling", "cancelling"].includes(job.status));
 const recent = pulls.filter((job) => ["completed", "failed", "cancelled", "interrupted"].includes(job.status));
 ```
 
-Panel requirements:
+Requirements:
 
-- width around `w-[420px]`, constrained to viewport;
-- Active section first, Recent second;
-- active row includes reference, `PullProgress`, and Cancel button;
-- failed/interrupted row includes error text;
-- completed row includes a subtle success indicator;
-- footer button text exactly `Clear history`, disabled when `recent.length === 0`;
-- optional `View images` action sets `view` to `images`.
+- ~420 px popover width, viewport constrained.
+- Active first; Recent second.
+- Queued/Pulling/Cancelling rows include Cancel.
+- Failed/Interrupted rows show `error`.
+- Completed rows show success state.
+- Footer button text exactly `Clear history`; disabled with no recent jobs.
+- Footer action `View images` calls `setView("images")`.
 
 - [ ] **Step 6: Implement `DownloadsButton`**
-
-Use Lucide `Download`. Badge count is exactly:
 
 ```ts
 const activeCount = pulls.filter((job) => ["queued", "pulling", "cancelling"].includes(job.status)).length;
 ```
 
-Render the badge only when `activeCount > 0`. The button remains visible on every ready main view and opens `DownloadsPanel` inside the Popover.
+Use Lucide `Download`; render badge only when count > 0; use `DownloadsPanel` inside Popover.
 
-- [ ] **Step 7: Subscribe to native pull events once in `AppShell` and compose the button**
+- [ ] **Step 7: Subscribe once to native events safely**
 
-At `AppShell` level, add one effect:
+In `AppShell`:
 
 ```tsx
 const syncPullJobs = useWslc((s) => s.syncPullJobs);
 const applyPullJobUpdate = useWslc((s) => s.applyPullJobUpdate);
 
 useEffect(() => {
+  let disposed = false;
   let unlisten: (() => void) | undefined;
   void syncPullJobs();
-  void onPullJobUpdated(applyPullJobUpdate).then((dispose) => { unlisten = dispose; });
-  return () => unlisten?.();
+  void onPullJobUpdated(applyPullJobUpdate).then((dispose) => {
+    if (disposed) dispose();
+    else unlisten = dispose;
+  });
+  return () => {
+    disposed = true;
+    unlisten?.();
+  };
 }, [syncPullJobs, applyPullJobUpdate]);
 ```
 
-In `Titlebar`, place:
+In `Titlebar`:
 
 ```tsx
-<DownloadsButton />
+{!gated ? <DownloadsButton /> : null}
 <AppearanceToggle compact />
 ```
 
-in that exact order, before window caption controls.
+in that exact order.
 
-- [ ] **Step 8: Run UI tests and TypeScript check**
-
-Run:
+- [ ] **Step 8: Verify and commit**
 
 ```bash
 node --test tests/downloads-ui.test.mjs tests/image-search-ui.test.mjs tests/image-pull-contracts.test.mjs
 pnpm typecheck
-```
-
-Expected: PASS.
-
-- [ ] **Step 9: Commit Task 7**
-
-```bash
 git add src/components/ui/popover.tsx src/components/pull-progress.tsx src/components/downloads-panel.tsx src/components/downloads-button.tsx src/components/app-shell.tsx tests/downloads-ui.test.mjs
 git commit -m "feat: add global image downloads panel"
 ```
 
 ---
 
-### Task 8: Make the new tests part of the existing CI gate and verify the complete feature
+### Task 8: Add CI gates and run full verification
 
 **Files:**
 - Modify: `package.json`
-- Modify: `pnpm-lock.yaml` only if dependency resolution changes because Cargo changes do not affect pnpm
-- Test: all new Node tests plus existing test suite
 
 **Interfaces:**
-- Consumes: all prior tasks
-- Produces: CI-enforced regression coverage on Windows x64 and ARM64
+- Existing `.github/workflows/ci.yml` already runs `pnpm test:autostart`, `pnpm typecheck`, and Rust tests on Windows x64/ARM64.
 
-- [ ] **Step 1: Add the new Node tests to the existing CI-facing script**
+- [ ] **Step 1: Add new tests to `test:autostart`**
 
-Append these files to `test:autostart` in `package.json`:
+Append:
 
 ```text
 tests/image-pull-contracts.test.mjs
@@ -1340,67 +1097,52 @@ tests/image-search-ui.test.mjs
 tests/downloads-ui.test.mjs
 ```
 
-Do not create a second CI-only test script; `.github/workflows/ci.yml` already runs `pnpm test:autostart` on both Windows architectures.
+Do not create a second CI-only test script.
 
-- [ ] **Step 2: Run the complete frontend contract suite**
-
-Run:
+- [ ] **Step 2: Run frontend regression suite**
 
 ```bash
 pnpm test:autostart
 ```
 
-Expected: PASS, including the updated `operation-ux` expectation.
+Expected: PASS including the updated `operation-ux` test.
 
-- [ ] **Step 3: Run TypeScript and Rust tests**
-
-Run:
+- [ ] **Step 3: Run TypeScript, Rust, and desktop build**
 
 ```bash
 pnpm typecheck
 cargo test --manifest-path src-tauri/Cargo.toml
+pnpm build:desktop
 ```
 
 Expected: PASS.
 
-- [ ] **Step 4: Build the desktop bundle**
-
-Run:
-
-```bash
-pnpm build:desktop
-```
-
-Expected: successful Vite desktop build with no TypeScript/import errors.
-
-- [ ] **Step 5: Run Windows WSLC integration validation**
-
-On a Windows machine with working WSLC, run:
+- [ ] **Step 4: Run existing Windows WSLC integration script**
 
 ```powershell
 pnpm test:windows -SkipInstall
 ```
 
-Expected: existing WSLC responsiveness, nginx, LocalCoding, and backend tests remain green.
+Expected: current responsiveness, nginx, LocalCoding, and native tests remain green.
 
-Then perform these Quay desktop checks manually because they exercise Tauri UI/native-process integration rather than CLI-only behavior:
+- [ ] **Step 5: Manually validate the integrated desktop flow**
 
-1. Search `nginx`; Docker Hub suggestions appear after the debounce.
-2. Press Enter on a suggestion; a background job appears under Downloads.
-3. Navigate to Containers while the pull runs; the job continues.
-4. Start or stop a container during the pull; the operation is not blocked by the pull job.
-5. Start three different pulls; exactly two are `pulling`, one is `queued`.
-6. Cancel one running pull; it reaches `cancelled` and the queued pull starts.
-7. Type `ghcr.io/dhhieu113pro/ai-studio:latest` and press Enter; it is submitted directly without Docker Hub search ownership.
-8. Hide Quay using the existing window close behavior; restore it from tray and verify active job state is still present.
-9. Complete a pull and open Images; the new image appears without manual inventory refresh.
-10. Explicitly Quit Quay while a pull is active; verify no Quay-owned `wslc pull` process remains.
-11. Restart Quay after terminating it during a pull; persisted unfinished job appears as `interrupted`, not resumed.
-12. Confirm Downloads icon is immediately left of the appearance toggle and matches the approved mockup hierarchy.
+1. Search `nginx`; suggestions appear after debounce with Docker Hub metadata.
+2. Arrow to a suggestion and press Enter; background pull appears under Downloads.
+3. Type `ghcr.io/dhhieu113pro/ai-studio:latest` with no highlighted suggestion and press Enter; exact ref is submitted directly.
+4. Navigate to Containers while pulling; pull continues.
+5. Start/stop a container while pulling; operation is not blocked by the pull manager.
+6. Start three different pulls; exactly two are `pulling`, one `queued`.
+7. Cancel one running pull; it transitions through `cancelling` to `cancelled`, then queued job starts.
+8. Hide Quay to tray and restore; active jobs remain visible.
+9. Complete a pull; image inventory refreshes automatically.
+10. Trigger a failed pull; job remains in Recent and Sonner error toast appears.
+11. Clear history; active jobs remain, terminal jobs disappear.
+12. Explicitly Quit during a pull; no Quay-owned `wslc pull` process remains after shutdown returns.
+13. Restart after a forcibly interrupted process; old unfinished job is shown as `interrupted`, never resumed.
+14. Downloads icon is immediately left of appearance toggle and matches the approved visual hierarchy.
 
-- [ ] **Step 6: Run the exact CI-equivalent commands one final time**
-
-Run:
+- [ ] **Step 6: Run exact CI-equivalent commands one final time**
 
 ```bash
 pnpm test:autostart
@@ -1413,39 +1155,38 @@ pnpm build:desktop
 
 Expected: all PASS.
 
-- [ ] **Step 7: Commit Task 8**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add package.json pnpm-lock.yaml
+git add package.json
 git commit -m "test: gate image search and background pulls"
 ```
 
-If `pnpm-lock.yaml` did not change, omit it from `git add` rather than creating a no-op modification.
-
 ---
 
-## Final Review Checklist
+## Self-Review Coverage Matrix
 
-Before opening the implementation PR, verify every acceptance criterion from the spec maps to completed work:
+- Search moved to title bar: Task 6.
+- Docker Hub suggestions + 300 ms debounce: Tasks 2 and 6.
+- Stale response protection including clearing query: Task 6.
+- Direct GHCR/custom refs: Task 6.
+- Pulls bypass generic mutation mutex: Task 4 uses its own process executor.
+- Two concurrent pulls + queue: Task 4.
+- Duplicate active suppression: Task 4.
+- Live progress/stage events: Tasks 4, 5, 7.
+- No fake percentages: Tasks 3 and 7.
+- Downloads badge/panel globally: Task 7.
+- Queue/running cancellation: Task 4 and Task 7.
+- Persist 50 terminal jobs while retaining active jobs: Tasks 3 and 4.
+- Nonfatal persistence errors: Task 4.
+- Restart → interrupted: Task 3.
+- Completed pull refreshes image inventory: Task 5.
+- Failed pull toast: Task 5.
+- Tray hide keeps jobs alive: existing behavior preserved; verified Task 8.
+- Explicit Quit waits for cancellation: Tasks 4 and 5.
+- Existing image removal/volume behavior: Task 6 preserves it; Task 8 verifies regressions.
+- Windows x64/ARM64 CI: Task 8 uses the existing CI-facing script.
 
-- [ ] Title-bar image search replaces the page-local pull form.
-- [ ] Docker Hub suggestions are debounced and stale responses cannot win.
-- [ ] Non-Docker-Hub typed refs are submitted directly.
-- [ ] Pulls bypass `WslcExecutor`'s mutation mutex.
-- [ ] Exactly two pulls can run concurrently.
-- [ ] Duplicate active refs reuse the existing job.
-- [ ] Queue, pulling, cancelling, completed, failed, cancelled, interrupted transitions are covered.
-- [ ] Determinate progress is shown only from real byte totals; otherwise UI is indeterminate.
-- [ ] Downloads badge counts queued + pulling + cancelling jobs only.
-- [ ] Cancel works for queued and active jobs.
-- [ ] Completed pulls refresh local image inventory automatically.
-- [ ] Terminal history persists and is capped at 50.
-- [ ] Restart converts stale non-terminal jobs to interrupted.
-- [ ] Window hide-to-tray does not stop pulls.
-- [ ] Explicit Quit terminates active pull children.
-- [ ] Existing x64/ARM64 Windows CI stays green.
-- [ ] Existing WSLC local integration validation stays green.
+## Execution Order
 
-## Recommended Execution Order
-
-Use `superpowers:subagent-driven-development` and execute Task 1 through Task 8 in order. Each task is intentionally reviewable on its own: contracts first, then search, then the native job engine, then frontend synchronization, then search UI, then Downloads UI, and finally CI/integration hardening.
+Execute Task 1 → Task 8 in order. Use `superpowers:subagent-driven-development` for a fresh implementer per task and reviewer gates between tasks. Each task ends with an independently testable commit.
