@@ -102,8 +102,9 @@ export function saveGroup(input: ContainerGroup) {
 
 export function rememberGroupSpec(group: ContainerGroup, spec: RunSpec) {
   const normalizedGroup = normalizeGroupWorkspace(group);
-  const normalized = { ...spec, groupId: group.id, workspacePath: spec.workspacePath || defaultCubeContainerWorkspacePath(normalizedGroup.workspacePath!, spec.name || spec.image), workspaceTarget: spec.workspaceTarget || DEFAULT_WORKSPACE_TARGET };
-  const updated = syncGroupEnv({ ...normalizedGroup, specs: [...normalizedGroup.specs.filter((item) => item.name !== normalized.name), normalized] });
+  const name = cubeContainerName(group.name, spec.name || spec.image);
+  const normalized = { ...spec, name, groupId: group.id, workspacePath: spec.workspacePath || defaultCubeContainerWorkspacePath(normalizedGroup.workspacePath!, name), workspaceTarget: spec.workspaceTarget || DEFAULT_WORKSPACE_TARGET };
+  const updated = syncGroupEnv({ ...normalizedGroup, specs: [...normalizedGroup.specs.filter((item) => item.name !== name), normalized] });
   saveGroup(updated); return updated;
 }
 
