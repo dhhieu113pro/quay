@@ -12,7 +12,7 @@ import { openWorkspacePath, pickWorkspaceDescendant } from "@/lib/tauri";
 import { DEFAULT_WORKSPACE_TARGET, defaultStandaloneWorkspacePath, isGeneratedContainerWorkspacePath, relativeWorkspacePath, resolveWorkspacePath } from "@/lib/workspace";
 import { applyImageDefaults } from "@/lib/wslc/container-defaults";
 import { inspectImage } from "@/lib/wslc/image-inspect-client";
-import { addImageVolumeMount, applyImageCommandSuggestion, applyImageInspectDefaults, imageCommandSuggestion, imageInspectEnvSourceByKey, imageReadinessMetadata, imageVolumeSuggestions, type ImageInspectDefaults } from "@/lib/wslc/image-inspect-defaults";
+import { addImageVolumeMount, applyImageCommandSuggestion, applyImageInspectDefaults, hasPublishedHostPortErrors, imageCommandSuggestion, imageInspectEnvSourceByKey, imageReadinessMetadata, imageVolumeSuggestions, type ImageInspectDefaults } from "@/lib/wslc/image-inspect-defaults";
 import { applyRuntimeEnvDefaults, missingRequiredEnv, reconcileRuntimeEnvDefaults, requiredEnvKeys, runtimeEnvSourceByKey } from "@/lib/wslc/image-runtime-env";
 import { useWslc } from "@/lib/wslc/store";
 import { cliForRun } from "@/lib/wslc/csharp";
@@ -71,6 +71,7 @@ export function RunDialog() {
   const operationKey = `container:${spec.name.trim() || spec.image.trim()}`;
   const busy = Boolean(operations[operationKey]);
   const missing = missingRequiredEnv(env, spec.image);
+  const invalidPorts = hasPublishedHostPortErrors(spec.ports);
   const sourceByKey = { ...imageInspectEnvSourceByKey(imageInspect), ...runtimeEnvSourceByKey(spec.image) };
   const requiredKeys = requiredEnvKeys(spec.image);
   const suggestedCommand = imageCommandSuggestion(imageInspect);
@@ -83,7 +84,7 @@ export function RunDialog() {
   return <Dialog open={open} onOpenChange={(next) => { if (!busy) setRunOpen(next); }}>
     <DialogContent className="flex max-h-[90dvh] max-w-2xl flex-col gap-0 overflow-hidden p-0">
       <DialogHeader className="border-b border-border px-5 py-4"><DialogTitle>Run Container</DialogTitle><DialogDescription>Run one standalone container. Pulled image metadata and trusted rules fill safe runtime defaults automatically.</DialogDescription></DialogHeader>
-      <form className="flex min-h-0 flex-1 flex-col" onSubmit={(event) => { event.preventDefault(); if (busy || missing.length) return; runContainer(submittedSpec); toast(`Creating ${spec.name || spec.image}`); }}>
+      <form className="flex min-h-0 flex-1 flex-col" onSubmit={(event) => { event.preventDefault(); if (busy || missing.length || invalidPorts) return; runContainer(submittedSpec); toast(`Creating ${spec.name || spec.image}`); }}>
         <fieldset disabled={busy} className="contents">
           <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto px-5 py-4">
             <div className="grid gap-1.5"><Label htmlFor="image">Image</Label><Input id="image" list="pulled-image-catalog" value={spec.image} onChange={(event) => applyImage(event.target.value)} placeholder={pulledImages.length ? "Select or type a pulled image" : "repository/image:tag"} required className="font-mono text-xs" /><datalist id="pulled-image-catalog">{pulledImages.map((image) => <option key={image} value={image} />)}</datalist></div>
@@ -106,7 +107,7 @@ export function RunDialog() {
             {missing.length ? <p className="text-xs text-destructive">Fill required environment: {missing.join(", ")}</p> : null}
             <MountEditor rows={mountRows} onChange={(rows) => { setMountRows(rows); patch({ mounts: joinMountLines(rows) }); }} />
           </div>
-          <div className="grid gap-3 border-t border-border px-5 py-3"><div className="flex flex-wrap items-center gap-5"><label className="flex items-center gap-2 text-sm"><Switch checked={spec.gpu} onCheckedChange={(gpu) => patch({ gpu })} />GPU</label><label className="flex items-center gap-2 text-sm"><Switch checked={spec.detach} onCheckedChange={(detach) => patch({ detach })} />Detach</label><label className="flex items-center gap-2 text-sm"><Switch checked={spec.remove} onCheckedChange={(remove) => patch({ remove })} />Auto-remove</label></div><p className="truncate font-mono text-[11px] text-subtle">{preview}</p><div className="flex justify-end gap-2"><Button type="button" variant="ghost" onClick={() => setRunOpen(false)} disabled={busy}>Cancel</Button><Button type="submit" disabled={busy || !spec.image.trim() || missing.length > 0}>{busy ? <LoaderCircle className="size-4 animate-spin" /> : null}{busy ? "Creating…" : "Create & start"}</Button></div></div>
+          <div className="grid gap-3 border-t border-border px-5 py-3"><div className="flex flex-wrap items-center gap-5"><label className="flex items-center gap-2 text-sm"><Switch checked={spec.gpu} onCheckedChange={(gpu) => patch({ gpu })} />GPU</label><label className="flex items-center gap-2 text-sm"><Switch checked={spec.detach} onCheckedChange={(detach) => patch({ detach })} />Detach</label><label className="flex items-center gap-2 text-sm"><Switch checked={spec.remove} onCheckedChange={(remove) => patch({ remove })} />Auto-remove</label></div><p className="truncate font-mono text-[11px] text-subtle">{preview}</p><div className="flex justify-end gap-2"><Button type="button" variant="ghost" onClick={() => setRunOpen(false)} disabled={busy}>Cancel</Button><Button type="submit" disabled={busy || !spec.image.trim() || missing.length > 0 || invalidPorts}>{busy ? <LoaderCircle className="size-4 animate-spin" /> : null}{busy ? "Creating…" : "Create & start"}</Button></div></div>
         </fieldset>
       </form>
     </DialogContent>
