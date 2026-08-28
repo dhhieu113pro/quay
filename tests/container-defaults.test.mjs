@@ -139,8 +139,8 @@ test("Run Container and Cube image changes reconcile trusted runtime env", () =>
 
 test("known required environment variables block submission until populated", () => {
   assert.ok(runtimeEnvModule, "runtime environment helper must load");
-  assert.deepEqual(runtimeEnvModule.missingRequiredEnv("NGROK_AUTHTOKEN=", "ngrok:latest"), ["NGROK_AUTHTOKEN"]);
-  assert.deepEqual(runtimeEnvModule.missingRequiredEnv("NGROK_AUTHTOKEN=token-value", "ngrok:latest"), []);
+  assert.deepEqual(runtimeEnvModule.missingRequiredEnv("NGROK_AUTHTOKEN=", "ngrok/ngrok:latest"), ["NGROK_AUTHTOKEN"]);
+  assert.deepEqual(runtimeEnvModule.missingRequiredEnv("NGROK_AUTHTOKEN=token-value", "ngrok/ngrok:latest"), []);
   assert.match(runDialog, /disabled=\{busy \|\| !spec\.image\.trim\(\) \|\| missing\.length > 0\}/);
   assert.match(runDialog, /if \(busy \|\| missing\.length\) return/);
   assert.match(cubeDialog, /disabled=\{missing\.length > 0\}/);
