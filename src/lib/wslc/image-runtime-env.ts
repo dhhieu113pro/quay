@@ -7,27 +7,42 @@ export interface RuntimeEnvVariable {
   required?: boolean;
 }
 
-function imageLeaf(image: string) {
-  const withoutDigest = image.trim().toLowerCase().split("@")[0] ?? "";
-  const leaf = withoutDigest.split("/").pop() ?? "";
-  return leaf.split(":")[0] ?? "";
+function imageRepository(image: string) {
+  let reference = image.trim().toLowerCase();
+  const digestAt = reference.indexOf("@");
+  if (digestAt >= 0) reference = reference.slice(0, digestAt);
+
+  const lastSlash = reference.lastIndexOf("/");
+  const lastColon = reference.lastIndexOf(":");
+  if (lastColon > lastSlash) reference = reference.slice(0, lastColon);
+
+  const parts = reference.split("/").filter(Boolean);
+  if (parts.length === 0) return "";
+  if (parts.length === 1) return `docker.io/library/${parts[0]}`;
+
+  const first = parts[0];
+  const hasRegistry = first.includes(".") || first.includes(":") || first === "localhost";
+  if (!hasRegistry) return `docker.io/${parts.join("/")}`;
+
+  if (first === "index.docker.io") parts[0] = "docker.io";
+  return parts.join("/");
 }
 
 export function runtimeEnvForImage(image: string): RuntimeEnvVariable[] {
-  switch (imageLeaf(image)) {
-    case "postgres":
+  switch (imageRepository(image)) {
+    case "docker.io/library/postgres":
       return [
         { key: "POSTGRES_USER", value: "quay", source: "Image default" },
         { key: "POSTGRES_DB", value: "app", source: "Image default" },
         { key: "POSTGRES_PASSWORD", value: "", source: "Required", required: true },
       ];
-    case "mysql":
+    case "docker.io/library/mysql":
       return [{ key: "MYSQL_ROOT_PASSWORD", value: "", source: "Required", required: true }];
-    case "mariadb":
+    case "docker.io/library/mariadb":
       return [{ key: "MARIADB_ROOT_PASSWORD", value: "", source: "Required", required: true }];
-    case "ngrok":
+    case "docker.io/ngrok/ngrok":
       return [{ key: "NGROK_AUTHTOKEN", value: "", source: "Required", required: true }];
-    case "local-coding-mcp":
+    case "ghcr.io/dhhieu113pro/local-coding-mcp":
       return [
         { key: "ASPNETCORE_URLS", value: "http://0.0.0.0:5000", source: "Image default" },
         { key: "ASPNETCORE_ENVIRONMENT", value: "Production", source: "Image default" },
