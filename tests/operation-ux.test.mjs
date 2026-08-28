@@ -8,7 +8,7 @@ const images = await readFile(new URL("../src/components/views/images-view.tsx",
 const groups = await readFile(new URL("../src/components/views/groups-view.tsx", import.meta.url), "utf8");
 
 test("operation state records meaningful lifecycle labels instead of booleans", () => {
-  assert.match(store, /type OperationStatus\s*=\s*"starting"\s*\|\s*"stopping"\s*\|\s*"restarting"\s*\|\s*"pulling"\s*\|\s*"removing"/);
+  assert.match(store, /type OperationStatus\s*=\s*"starting"\s*\|\s*"stopping"\s*\|\s*"restarting"\s*\|\s*"removing"/);
   assert.match(store, /operations:\s*Record<string, OperationStatus>/);
   assert.match(store, /runOperation\s*=\s*async\s*\(key:\s*string,\s*status:\s*OperationStatus,/);
 });
@@ -19,9 +19,10 @@ test("container actions render the exact operation status and disable conflictin
   assert.match(containers, /disabled=\{Boolean\(status\)\}/);
 });
 
-test("image pulls show an explicit pulling state", () => {
-  assert.match(images, /operations\[`image:\$\{[^}]+\}`\]/);
-  assert.match(images, /Pulling…/);
+test("image pulling is not tracked by generic operations", () => {
+  assert.doesNotMatch(store, /runOperation\(`image:\$\{[^}]+\}`,\s*"pulling"/);
+  assert.doesNotMatch(store, /execute\(\["pull"/);
+  assert.match(images, /removeImage/);
 });
 
 test("cube actions show starting and stopping states", () => {

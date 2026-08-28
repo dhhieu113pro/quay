@@ -15,6 +15,8 @@ import { toast, Toaster } from "sonner";
 import packageJson from "../../package.json";
 import { AppearanceProvider, useAppearance } from "@/components/appearance-provider";
 import { AppearanceToggle } from "@/components/appearance-toggle";
+import { DownloadsButton } from "@/components/downloads-button";
+import { ImageSearch } from "@/components/image-search";
 import { Mark } from "@/components/mark";
 import { RunDialog } from "@/components/run-dialog";
 import { SetupScreen } from "@/components/setup-screen";
@@ -30,7 +32,7 @@ import { cn } from "@/lib/utils";
 import { openLogs } from "@/lib/wslc/log-store";
 import { useWslc } from "@/lib/wslc/store";
 import type { ViewId } from "@/lib/wslc/types";
-import { windowAction } from "@/lib/tauri";
+import { onPullJobUpdated, windowAction } from "@/lib/tauri";
 
 const QUAY_VERSION = packageJson.version;
 
@@ -56,6 +58,8 @@ export function AppShell() {
   const retryProbe = useWslc((s) => s.retryProbe);
   const lastError = useWslc((s) => s.lastError);
   const clearError = useWslc((s) => s.clearError);
+  const syncPullJobs = useWslc((s) => s.syncPullJobs);
+  const applyPullJobUpdate = useWslc((s) => s.applyPullJobUpdate);
   const gated = gate === "checking" || gate === "missing";
   const changeView = (next: ViewId) => {
     if (next === "logs") openLogs();
@@ -65,6 +69,20 @@ export function AppShell() {
   useEffect(() => {
     void retryProbe();
   }, [retryProbe]);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void syncPullJobs();
+    void onPullJobUpdated(applyPullJobUpdate).then((dispose) => {
+      if (disposed) dispose();
+      else unlisten = dispose;
+    });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [syncPullJobs, applyPullJobUpdate]);
 
   useEffect(() => {
     if (!lastError) return;
@@ -161,13 +179,16 @@ function Titlebar() {
       className="flex h-12 shrink-0 items-center border-b border-border bg-card pl-3 pr-1"
     >
       <Mark className="size-6" />
-      <div className="ml-2 min-w-0">
+      <div className="ml-2 min-w-0 shrink-0">
         <p className="truncate text-sm font-medium leading-none">Quay</p>
         <p className="mt-0.5 hidden truncate text-xs text-subtle sm:block">
           WSL container manager
         </p>
       </div>
-      <div className="ml-auto flex items-center gap-2">
+      <div className="flex min-w-0 flex-1 justify-center px-4">
+        <ImageSearch disabled={gated} className="w-full max-w-xl" />
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
         <span
           className={cn(
             "hidden items-center gap-1.5 rounded-full px-2 py-1 text-xs sm:inline-flex",
@@ -182,6 +203,7 @@ function Titlebar() {
           />
           {gated ? "wslc missing" : live ? "session up" : "session down"}
         </span>
+        {!gated ? <DownloadsButton /> : null}
         <AppearanceToggle compact />
         <div className="hidden md:flex">
           <CaptionBtn label="Minimize" onClick={() => void windowAction("minimize")}>

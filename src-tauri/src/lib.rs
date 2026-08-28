@@ -2,6 +2,8 @@
 //! Quay calls the installed `wslc.exe` directly and uses the default WSLC session.
 //! Close hides to tray; Quit actually exits.
 
+mod docker_hub;
+mod pull_manager;
 #[cfg(windows)]
 mod wslc_executor;
 #[cfg(windows)]
@@ -13,23 +15,39 @@ use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Manager, State, WindowEvent};
+use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
 
 pub struct Backend {
     #[cfg(windows)]
     executor: wslc_executor::WslcExecutor,
     #[cfg(windows)]
     host: Arc<Mutex<wslc_runtime::HostSampler>>,
+    #[cfg(windows)]
+    pull_manager: pull_manager::PullManager,
 }
 
 impl Backend {
-    fn new() -> Self {
+    #[cfg(windows)]
+    fn new(pull_manager: pull_manager::PullManager) -> Self {
         Self {
-            #[cfg(windows)]
             executor: wslc_executor::WslcExecutor::new(),
-            #[cfg(windows)]
             host: Arc::new(Mutex::new(wslc_runtime::HostSampler::default())),
+            pull_manager,
         }
+    }
+
+    #[cfg(not(windows))]
+    fn new() -> Self { Self {} }
+}
+
+#[cfg(windows)]
+#[derive(Clone)]
+struct TauriPullSink(AppHandle);
+
+#[cfg(windows)]
+impl pull_manager::PullEventSink for TauriPullSink {
+    fn emit(&self, job: &pull_manager::PullJob) {
+        let _ = self.0.emit("quay://pull-job-updated", job.clone());
     }
 }
 
@@ -77,6 +95,49 @@ async fn wslc_invoke(backend: State<'_, Backend>, payload: Value) -> Result<Valu
         let _ = backend;
         let _ = payload;
         Err("WSLC is only available on Windows".into())
+    }
+}
+
+#[tauri::command]
+async fn image_search(query: String) -> Result<Vec<docker_hub::ImageSearchResult>, String> {
+    docker_hub::search(&query).await
+}
+
+#[tauri::command]
+fn pull_start(backend: State<'_, Backend>, reference: String) -> Result<pull_manager::PullJob, String> {
+    #[cfg(windows)] { return backend.pull_manager.start(&reference); }
+    #[cfg(not(windows))] {
+        let _ = backend;
+        let _ = reference;
+        Err("WSLC pulls are only available on Windows".into())
+    }
+}
+
+#[tauri::command]
+fn pull_list(backend: State<'_, Backend>) -> Result<Vec<pull_manager::PullJob>, String> {
+    #[cfg(windows)] { return Ok(backend.pull_manager.list()); }
+    #[cfg(not(windows))] {
+        let _ = backend;
+        Err("WSLC pulls are only available on Windows".into())
+    }
+}
+
+#[tauri::command]
+fn pull_cancel(backend: State<'_, Backend>, id: String) -> Result<pull_manager::PullJob, String> {
+    #[cfg(windows)] { return backend.pull_manager.cancel(&id); }
+    #[cfg(not(windows))] {
+        let _ = backend;
+        let _ = id;
+        Err("WSLC pulls are only available on Windows".into())
+    }
+}
+
+#[tauri::command]
+fn pull_clear_history(backend: State<'_, Backend>) -> Result<Vec<pull_manager::PullJob>, String> {
+    #[cfg(windows)] { return Ok(backend.pull_manager.clear_history()); }
+    #[cfg(not(windows))] {
+        let _ = backend;
+        Err("WSLC pulls are only available on Windows".into())
     }
 }
 
@@ -155,6 +216,18 @@ pub fn run() {
             show_main(app);
         }))
         .setup(|app| {
+            #[cfg(windows)]
+            {
+                let history_path = app.path().app_data_dir()?.join("pull-jobs.json");
+                let pull_manager = pull_manager::PullManager::new(
+                    history_path,
+                    Arc::new(pull_manager::SystemPullExecutor),
+                    Arc::new(TauriPullSink(app.handle().clone())),
+                    2,
+                );
+                app.manage(Backend::new(pull_manager));
+            }
+            #[cfg(not(windows))]
             app.manage(Backend::new());
             if let Err(err) = setup_tray(app.handle()) { eprintln!("tray: {err}"); }
             Ok(())
@@ -163,7 +236,8 @@ pub fn run() {
             if let WindowEvent::CloseRequested { api, .. } = event { api.prevent_close(); let _ = window.hide(); }
         })
         .invoke_handler(tauri::generate_handler![
-            wslc_invoke, wslc_probe, ensure_host_directory, autostart_enabled, autostart_set,
+            wslc_invoke, image_search, pull_start, pull_list, pull_cancel, pull_clear_history,
+            wslc_probe, ensure_host_directory, autostart_enabled, autostart_set,
             workspace::workspace_default_root, workspace::workspace_ensure, workspace::workspace_pick_root,
             workspace::workspace_pick_descendant, workspace::workspace_open,
             workspace::workspace_move_root, workspace::workspace_move_entry
@@ -174,7 +248,11 @@ pub fn run() {
     app.run(|app, event| {
         if matches!(event, tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit) {
             #[cfg(windows)]
-            app.state::<Backend>().executor.shutdown();
+            {
+                let backend = app.state::<Backend>();
+                backend.pull_manager.shutdown();
+                backend.executor.shutdown();
+            }
         }
     });
 }

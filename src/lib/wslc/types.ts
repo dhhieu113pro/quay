@@ -78,13 +78,38 @@ export interface ImageRecord {
   containers: number;
 }
 
+export type PullJobStatus =
+  | "queued"
+  | "pulling"
+  | "completed"
+  | "failed"
+  | "cancelling"
+  | "cancelled"
+  | "interrupted";
+
 export interface PullJob {
   id: string;
   reference: string;
-  status: string;
+  status: PullJobStatus;
   currentBytes: number;
-  totalBytes: number;
-  startedAt: number;
+  totalBytes?: number;
+  progress?: number;
+  bytesPerSecond?: number;
+  startedAt?: number;
+  createdAt: number;
+  updatedAt: number;
+  finishedAt?: number;
+  message?: string;
+  error?: string;
+}
+
+export interface ImageSearchResult {
+  name: string;
+  description: string;
+  official: boolean;
+  stars?: number;
+  pulls?: number;
+  updatedAt?: string;
 }
 
 export interface VolumeRecord {

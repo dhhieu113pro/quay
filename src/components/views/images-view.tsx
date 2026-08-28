@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import { Download, LoaderCircle, Trash2 } from "lucide-react";
+import { LoaderCircle, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -11,16 +11,11 @@ export function ImagesView() {
   const images = useWslc((s) => s.images);
   const volumes = useWslc((s) => s.volumes);
   const operations = useWslc((s) => s.operations);
-  const pullImage = useWslc((s) => s.pullImage);
   const removeImage = useWslc((s) => s.removeImage);
   const createVolume = useWslc((s) => s.createVolume);
   const deleteVolume = useWslc((s) => s.deleteVolume);
-  const catalog = useWslc((s) => s.catalog);
   const now = useWslc((s) => s.now);
-  const [ref, setRef] = useState("ghcr.io/dhhieu113pro/local-coding-mcp:latest");
   const [volName, setVolName] = useState("");
-  const pullStatus = operations[`image:${ref.trim()}`];
-  const pulling = pullStatus === "pulling";
   const volumeStatus = volName.trim() ? operations[`volume:${volName.trim()}`] : undefined;
   const creatingVolume = volumeStatus === "creating";
 
@@ -29,7 +24,7 @@ export function ImagesView() {
       <div>
         <h1 className="text-xl font-medium tracking-tight">Images & volumes</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Image and volume operations run directly through the installed <span className="font-mono text-foreground/80">wslc.exe</span> CLI.
+          Search and pull images from the title bar. Manage local images and volumes here.
         </p>
       </div>
 
@@ -39,37 +34,10 @@ export function ImagesView() {
           <TabsTrigger value="volumes">Volumes</TabsTrigger>
         </TabsList>
         <TabsContent value="images" className="flex flex-col gap-4">
-          <form
-            className="flex flex-col gap-2 sm:flex-row"
-            onSubmit={(event) => {
-              event.preventDefault();
-              const value = ref.trim();
-              if (!value || pullStatus) return;
-              pullImage(value);
-              toast(`Pulling ${value}`);
-            }}
-          >
-            <Input
-              list="pull-catalog"
-              value={ref}
-              onChange={(event) => setRef(event.target.value)}
-              placeholder="nginx:latest"
-              className="font-mono"
-              disabled={Boolean(pullStatus)}
-            />
-            <datalist id="pull-catalog">
-              {catalog.map((item) => <option key={item} value={item} />)}
-            </datalist>
-            <Button type="submit" disabled={Boolean(pullStatus) || !ref.trim()}>
-              {pulling ? <LoaderCircle className="size-4 animate-spin" /> : <Download className="size-4" />}
-              {pulling ? "Pulling…" : pullStatus === "removing" ? "Removing…" : "Pull"}
-            </Button>
-          </form>
-
           <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
             {images.length ? images.map((img) => {
-              const reference = `${img.repository}:${img.tag}`;
-              const status = operations[`image:${reference}`];
+              const imageReference = `${img.repository}:${img.tag}`;
+              const status = operations[`image:${imageReference}`];
               const busy = Boolean(status);
               return (
                 <li key={img.id} className="flex items-center gap-3 px-4 py-3">
@@ -81,16 +49,15 @@ export function ImagesView() {
                       {img.id} · {formatBytes(img.sizeBytes)} · {relativeTime(img.createdAt, now)}
                     </p>
                   </div>
-                  {status === "pulling" ? <span className="text-xs text-muted-foreground">Pulling…</span> : null}
                   {status === "removing" ? <span className="text-xs text-muted-foreground">Removing…</span> : null}
                   <Button
                     size="icon-sm"
                     variant="ghost"
                     disabled={busy}
-                    aria-label={`Remove ${reference}`}
+                    aria-label={`Remove ${imageReference}`}
                     onClick={() => {
                       removeImage(img.id);
-                      toast(`Removing ${reference}`);
+                      toast(`Removing ${imageReference}`);
                     }}
                   >
                     {busy ? <LoaderCircle className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
