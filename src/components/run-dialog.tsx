@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { EnvEditor, MountEditor, joinEnvLines, joinMountLines, parseEnvLines as editableEnvRows, parseMountLines, type KvPair, type MountRow } from "@/components/kv-editor";
+import { PortBindingEditor } from "@/components/port-binding-editor";
 import { openWorkspacePath, pickWorkspaceDescendant } from "@/lib/tauri";
 import { DEFAULT_WORKSPACE_TARGET, defaultStandaloneWorkspacePath, isGeneratedContainerWorkspacePath, relativeWorkspacePath, resolveWorkspacePath } from "@/lib/workspace";
 import { applyImageDefaults } from "@/lib/wslc/container-defaults";
@@ -86,10 +87,8 @@ export function RunDialog() {
         <fieldset disabled={busy} className="contents">
           <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto px-5 py-4">
             <div className="grid gap-1.5"><Label htmlFor="image">Image</Label><Input id="image" list="pulled-image-catalog" value={spec.image} onChange={(event) => applyImage(event.target.value)} placeholder={pulledImages.length ? "Select or type a pulled image" : "repository/image:tag"} required className="font-mono text-xs" /><datalist id="pulled-image-catalog">{pulledImages.map((image) => <option key={image} value={image} />)}</datalist></div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div className="grid gap-1.5"><Label htmlFor="name">Name</Label><Input id="name" placeholder="web" value={spec.name} onChange={(event) => { setNameTouched(true); const name = event.target.value; const generated = isGeneratedContainerWorkspacePath(spec.workspacePath, undefined, spec.name || "container"); patch({ name, workspacePath: generated ? defaultStandaloneWorkspacePath(name || "container") : spec.workspacePath }); }} /></div>
-              <div className="grid gap-1.5"><Label htmlFor="ports">Publish ports</Label><Input id="ports" placeholder="8080:80" value={spec.ports} onChange={(event) => patch({ ports: event.target.value })} /></div>
-            </div>
+            <div className="grid gap-1.5"><Label htmlFor="name">Name</Label><Input id="name" placeholder="web" value={spec.name} onChange={(event) => { setNameTouched(true); const name = event.target.value; const generated = isGeneratedContainerWorkspacePath(spec.workspacePath, undefined, spec.name || "container"); patch({ name, workspacePath: generated ? defaultStandaloneWorkspacePath(name || "container") : spec.workspacePath }); }} /></div>
+            <PortBindingEditor value={spec.ports} onChange={(ports) => patch({ ports })} />
             <div className="grid gap-1.5"><Label htmlFor="cmd">Command</Label><Input id="cmd" placeholder="optional override" value={spec.command} onChange={(event) => patch({ command: event.target.value })} /></div>
             {hasImageMetadata ? <div className="grid gap-3 rounded-lg border border-border bg-elevated/30 p-3">
               <div><Label>Image defaults</Label><p className="text-xs text-subtle">Optional OCI defaults from the selected image. Quay never replaces your explicit command or invents a host mount source.</p></div>
