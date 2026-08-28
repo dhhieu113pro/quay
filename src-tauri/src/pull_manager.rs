@@ -142,6 +142,9 @@ pub fn save_jobs(path: &Path, jobs: &[PullJob]) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Arc, Condvar, Mutex};
+    use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
     fn job(id: &str, status: PullJobStatus, updated_at: u64) -> PullJob {
         PullJob {
@@ -206,5 +209,148 @@ mod tests {
         let actual = load_jobs(&path, 100);
         let _ = std::fs::remove_file(&path);
         assert_eq!(actual, expected);
+    }
+
+    #[derive(Default)]
+    struct FakeState {
+        started: Vec<String>,
+        active: usize,
+    }
+
+    #[derive(Default)]
+    struct FakeExecutor {
+        state: Mutex<FakeState>,
+        changed: Condvar,
+    }
+
+    impl FakeExecutor {
+        fn wait_for_started(&self, count: usize) -> bool {
+            let deadline = Instant::now() + Duration::from_secs(2);
+            let mut state = self.state.lock().unwrap();
+            while state.started.len() < count {
+                let now = Instant::now();
+                if now >= deadline {
+                    return false;
+                }
+                let (next, timeout) = self.changed.wait_timeout(state, deadline - now).unwrap();
+                state = next;
+                if timeout.timed_out() && state.started.len() < count {
+                    return false;
+                }
+            }
+            true
+        }
+
+        fn started(&self) -> Vec<String> {
+            self.state.lock().unwrap().started.clone()
+        }
+
+        fn active(&self) -> usize {
+            self.state.lock().unwrap().active
+        }
+    }
+
+    impl PullExecutor for FakeExecutor {
+        fn execute(
+            &self,
+            reference: &str,
+            cancelled: Arc<AtomicBool>,
+            _on_progress: Arc<dyn Fn(ProgressUpdate) + Send + Sync>,
+        ) -> Result<PullExecution, String> {
+            {
+                let mut state = self.state.lock().unwrap();
+                state.started.push(reference.to_string());
+                state.active += 1;
+                self.changed.notify_all();
+            }
+            while !cancelled.load(Ordering::SeqCst) {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            {
+                let mut state = self.state.lock().unwrap();
+                state.active -= 1;
+                self.changed.notify_all();
+            }
+            Ok(PullExecution::Cancelled)
+        }
+    }
+
+    struct NoopSink;
+
+    impl PullEventSink for NoopSink {
+        fn emit(&self, _job: &PullJob) {}
+    }
+
+    fn history_path(label: &str) -> std::path::PathBuf {
+        let nonce = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        std::env::temp_dir().join(format!("quay-pull-{label}-{}-{nonce}.json", std::process::id()))
+    }
+
+    fn manager(label: &str, fake: Arc<FakeExecutor>) -> PullManager {
+        PullManager::new(history_path(label), fake, Arc::new(NoopSink), 2)
+    }
+
+    #[test]
+    fn two_run_and_third_waits() {
+        let fake = Arc::new(FakeExecutor::default());
+        let manager = manager("two-run", fake.clone());
+        manager.start("one:latest").unwrap();
+        manager.start("two:latest").unwrap();
+        manager.start("three:latest").unwrap();
+        assert!(fake.wait_for_started(2));
+        let jobs = manager.list();
+        assert_eq!(jobs.iter().filter(|job| job.status == PullJobStatus::Pulling).count(), 2);
+        assert_eq!(jobs.iter().filter(|job| job.status == PullJobStatus::Queued).count(), 1);
+        manager.shutdown();
+    }
+
+    #[test]
+    fn duplicate_active_reference_reuses_job_id() {
+        let fake = Arc::new(FakeExecutor::default());
+        let manager = manager("duplicate", fake);
+        let first = manager.start(" nginx:latest ").unwrap();
+        let duplicate = manager.start("nginx:latest").unwrap();
+        assert_eq!(first.id, duplicate.id);
+        manager.shutdown();
+    }
+
+    #[test]
+    fn cancelling_running_job_starts_next_queued_job() {
+        let fake = Arc::new(FakeExecutor::default());
+        let manager = manager("cancel-running", fake.clone());
+        let first = manager.start("one:latest").unwrap();
+        manager.start("two:latest").unwrap();
+        manager.start("three:latest").unwrap();
+        assert!(fake.wait_for_started(2));
+        manager.cancel(&first.id).unwrap();
+        assert!(fake.wait_for_started(3));
+        assert!(fake.started().contains(&"three:latest".to_string()));
+        manager.shutdown();
+    }
+
+    #[test]
+    fn queued_cancel_never_calls_executor() {
+        let fake = Arc::new(FakeExecutor::default());
+        let manager = manager("cancel-queued", fake.clone());
+        manager.start("one:latest").unwrap();
+        manager.start("two:latest").unwrap();
+        let third = manager.start("three:latest").unwrap();
+        assert!(fake.wait_for_started(2));
+        let cancelled = manager.cancel(&third.id).unwrap();
+        assert_eq!(cancelled.status, PullJobStatus::Cancelled);
+        std::thread::sleep(Duration::from_millis(50));
+        assert!(!fake.started().contains(&"three:latest".to_string()));
+        manager.shutdown();
+    }
+
+    #[test]
+    fn shutdown_waits_until_running_fake_jobs_observe_cancellation() {
+        let fake = Arc::new(FakeExecutor::default());
+        let manager = manager("shutdown", fake.clone());
+        manager.start("one:latest").unwrap();
+        manager.start("two:latest").unwrap();
+        assert!(fake.wait_for_started(2));
+        manager.shutdown();
+        assert_eq!(fake.active(), 0);
     }
 }
