@@ -174,6 +174,37 @@ export function publishedPortRows(raw: string): PublishedPortRow[] {
   return raw.split(",").map(splitPublishedPort).filter((row): row is PublishedPortRow => Boolean(row));
 }
 
+export function sanitizePublishedHostPortInput(value: string) {
+  return value.replace(/\D/g, "");
+}
+
+export function publishedHostPortErrors(raw: string): Array<string | null> {
+  const rows = publishedPortRows(raw);
+  const validPortCounts = new Map<number, number>();
+
+  for (const row of rows) {
+    const hostPort = row.hostPort.trim();
+    if (!/^\d+$/.test(hostPort)) continue;
+    const value = Number(hostPort);
+    if (!Number.isInteger(value) || value < 1 || value > 65535) continue;
+    validPortCounts.set(value, (validPortCounts.get(value) ?? 0) + 1);
+  }
+
+  return rows.map((row) => {
+    const hostPort = row.hostPort.trim();
+    if (!hostPort) return "Host port is required";
+    if (!/^\d+$/.test(hostPort)) return "Host port must be numeric";
+    const value = Number(hostPort);
+    if (!Number.isInteger(value) || value < 1 || value > 65535) return "Host port must be between 1 and 65535";
+    if ((validPortCounts.get(value) ?? 0) > 1) return "Host port is already used";
+    return null;
+  });
+}
+
+export function hasPublishedHostPortErrors(raw: string) {
+  return publishedHostPortErrors(raw).some(Boolean);
+}
+
 export function updatePublishedHostPort(raw: string, index: number, hostPort: string) {
   const bindings = raw.split(",").map((binding) => binding.trim()).filter(Boolean);
   const target = bindings[index];
