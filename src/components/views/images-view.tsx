@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import { Download, LoaderCircle, Trash2 } from "lucide-react";
+import { LoaderCircle, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -11,17 +11,11 @@ export function ImagesView() {
   const images = useWslc((s) => s.images);
   const volumes = useWslc((s) => s.volumes);
   const operations = useWslc((s) => s.operations);
-  const pulls = useWslc((s) => s.pulls);
-  const startPull = useWslc((s) => s.startPull);
   const removeImage = useWslc((s) => s.removeImage);
   const createVolume = useWslc((s) => s.createVolume);
   const deleteVolume = useWslc((s) => s.deleteVolume);
-  const catalog = useWslc((s) => s.catalog);
   const now = useWslc((s) => s.now);
-  const [ref, setRef] = useState("ghcr.io/dhhieu113pro/local-coding-mcp:latest");
   const [volName, setVolName] = useState("");
-  const reference = ref.trim();
-  const activePull = pulls.find((item) => item.reference === reference && ["queued", "pulling", "cancelling"].includes(item.status));
   const volumeStatus = volName.trim() ? operations[`volume:${volName.trim()}`] : undefined;
   const creatingVolume = volumeStatus === "creating";
 
@@ -30,7 +24,7 @@ export function ImagesView() {
       <div>
         <h1 className="text-xl font-medium tracking-tight">Images & volumes</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Image and volume operations run directly through the installed <span className="font-mono text-foreground/80">wslc.exe</span> CLI.
+          Search and pull images from the title bar. Manage local images and volumes here.
         </p>
       </div>
 
@@ -40,33 +34,6 @@ export function ImagesView() {
           <TabsTrigger value="volumes">Volumes</TabsTrigger>
         </TabsList>
         <TabsContent value="images" className="flex flex-col gap-4">
-          <form
-            className="flex flex-col gap-2 sm:flex-row"
-            onSubmit={(event) => {
-              event.preventDefault();
-              const value = ref.trim();
-              if (!value || activePull) return;
-              void startPull(value);
-              toast(`Pulling ${value}`);
-            }}
-          >
-            <Input
-              list="pull-catalog"
-              value={ref}
-              onChange={(event) => setRef(event.target.value)}
-              placeholder="nginx:latest"
-              className="font-mono"
-              disabled={Boolean(activePull)}
-            />
-            <datalist id="pull-catalog">
-              {catalog.map((item) => <option key={item} value={item} />)}
-            </datalist>
-            <Button type="submit" disabled={Boolean(activePull) || !ref.trim()}>
-              {activePull ? <LoaderCircle className="size-4 animate-spin" /> : <Download className="size-4" />}
-              {activePull?.status === "queued" ? "Queued…" : activePull?.status === "cancelling" ? "Cancelling…" : activePull ? "Pulling…" : "Pull"}
-            </Button>
-          </form>
-
           <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
             {images.length ? images.map((img) => {
               const imageReference = `${img.repository}:${img.tag}`;
