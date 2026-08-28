@@ -4,7 +4,6 @@ import {
   defaultCubeWorkspacePath,
   normalizeWorkspacePath,
 } from "@/lib/workspace";
-import { mcpStack, specFromPreset } from "./catalog";
 import type { Container, ContainerGroup, RunSpec } from "./types";
 
 const GROUPS_KEY = "quay.groups.v1";
@@ -23,18 +22,7 @@ export function cubeContainerName(cubeName: string, name: string) {
   return member.toLowerCase().startsWith(prefix.toLowerCase()) ? member : `${prefix}${member}`;
 }
 
-const localCoding: ContainerGroup = {
-  id: "local-coding",
-  name: "LocalCoding",
-  network: cubeNetworkName("LocalCoding"),
-  env: "",
-  builtIn: true,
-  autoStart: false,
-  workspacePath: defaultCubeWorkspacePath("LocalCoding"),
-  specs: mcpStack.map((preset) => ({ ...specFromPreset(preset), name: cubeContainerName("LocalCoding", preset.name), groupId: "local-coding" })),
-};
-
-export const builtInGroups: ContainerGroup[] = [localCoding];
+export const builtInGroups: ContainerGroup[] = [];
 
 function safeParse<T>(key: string, fallback: T): T {
   if (typeof localStorage === "undefined") return fallback;
