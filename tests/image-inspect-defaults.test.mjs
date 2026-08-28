@@ -183,3 +183,31 @@ test("CI-facing source wiring still keeps inspect and trusted defaults in both d
   assert.match(cubeDialog, /applyRuntimeEnvDefaults/);
   assert.match(cubeDialog, /applyImageInspectDefaults/);
 });
+
+test("published ports allow editing only the outside host port", () => {
+  assert.equal(typeof inspectModule.publishedPortRows, "function");
+  assert.equal(typeof inspectModule.updatePublishedHostPort, "function");
+  assert.deepEqual(inspectModule.publishedPortRows("8080:80,5353:53/udp"), [
+    { hostPort: "8080", containerPort: "80", protocol: "tcp" },
+    { hostPort: "5353", containerPort: "53", protocol: "udp" },
+  ]);
+  assert.equal(
+    inspectModule.updatePublishedHostPort("8080:80,5353:53/udp", 0, "9090"),
+    "9090:80,5353:53/udp",
+  );
+  assert.equal(
+    inspectModule.updatePublishedHostPort("8080:80,5353:53/udp", 1, "5354"),
+    "8080:80,5354:53/udp",
+  );
+});
+
+test("Run Container and Cube member flows use a compact host-only port editor", () => {
+  const portEditor = read("../src/components/port-binding-editor.tsx");
+  assert.match(portEditor, /Host port/);
+  assert.match(portEditor, /Container port/);
+  assert.match(portEditor, /readOnly/);
+  assert.doesNotMatch(portEditor, /Add port|Remove port/);
+  for (const source of [runDialog, cubeDialog]) assert.match(source, /PortBindingEditor/);
+  assert.doesNotMatch(runDialog, /htmlFor="ports"|id="ports"/);
+  assert.doesNotMatch(cubeDialog, /htmlFor="cube-container-ports"|id="cube-container-ports"/);
+});
