@@ -144,6 +144,29 @@ fn pull_clear_history(backend: State<'_, Backend>) -> Result<Vec<pull_manager::P
     }
 }
 
+#[tauri::command]
+fn audit_query(
+    backend: State<'_, Backend>,
+    query: storage::audit::AuditQuery,
+) -> Result<Vec<storage::audit::AuditEvent>, String> {
+    let storage = backend.storage.as_ref().ok_or_else(|| "SQLite storage is unavailable".to_string())?;
+    storage.query_audit(&query).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn audit_clear(backend: State<'_, Backend>) -> Result<usize, String> {
+    let storage = backend.storage.as_ref().ok_or_else(|| "SQLite storage is unavailable".to_string())?;
+    storage.clear_audit().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn storage_stats(backend: State<'_, Backend>) -> Result<storage::StorageStats, String> {
+    match backend.storage.as_ref() {
+        Some(storage) => storage.stats().map_err(|error| error.to_string()),
+        None => Ok(storage::StorageStats::unavailable()),
+    }
+}
+
 fn run_capture(program: &str, args: &[&str]) -> Option<String> {
     let mut cmd = Command::new(program);
     cmd.args(args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
@@ -249,6 +272,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             wslc_invoke, image_search, pull_start, pull_list, pull_cancel, pull_clear_history,
+            audit_query, audit_clear, storage_stats,
             wslc_probe, ensure_host_directory, autostart_enabled, autostart_set,
             workspace::workspace_default_root, workspace::workspace_ensure, workspace::workspace_pick_root,
             workspace::workspace_pick_descendant, workspace::workspace_open,
