@@ -5,6 +5,7 @@ export type ViewId =
   | "containers"
   | "terminal"
   | "logs"
+  | "audit"
   | "images"
   | "groups"
   | "volumes"
@@ -43,6 +44,101 @@ export interface AggregatedLogLine extends LogLine {
   containerName: string;
   cubeId?: string;
   cubeName?: string;
+}
+
+export type AuditStatus = "doing" | "done" | "error";
+
+export interface AuditEvent {
+  id: string;
+  operationId: string;
+  ts: number;
+  category: string;
+  action: string;
+  targetType?: string;
+  targetId?: string;
+  targetName?: string;
+  status: AuditStatus;
+  message?: string;
+  command?: string;
+  error?: string;
+  durationMs?: number;
+  metadataJson?: string;
+}
+
+export interface AuditQuery {
+  status?: AuditStatus;
+  category?: string;
+  target?: string;
+  search?: string;
+  fromTs?: number;
+  toTs?: number;
+  limit?: number;
+  beforeTs?: number;
+}
+
+export interface ContainerLogRecord {
+  id: number;
+  containerId?: string;
+  containerName: string;
+  cubeId?: string;
+  cubeName?: string;
+  sourceTs?: number;
+  capturedTs: number;
+  stream: "stdout" | "stderr";
+  text: string;
+  payloadBytes: number;
+  dedupeKey: string;
+}
+
+export interface ContainerLogQuery {
+  containerName?: string;
+  cubeId?: string;
+  search?: string;
+  fromTs?: number;
+  toTs?: number;
+  limit?: number;
+  beforeId?: number;
+}
+
+export interface ContainerLogTarget {
+  containerId?: string;
+  containerName: string;
+  cubeId?: string;
+  cubeName?: string;
+  lastCapturedTs: number;
+}
+
+export interface StorageStats {
+  available: boolean;
+  databaseBytes: number;
+  auditRows: number;
+  containerLogRows: number;
+  containerLogPayloadBytes: number;
+}
+
+export interface ContainerLogWrite {
+  containerId?: string;
+  containerName: string;
+  cubeId?: string;
+  cubeName?: string;
+  sourceTs?: number;
+  capturedTs: number;
+  stream: "stdout" | "stderr";
+  text: string;
+  dedupeKey: string;
+}
+
+export interface LegacyOperationLogInput {
+  id: string;
+  ts: number;
+  containerName?: string;
+  command: string;
+  text: string;
+}
+
+export interface LegacyImportResult {
+  imported: number;
+  alreadyImported: boolean;
 }
 
 export interface Container {

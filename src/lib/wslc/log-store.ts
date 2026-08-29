@@ -1,9 +1,14 @@
 import { create } from "zustand";
-import { invokeWslcHost } from "@/lib/tauri";
+import {
+  appendContainerLogs,
+  clearContainerLogs,
+  invokeWslcHost,
+  listContainerLogTargets,
+  queryContainerLogs,
+} from "@/lib/tauri";
 import { useWslc } from "./store";
-import { clearOperationLogs, loadOperationLogs } from "./operation-log";
 import { mergeAggregatedLogs, parseContainerLogs } from "./logs";
-import type { AggregatedLogLine } from "./types";
+import type { AggregatedLogLine, Container, ContainerLogTarget, ContainerLogWrite } from "./types";
 
 type OpenLogsInput = { cubeId?: string; containerName?: string };
 
@@ -15,6 +20,7 @@ type LogRead = {
 
 interface LogState {
   aggregatedLogs: AggregatedLogLine[];
+  logTargets: ContainerLogTarget[];
   logCubeFilter: string | null;
   logContainerFilter: string | null;
   openLogs: (input?: OpenLogsInput) => void;
@@ -29,6 +35,8 @@ let clearGeneration = 0;
 let clearedAt = 0;
 const fallbackTails = new Map<string, string[]>();
 const fallbackNeedsBaseline = new Set<string>();
+const fallbackSessionId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+const fallbackSequences = new Map<string, number>();
 
 function splitLogLines(output?: string) {
   return (output ?? "").split(/\r?\n/).filter(Boolean);
@@ -54,33 +62,108 @@ async function readContainerLogs(name: string): Promise<LogRead> {
   return { ok: fallback.ok, output: fallback.output, timestamped: false };
 }
 
-function operationDiagnosticLines(): AggregatedLogLine[] {
-  const runtime = useWslc.getState();
-  return loadOperationLogs().map((entry) => {
-    const container = entry.containerName
-      ? runtime.containers.find((item) => item.name === entry.containerName)
-      : undefined;
-    const cube = container?.groupId
-      ? runtime.groups.find((group) => group.id === container.groupId)
-      : entry.containerName
-        ? runtime.groups.find((group) => group.specs.some((spec) => spec.name === entry.containerName))
-        : undefined;
-    const containerName = entry.containerName || "Quay";
+function toPersistedLine(record: Awaited<ReturnType<typeof queryContainerLogs>>[number]): AggregatedLogLine {
+  return {
+    id: `sqlite:${record.id}`,
+    ts: record.sourceTs ?? record.capturedTs,
+    stream: record.stream,
+    text: record.text,
+    containerId: record.containerId ?? `history:${record.containerName}`,
+    containerName: record.containerName,
+    cubeId: record.cubeId,
+    cubeName: record.cubeName,
+  };
+}
+
+function persistenceRows(
+  container: Pick<Container, "id" | "name" | "groupId">,
+  cube: { id: string; name: string } | undefined,
+  lines: AggregatedLogLine[],
+  timestamped: boolean,
+): ContainerLogWrite[] {
+  let sequence = fallbackSequences.get(container.id) ?? 0;
+  const capturedAt = Date.now();
+  const rows = lines.map((line, index) => {
+    const dedupeKey = timestamped
+      ? line.id
+      : `${container.id}|fallback|${fallbackSessionId}|${sequence++}`;
     return {
-      id: `operation:${entry.id}`,
-      ts: entry.ts,
-      stream: "stderr" as const,
-      text: `${entry.command}\n${entry.text}`,
-      containerId: container?.id || `operation:${containerName}`,
-      containerName,
+      containerId: container.id,
+      containerName: container.name,
       cubeId: cube?.id,
       cubeName: cube?.name,
-    };
+      sourceTs: timestamped ? line.ts : undefined,
+      capturedTs: capturedAt + index,
+      stream: line.stream,
+      text: line.text,
+      dedupeKey,
+    } satisfies ContainerLogWrite;
   });
+  if (!timestamped) fallbackSequences.set(container.id, sequence);
+  return rows;
+}
+
+export async function captureContainerLogs(container: Pick<Container, "id" | "name" | "groupId">): Promise<AggregatedLogLine[]> {
+  const generation = clearGeneration;
+  const clearWatermark = clearedAt;
+  const result = await readContainerLogs(container.name);
+  if (!result.ok || generation !== clearGeneration) return [];
+
+  const runtime = useWslc.getState();
+  const cube = container.groupId ? runtime.groups.find((group) => group.id === container.groupId) : undefined;
+  let lines: AggregatedLogLine[];
+
+  if (result.timestamped) {
+    lines = parseContainerLogs({
+      output: result.output,
+      containerId: container.id,
+      containerName: container.name,
+      cubeId: cube?.id,
+      cubeName: cube?.name,
+    }).filter((line) => line.ts > clearWatermark);
+  } else {
+    const currentTail = splitLogLines(result.output);
+    const previousTail = fallbackTails.get(container.id) ?? [];
+    fallbackTails.set(container.id, currentTail);
+    if (fallbackNeedsBaseline.delete(container.id)) return [];
+    const delta = newFallbackTail(previousTail, currentTail);
+    if (!previousTail.length && clearWatermark > 0) return [];
+    lines = parseContainerLogs({
+      output: delta.join("\n"),
+      containerId: container.id,
+      containerName: container.name,
+      cubeId: cube?.id,
+      cubeName: cube?.name,
+    });
+  }
+
+  if (!lines.length || generation !== clearGeneration) return lines;
+  try {
+    await appendContainerLogs(persistenceRows(container, cube, lines, result.timestamped));
+  } catch {
+    // Persistence is diagnostic infrastructure and must never break container operations.
+  }
+  return lines;
+}
+
+export async function drainContainerLogs(containerName: string): Promise<void> {
+  const runtime = useWslc.getState();
+  const existing = runtime.containers.find((item) => item.name === containerName);
+  const group = existing?.groupId
+    ? runtime.groups.find((item) => item.id === existing.groupId)
+    : runtime.groups.find((item) => item.specs.some((spec) => spec.name === containerName));
+  const container = existing ?? {
+    id: `history:${containerName}`,
+    name: containerName,
+    groupId: group?.id,
+  };
+  try { await captureContainerLogs(container); }
+  catch { /* best-effort lifecycle drain */ }
 }
 
 export const useLogs = create<LogState>((set, get) => ({
-  aggregatedLogs: operationDiagnosticLines(),
+  aggregatedLogs: [],
+  logTargets: [],
   logCubeFilter: null,
   logContainerFilter: null,
   openLogs: (input) => {
@@ -95,45 +178,28 @@ export const useLogs = create<LogState>((set, get) => ({
   refreshAggregatedLogs: () => {
     if (logsRefreshInFlight) return logsRefreshInFlight;
     const generation = clearGeneration;
-    const clearWatermark = clearedAt;
     logsRefreshInFlight = (async () => {
       try {
         const runtime = useWslc.getState();
         const running = runtime.containers.filter((container) => container.status === "running");
-        const settled = await Promise.allSettled(running.map(async (container) => {
-          const result = await readContainerLogs(container.name);
-          if (!result.ok || generation !== clearGeneration) return [];
-          const cube = container.groupId ? runtime.groups.find((group) => group.id === container.groupId) : undefined;
-          if (result.timestamped) {
-            return parseContainerLogs({
-              output: result.output,
-              containerId: container.id,
-              containerName: container.name,
-              cubeId: cube?.id,
-              cubeName: cube?.name,
-            }).filter((line) => line.ts > clearWatermark);
-          }
-
-          const currentTail = splitLogLines(result.output);
-          const previousTail = fallbackTails.get(container.id) ?? [];
-          fallbackTails.set(container.id, currentTail);
-          if (fallbackNeedsBaseline.delete(container.id)) return [];
-          const delta = newFallbackTail(previousTail, currentTail);
-          if (!previousTail.length && clearWatermark > 0) return [];
-          return parseContainerLogs({
-            output: delta.join("\n"),
-            containerId: container.id,
-            containerName: container.name,
-            cubeId: cube?.id,
-            cubeName: cube?.name,
-          });
-        }));
+        const settled = await Promise.allSettled(running.map((container) => captureContainerLogs(container)));
         if (generation !== clearGeneration) return;
-        const incoming = [
-          ...operationDiagnosticLines().filter((line) => line.ts > clearWatermark),
-          ...settled.flatMap((result) => result.status === "fulfilled" ? result.value : []),
-        ];
-        if (incoming.length) set({ aggregatedLogs: mergeAggregatedLogs(get().aggregatedLogs, incoming) });
+        const incoming = settled.flatMap((result) => result.status === "fulfilled" ? result.value : []);
+
+        try {
+          const [persisted, targets] = await Promise.all([
+            queryContainerLogs({ limit: 500 }),
+            listContainerLogTargets(),
+          ]);
+          if (generation !== clearGeneration) return;
+          const visiblePersisted = persisted.filter((record) => record.capturedTs > clearedAt);
+          set({
+            aggregatedLogs: mergeAggregatedLogs(visiblePersisted.map(toPersistedLine), incoming),
+            logTargets: targets,
+          });
+        } catch {
+          if (incoming.length) set({ aggregatedLogs: mergeAggregatedLogs(get().aggregatedLogs, incoming) });
+        }
       } finally {
         logsRefreshInFlight = null;
       }
@@ -143,11 +209,13 @@ export const useLogs = create<LogState>((set, get) => ({
   clearLogs: () => {
     clearGeneration += 1;
     clearedAt = Date.now();
-    clearOperationLogs();
+    fallbackTails.clear();
+    fallbackSequences.clear();
     for (const container of useWslc.getState().containers) {
-      if (container.status === "running" && !fallbackTails.has(container.id)) fallbackNeedsBaseline.add(container.id);
+      if (container.status === "running") fallbackNeedsBaseline.add(container.id);
     }
-    set({ aggregatedLogs: [] });
+    set({ aggregatedLogs: [], logTargets: [] });
+    void clearContainerLogs().catch(() => undefined);
   },
 }));
 

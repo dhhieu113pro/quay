@@ -6,7 +6,8 @@ const store = await readFile(new URL("../src/lib/wslc/store.ts", import.meta.url
 const tauri = await readFile(new URL("../src/lib/tauri.ts", import.meta.url), "utf8");
 const operationLog = await readFile(new URL("../src/lib/wslc/operation-log.ts", import.meta.url), "utf8");
 const logStore = await readFile(new URL("../src/lib/wslc/log-store.ts", import.meta.url), "utf8");
-const cubeLogsPanel = await readFile(new URL("../src/components/cube-logs-panel.tsx", import.meta.url), "utf8");
+const wslcAudit = await readFile(new URL("../src-tauri/src/wslc_audit.rs", import.meta.url), "utf8");
+const pullAudit = await readFile(new URL("../src-tauri/src/pull_audit.rs", import.meta.url), "utf8");
 const containers = await readFile(new URL("../src/components/views/containers-view.tsx", import.meta.url), "utf8");
 const images = await readFile(new URL("../src/components/views/images-view.tsx", import.meta.url), "utf8");
 const groups = await readFile(new URL("../src/components/views/groups-view.tsx", import.meta.url), "utf8");
@@ -43,16 +44,16 @@ test("cube actions show starting and stopping states", () => {
   assert.match(groups, /Starting…|Stopping…/);
 });
 
-test("failed container lifecycle commands persist the real error and stopped-container tail", () => {
-  assert.match(tauri, /captureLifecycleFailure/);
-  assert.match(tauri, /lifecycleFailure/);
-  assert.match(tauri, /appendOperationLog/);
-  assert.match(tauri, /\["container",\s*"logs",\s*"--tail",\s*"200",\s*containerName\]/);
-  assert.match(tauri, /result\.stderr/);
-  assert.match(tauri, /result\.exitCode/);
+test("failed container lifecycle commands are audited natively instead of browser localStorage", () => {
+  assert.doesNotMatch(tauri, /captureLifecycleFailure/);
+  assert.doesNotMatch(tauri, /appendOperationLog/);
+  assert.match(wslcAudit, /execute_with_audit/);
+  assert.match(wslcAudit, /AuditStatus::Doing/);
+  assert.match(wslcAudit, /AuditStatus::Error/);
+  assert.match(pullAudit, /record_pull_job/);
 });
 
-test("operation diagnostics persist across Quay restarts and redact secrets", () => {
+test("legacy operation diagnostics remain readable and redact secrets for migration", () => {
   assert.match(operationLog, /quay\.operationLogs/);
   assert.match(operationLog, /localStorage\.getItem/);
   assert.match(operationLog, /localStorage\.setItem/);
@@ -61,12 +62,12 @@ test("operation diagnostics persist across Quay restarts and redact secrets", ()
   assert.match(operationLog, /NGROK_AUTHTOKEN/);
 });
 
-test("persisted failed starts are merged into the regular logs UI", () => {
-  assert.match(logStore, /loadOperationLogs/);
-  assert.match(logStore, /operationDiagnosticLines/);
-  assert.match(logStore, /clearOperationLogs/);
-  assert.match(cubeLogsPanel, /persisted start failures/);
-  assert.doesNotMatch(cubeLogsPanel, /No running-member logs/);
+test("audit diagnostics are no longer merged into container output history", () => {
+  assert.doesNotMatch(logStore, /loadOperationLogs/);
+  assert.doesNotMatch(logStore, /operationDiagnosticLines/);
+  assert.doesNotMatch(logStore, /clearOperationLogs/);
+  assert.match(logStore, /queryContainerLogs/);
+  assert.match(logStore, /clearContainerLogs/);
 });
 
 test("dashboard CLI activity cannot force horizontal page overflow", () => {

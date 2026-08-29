@@ -1,5 +1,6 @@
 #![cfg(windows)]
 
+use crate::storage::Storage;
 use crate::wslc_executor::{CliResult, WslcExecutor};
 use serde_json::{json, Value};
 use std::mem::size_of;
@@ -27,12 +28,17 @@ extern "system" {
     fn GlobalMemoryStatusEx(status: *mut MemoryStatusEx) -> i32;
 }
 
-pub fn invoke(executor: &WslcExecutor, host: &Arc<Mutex<HostSampler>>, root: Value) -> Result<Value, String> {
+pub fn invoke(
+    executor: &WslcExecutor,
+    host: &Arc<Mutex<HostSampler>>,
+    storage: Option<&Storage>,
+    root: Value,
+) -> Result<Value, String> {
     let cmd = root.get("cmd").and_then(Value::as_str).ok_or("missing cmd")?;
     match cmd {
         "health" => {
             let args = vec!["version".into()];
-            let result = executor.execute(args.clone())?;
+            let result = crate::wslc_audit::execute_with_audit(storage, &args, || executor.execute(args.clone()))?;
             Ok(json!({"ok": result.ok, "wslc": result.ok, "session": "default", "output": result.output, "error": result.error, "exitCode": result.exit_code, "command": "wslc version"}))
         }
         "host_stats" => host
@@ -43,12 +49,13 @@ pub fn invoke(executor: &WslcExecutor, host: &Arc<Mutex<HostSampler>>, root: Val
             let args = root.get("args").and_then(Value::as_array).ok_or("missing args")?.iter()
                 .map(|x| x.as_str().map(str::to_string).ok_or("args must be strings"))
                 .collect::<Result<Vec<_>, _>>()?;
-            let result = executor.execute(args.clone())?;
+            let result = crate::wslc_audit::execute_with_audit(storage, &args, || executor.execute(args.clone()))?;
             Ok(result_json(result, &args))
         }
         "ensure_network" => {
             let name = root.get("name").and_then(Value::as_str).filter(|x| !x.trim().is_empty()).ok_or("missing network name")?;
-            let result = executor.ensure_network(name)?;
+            let args = vec!["network".into(), "ensure".into(), name.to_string()];
+            let result = crate::wslc_audit::execute_with_audit(storage, &args, || executor.ensure_network(name))?;
             Ok(json!({"ok": result.ok, "output": result.output, "error": result.error, "exitCode": result.exit_code, "network": name}))
         }
         _ => Err(format!("unknown command '{cmd}'")),

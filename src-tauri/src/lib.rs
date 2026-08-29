@@ -3,7 +3,11 @@
 //! Close hides to tray; Quit actually exits.
 
 mod docker_hub;
+mod pull_audit;
 mod pull_manager;
+mod storage;
+#[cfg(windows)]
+mod wslc_audit;
 #[cfg(windows)]
 mod wslc_executor;
 #[cfg(windows)]
@@ -18,6 +22,7 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
 
 pub struct Backend {
+    storage: Option<storage::Storage>,
     #[cfg(windows)]
     executor: wslc_executor::WslcExecutor,
     #[cfg(windows)]
@@ -28,8 +33,9 @@ pub struct Backend {
 
 impl Backend {
     #[cfg(windows)]
-    fn new(pull_manager: pull_manager::PullManager) -> Self {
+    fn new(pull_manager: pull_manager::PullManager, storage: Option<storage::Storage>) -> Self {
         Self {
+            storage,
             executor: wslc_executor::WslcExecutor::new(),
             host: Arc::new(Mutex::new(wslc_runtime::HostSampler::default())),
             pull_manager,
@@ -37,17 +43,23 @@ impl Backend {
     }
 
     #[cfg(not(windows))]
-    fn new() -> Self { Self {} }
+    fn new(storage: Option<storage::Storage>) -> Self { Self { storage } }
 }
 
 #[cfg(windows)]
 #[derive(Clone)]
-struct TauriPullSink(AppHandle);
+struct TauriPullSink {
+    app: AppHandle,
+    storage: Option<storage::Storage>,
+}
 
 #[cfg(windows)]
 impl pull_manager::PullEventSink for TauriPullSink {
     fn emit(&self, job: &pull_manager::PullJob) {
-        let _ = self.0.emit("quay://pull-job-updated", job.clone());
+        if let Some(storage) = self.storage.as_ref() {
+            pull_audit::record_pull_job(storage, job);
+        }
+        let _ = self.app.emit("quay://pull-job-updated", job.clone());
     }
 }
 
@@ -87,7 +99,8 @@ async fn wslc_invoke(backend: State<'_, Backend>, payload: Value) -> Result<Valu
     #[cfg(windows)] {
         let executor = backend.executor.clone();
         let host = backend.host.clone();
-        tauri::async_runtime::spawn_blocking(move || wslc_runtime::invoke(&executor, &host, payload))
+        let storage = backend.storage.clone();
+        tauri::async_runtime::spawn_blocking(move || wslc_runtime::invoke(&executor, &host, storage.as_ref(), payload))
             .await
             .map_err(|e| format!("WSLC executor task failed: {e}"))?
     }
@@ -138,6 +151,80 @@ fn pull_clear_history(backend: State<'_, Backend>) -> Result<Vec<pull_manager::P
     #[cfg(not(windows))] {
         let _ = backend;
         Err("WSLC pulls are only available on Windows".into())
+    }
+}
+
+#[tauri::command]
+fn audit_query(
+    backend: State<'_, Backend>,
+    query: storage::audit::AuditQuery,
+) -> Result<Vec<storage::audit::AuditEvent>, String> {
+    let storage = backend.storage.as_ref().ok_or_else(|| "SQLite storage is unavailable".to_string())?;
+    storage.query_audit(&query).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn audit_clear(backend: State<'_, Backend>) -> Result<usize, String> {
+    let storage = backend.storage.as_ref().ok_or_else(|| "SQLite storage is unavailable".to_string())?;
+    storage.clear_audit().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn container_logs_append(
+    backend: State<'_, Backend>,
+    lines: Vec<storage::container_logs::ContainerLogWrite>,
+) -> Result<usize, String> {
+    let storage = backend.storage.as_ref().ok_or_else(|| "SQLite storage is unavailable".to_string())?;
+    storage.append_container_logs(&lines).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn container_logs_query(
+    backend: State<'_, Backend>,
+    query: storage::container_logs::ContainerLogQuery,
+) -> Result<Vec<storage::container_logs::ContainerLogRecord>, String> {
+    let storage = backend.storage.as_ref().ok_or_else(|| "SQLite storage is unavailable".to_string())?;
+    storage.query_container_logs(&query).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn container_log_targets(
+    backend: State<'_, Backend>,
+) -> Result<Vec<storage::container_logs::ContainerLogTarget>, String> {
+    let storage = backend.storage.as_ref().ok_or_else(|| "SQLite storage is unavailable".to_string())?;
+    storage.list_log_targets().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn container_logs_clear(backend: State<'_, Backend>) -> Result<usize, String> {
+    let storage = backend.storage.as_ref().ok_or_else(|| "SQLite storage is unavailable".to_string())?;
+    storage.clear_container_logs().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn container_logs_cleanup(backend: State<'_, Backend>, now_ms: i64) -> Result<usize, String> {
+    const DEFAULT_MAX_AGE_DAYS: i64 = 30;
+    const DEFAULT_MAX_PAYLOAD_BYTES: i64 = 500 * 1024 * 1024;
+    let storage = backend.storage.as_ref().ok_or_else(|| "SQLite storage is unavailable".to_string())?;
+    storage
+        .enforce_log_retention(now_ms, DEFAULT_MAX_AGE_DAYS, DEFAULT_MAX_PAYLOAD_BYTES)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn legacy_operation_logs_import(
+    backend: State<'_, Backend>,
+    entries: Vec<storage::legacy::LegacyOperationLog>,
+) -> Result<storage::legacy::LegacyImportResult, String> {
+    let storage = backend.storage.as_ref().ok_or_else(|| "SQLite storage is unavailable".to_string())?;
+    storage.import_legacy_operation_logs(&entries).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn storage_stats(backend: State<'_, Backend>) -> Result<storage::StorageStats, String> {
+    match backend.storage.as_ref() {
+        Some(storage) => storage.stats().map_err(|error| error.to_string()),
+        None => Ok(storage::StorageStats::unavailable()),
     }
 }
 
@@ -216,19 +303,31 @@ pub fn run() {
             show_main(app);
         }))
         .setup(|app| {
+            let database_path = app.path().app_data_dir()?.join("quay.db");
+            let storage = match storage::Storage::open(database_path) {
+                Ok(storage) => Some(storage),
+                Err(error) => {
+                    eprintln!("storage: {error}");
+                    None
+                }
+            };
+
             #[cfg(windows)]
             {
                 let history_path = app.path().app_data_dir()?.join("pull-jobs.json");
                 let pull_manager = pull_manager::PullManager::new(
                     history_path,
                     Arc::new(pull_manager::SystemPullExecutor),
-                    Arc::new(TauriPullSink(app.handle().clone())),
+                    Arc::new(TauriPullSink {
+                        app: app.handle().clone(),
+                        storage: storage.clone(),
+                    }),
                     2,
                 );
-                app.manage(Backend::new(pull_manager));
+                app.manage(Backend::new(pull_manager, storage));
             }
             #[cfg(not(windows))]
-            app.manage(Backend::new());
+            app.manage(Backend::new(storage));
             if let Err(err) = setup_tray(app.handle()) { eprintln!("tray: {err}"); }
             Ok(())
         })
@@ -237,6 +336,9 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             wslc_invoke, image_search, pull_start, pull_list, pull_cancel, pull_clear_history,
+            audit_query, audit_clear, storage_stats, legacy_operation_logs_import,
+            container_logs_append, container_logs_query, container_log_targets,
+            container_logs_clear, container_logs_cleanup,
             wslc_probe, ensure_host_directory, autostart_enabled, autostart_set,
             workspace::workspace_default_root, workspace::workspace_ensure, workspace::workspace_pick_root,
             workspace::workspace_pick_descendant, workspace::workspace_open,
