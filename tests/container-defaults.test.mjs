@@ -141,10 +141,10 @@ test("known required environment variables block submission until populated", ()
   assert.ok(runtimeEnvModule, "runtime environment helper must load");
   assert.deepEqual(runtimeEnvModule.missingRequiredEnv("NGROK_AUTHTOKEN=", "ngrok/ngrok:latest"), ["NGROK_AUTHTOKEN"]);
   assert.deepEqual(runtimeEnvModule.missingRequiredEnv("NGROK_AUTHTOKEN=token-value", "ngrok/ngrok:latest"), []);
-  assert.match(runDialog, /disabled=\{busy \|\| imageDownloading \|\| !spec\.image\.trim\(\) \|\| missing\.length > 0 \|\| invalidPorts\}/);
-  assert.match(runDialog, /if \(busy \|\| imageDownloading \|\| missing\.length \|\| invalidPorts\) return/);
-  assert.match(cubeDialog, /disabled=\{imageDownloading \|\| !spec\.image\.trim\(\) \|\| missing\.length > 0 \|\| invalidPorts\}/);
-  assert.match(cubeDialog, /if \(imageDownloading\) return/);
+  assert.match(runDialog, /disabled=\{busy \|\| imageDownloading \|\| !imageReady \|\| !spec\.image\.trim\(\) \|\| missing\.length > 0 \|\| invalidPorts\}/);
+  assert.match(runDialog, /if \(busy \|\| imageDownloading \|\| !imageReady \|\| missing\.length \|\| invalidPorts\) return/);
+  assert.match(cubeDialog, /disabled=\{imageDownloading \|\| !imageReady \|\| !spec\.image\.trim\(\) \|\| missing\.length > 0 \|\| invalidPorts\}/);
+  assert.match(cubeDialog, /if \(imageDownloading \|\| !imageReady\) return/);
   assert.match(cubeDialog, /if \(missing\.length\)/);
   assert.match(cubeDialog, /if \(invalidPorts\) return/);
 });
