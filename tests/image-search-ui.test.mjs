@@ -11,18 +11,32 @@ try {
   search = "";
 }
 
-test("titlebar owns Docker Hub image search", () => {
+test("titlebar owns image search", () => {
   assert.match(shell, /<ImageSearch/);
-  assert.match(search, /Search Docker Hub images/);
+  assert.match(search, /Search images/);
   assert.match(search, /300/);
   assert.match(search, /ArrowDown|ArrowUp/);
   assert.match(search, /Enter/);
   assert.match(search, /requestId/);
 });
 
-test("search supports direct refs and Docker Hub result pulls", () => {
+test("suggestions require an explicit download action", () => {
+  assert.match(search, /Download/);
+  assert.match(search, /aria-label=.*Download/);
+  assert.doesNotMatch(search, /onClick=\{\(\) => pullResult\(result\)\}/);
+});
+
+test("clicking outside dismisses image suggestions", () => {
+  assert.match(search, /document\.addEventListener\(["']pointerdown["']/);
+  assert.match(search, /\.contains\(event\.target as Node\)/);
+  assert.match(search, /setOpen\(false\)/);
+});
+
+test("search supports Docker Hub and GHCR references", () => {
+  assert.match(search, /Docker Hub/);
+  assert.match(search, /GHCR/);
+  assert.match(search, /ghcr\.io\//);
   assert.match(search, /startPull\(value\)/);
-  assert.match(search, /startPull\(`\$\{result\.name\}:latest`\)/);
 });
 
 test("Images view no longer owns image pulling", () => {
