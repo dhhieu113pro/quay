@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 const logStore = await read("src/lib/wslc/log-store.ts");
-const store = await read("src/lib/wslc/store.ts");
+const tauri = await read("src/lib/tauri.ts");
 
 test("running log capture persists parsed lines and reads sqlite history as source of truth", () => {
   assert.match(logStore, /appendContainerLogs/);
@@ -25,12 +25,13 @@ test("fallback log dedupe is session and sequence aware instead of text-only", (
 });
 
 test("container stop restart and removal drain logs around destructive lifecycle commands", () => {
-  assert.match(store, /drainContainerLogs/);
-  assert.match(store, /await drainContainerLogs\(container\.name\)/);
-  assert.match(store, /container", "stop"/);
-  assert.match(store, /container", "restart"/);
-  assert.match(store, /container", "rm"/);
-  assert.match(store, /bestEffortLogDrain/);
+  assert.match(tauri, /destructiveLifecycleContainer/);
+  assert.match(tauri, /bestEffortLogDrain/);
+  assert.match(tauri, /await bestEffortLogDrain\(containerName\)/);
+  assert.match(tauri, /await invokeNative<WslcInvokeResult>\("wslc_invoke", \{ payload \}\)/);
+  assert.match(tauri, /container",\s*"stop"/);
+  assert.match(tauri, /container",\s*"restart"/);
+  assert.match(tauri, /container",\s*"rm"/);
 });
 
 test("clear removes sqlite container history without clearing audit history", () => {
