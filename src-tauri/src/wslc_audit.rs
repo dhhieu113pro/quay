@@ -71,6 +71,12 @@ pub fn describe_mutation(args: &[String]) -> Option<MutationMetadata> {
             Some("container".to_string()),
             named_argument(args, &["--name", "-n"]),
         ),
+        "exec" => (
+            "container".to_string(),
+            "exec".to_string(),
+            Some("container".to_string()),
+            command_target(args, 1),
+        ),
         "pull" => (
             "image".to_string(),
             "pull".to_string(),
@@ -105,7 +111,13 @@ pub fn describe_mutation(args: &[String]) -> Option<MutationMetadata> {
             "session".to_string(),
             normalize_action(second),
             Some("session".to_string()),
-            command_target(args, 2),
+            command_target(args, 2).or_else(|| Some("default".into())),
+        ),
+        "system" if second == "session" => (
+            "session".to_string(),
+            normalize_action(args.get(2).map(String::as_str).unwrap_or("")),
+            Some("session".to_string()),
+            Some("default".into()),
         ),
         _ => return None,
     };
