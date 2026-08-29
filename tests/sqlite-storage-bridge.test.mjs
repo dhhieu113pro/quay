@@ -6,6 +6,7 @@ const tauri = await readFile(new URL("../src/lib/tauri.ts", import.meta.url), "u
 const types = await readFile(new URL("../src/lib/wslc/types.ts", import.meta.url), "utf8");
 const migration = await readFile(new URL("../src/lib/wslc/storage-migration.ts", import.meta.url), "utf8").catch(() => "");
 const native = await readFile(new URL("../src-tauri/src/lib.rs", import.meta.url), "utf8");
+const nativeLogs = await readFile(new URL("../src-tauri/src/storage/container_logs.rs", import.meta.url), "utf8");
 
 test("frontend exposes typed narrow sqlite history commands", () => {
   for (const command of [
@@ -26,6 +27,11 @@ test("frontend exposes typed narrow sqlite history commands", () => {
   assert.match(types, /export interface AuditEvent/);
   assert.match(types, /export interface ContainerLogRecord/);
   assert.match(types, /export interface StorageStats/);
+});
+
+test("container log query accepts sparse typed frontend filters", () => {
+  assert.match(nativeLogs, /#\[serde\(rename_all\s*=\s*"camelCase",\s*default\)\][\s\S]*?pub struct ContainerLogQuery/);
+  assert.match(tauri, /queryContainerLogs\(query: ContainerLogQuery = \{\}\)/);
 });
 
 test("legacy operation log migration confirms native commit before clearing localStorage", () => {
