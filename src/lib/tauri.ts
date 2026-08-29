@@ -129,12 +129,25 @@ export async function importLegacyOperationLogs(entries: LegacyOperationLogInput
   return invokeNative<LegacyImportResult>("legacy_operation_logs_import", { entries });
 }
 
+function lifecycleArgs(payload: Record<string, unknown>): string[] {
+  return payload.cmd === "run_cli" && Array.isArray(payload.args)
+    ? payload.args.map((arg) => String(arg))
+    : [];
+}
+
 function destructiveLifecycleContainer(payload: Record<string, unknown>): string {
-  if (payload.cmd !== "run_cli" || !Array.isArray(payload.args)) return "";
-  const args = payload.args.map((arg) => String(arg));
+  const args = lifecycleArgs(payload);
   if (args[0] !== "container") return "";
   if (args[1] !== "stop" && args[1] !== "restart" && args[1] !== "rm") return "";
   return args.at(-1)?.trim() ?? "";
+}
+
+function failedLifecycleContainer(payload: Record<string, unknown>): string {
+  const args = lifecycleArgs(payload);
+  if (args[0] === "container" && args[1] === "start") return args.at(-1)?.trim() ?? "";
+  if (args[0] !== "run") return "";
+  const nameIndex = args.findIndex((arg) => arg === "--name" || arg === "-n");
+  return nameIndex >= 0 ? args[nameIndex + 1]?.trim() ?? "" : "";
 }
 
 async function bestEffortLogDrain(containerName: string) {
@@ -150,9 +163,11 @@ async function bestEffortLogDrain(containerName: string) {
 export async function invokeWslcHost(payload: Record<string, unknown>): Promise<WslcInvokeResult> {
   if (!isTauri()) return { ok: true, output: "browser lab" };
   const containerName = destructiveLifecycleContainer(payload);
+  const failureContainerName = failedLifecycleContainer(payload);
   if (containerName) await bestEffortLogDrain(containerName);
   const result = await invokeNative<WslcInvokeResult>("wslc_invoke", { payload });
   if (containerName) await bestEffortLogDrain(containerName);
+  if (!result.ok && failureContainerName) await bestEffortLogDrain(failureContainerName);
   return result;
 }
 
