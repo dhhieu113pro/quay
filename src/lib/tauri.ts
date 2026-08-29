@@ -129,9 +129,31 @@ export async function importLegacyOperationLogs(entries: LegacyOperationLogInput
   return invokeNative<LegacyImportResult>("legacy_operation_logs_import", { entries });
 }
 
+function destructiveLifecycleContainer(payload: Record<string, unknown>): string {
+  if (payload.cmd !== "run_cli" || !Array.isArray(payload.args)) return "";
+  const args = payload.args.map((arg) => String(arg));
+  if (args[0] !== "container") return "";
+  if (args[1] !== "stop" && args[1] !== "restart" && args[1] !== "rm") return "";
+  return args.at(-1)?.trim() ?? "";
+}
+
+async function bestEffortLogDrain(containerName: string) {
+  if (!containerName) return;
+  try {
+    const { drainContainerLogs } = await import("@/lib/wslc/log-store");
+    await drainContainerLogs(containerName);
+  } catch {
+    // Container lifecycle must continue even when log capture/storage is unavailable.
+  }
+}
+
 export async function invokeWslcHost(payload: Record<string, unknown>): Promise<WslcInvokeResult> {
   if (!isTauri()) return { ok: true, output: "browser lab" };
-  return invokeNative<WslcInvokeResult>("wslc_invoke", { payload });
+  const containerName = destructiveLifecycleContainer(payload);
+  if (containerName) await bestEffortLogDrain(containerName);
+  const result = await invokeNative<WslcInvokeResult>("wslc_invoke", { payload });
+  if (containerName) await bestEffortLogDrain(containerName);
+  return result;
 }
 
 export async function probeWslc(): Promise<WslcProbe> {
