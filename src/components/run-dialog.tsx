@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { FolderOpen, LoaderCircle } from "lucide-react";
+import { Copy, FolderOpen, LoaderCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -84,6 +84,15 @@ export function RunDialog() {
   const hasImageActions = Boolean(suggestedCommand || suggestedVolumes.length);
   const hasImageMetadata = hasImageActions || Boolean(readiness.healthcheck) || hasImageLabels;
 
+  async function copyPreview() {
+    try {
+      await navigator.clipboard.writeText(preview);
+      toast("Command copied");
+    } catch {
+      toast.error("Could not copy command");
+    }
+  }
+
   return <Dialog open={open} onOpenChange={(next) => { if (!busy) setRunOpen(next); }}>
     <DialogContent className="flex max-h-[90dvh] max-w-2xl flex-col gap-0 overflow-hidden p-0">
       <DialogHeader className="border-b border-border px-5 py-4"><DialogTitle>Run Container</DialogTitle><DialogDescription>Run one standalone container. Search local images or download from Docker Hub and GHCR before creating.</DialogDescription></DialogHeader>
@@ -110,7 +119,17 @@ export function RunDialog() {
             {missing.length ? <p className="text-xs text-destructive">Fill required environment: {missing.join(", ")}</p> : null}
             <MountEditor rows={mountRows} onChange={(rows) => { setMountRows(rows); patch({ mounts: joinMountLines(rows) }); }} />
           </div>
-          <div className="grid gap-3 border-t border-border px-5 py-3"><div className="flex flex-wrap items-center gap-5"><label className="flex items-center gap-2 text-sm"><Switch checked={spec.gpu} onCheckedChange={(gpu) => patch({ gpu })} />GPU</label><label className="flex items-center gap-2 text-sm"><Switch checked={spec.detach} onCheckedChange={(detach) => patch({ detach })} />Detach</label><label className="flex items-center gap-2 text-sm"><Switch checked={spec.remove} onCheckedChange={(remove) => patch({ remove })} />Auto-remove</label></div><p className="truncate font-mono text-[11px] text-subtle">{preview}</p><div className="flex justify-end gap-2"><Button type="button" variant="ghost" onClick={() => setRunOpen(false)} disabled={busy}>Cancel</Button><Button type="submit" disabled={busy || imageDownloading || !imageReady || !spec.image.trim() || missing.length > 0 || invalidPorts}>{busy ? <LoaderCircle className="size-4 animate-spin" /> : imageDownloading ? <LoaderCircle className="size-4 animate-spin" /> : null}{busy ? "Creating…" : imageDownloading ? "Waiting for image…" : "Create & start"}</Button></div></div>
+          <div className="grid gap-3 border-t border-border px-5 py-3">
+            <div className="flex flex-wrap items-center gap-5"><label className="flex items-center gap-2 text-sm"><Switch checked={spec.gpu} onCheckedChange={(gpu) => patch({ gpu })} />GPU</label><label className="flex items-center gap-2 text-sm"><Switch checked={spec.detach} onCheckedChange={(detach) => patch({ detach })} />Detach</label><label className="flex items-center gap-2 text-sm"><Switch checked={spec.remove} onCheckedChange={(remove) => patch({ remove })} />Auto-remove</label></div>
+            <div className="overflow-hidden rounded-lg border border-border bg-background">
+              <div className="flex items-center justify-between gap-3 border-b border-border px-3 py-1.5">
+                <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-subtle">Command preview</span>
+                <Button type="button" variant="ghost" size="sm" onClick={() => void copyPreview()} aria-label="Copy command"><Copy className="size-3.5" /> Copy</Button>
+              </div>
+              <pre className="whitespace-pre-wrap break-all px-3 py-2 font-mono text-[11px] leading-relaxed text-subtle">{preview}</pre>
+            </div>
+            <div className="flex justify-end gap-2"><Button type="button" variant="ghost" onClick={() => setRunOpen(false)} disabled={busy}>Cancel</Button><Button type="submit" disabled={busy || imageDownloading || !imageReady || !spec.image.trim() || missing.length > 0 || invalidPorts}>{busy ? <LoaderCircle className="size-4 animate-spin" /> : imageDownloading ? <LoaderCircle className="size-4 animate-spin" /> : null}{busy ? "Creating…" : imageDownloading ? "Waiting for image…" : "Create & start"}</Button></div>
+          </div>
         </fieldset>
       </form>
     </DialogContent>
