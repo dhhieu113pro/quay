@@ -160,6 +160,48 @@ fn audit_clear(backend: State<'_, Backend>) -> Result<usize, String> {
 }
 
 #[tauri::command]
+fn container_logs_append(
+    backend: State<'_, Backend>,
+    lines: Vec<storage::container_logs::ContainerLogWrite>,
+) -> Result<usize, String> {
+    let storage = backend.storage.as_ref().ok_or_else(|| "SQLite storage is unavailable".to_string())?;
+    storage.append_container_logs(&lines).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn container_logs_query(
+    backend: State<'_, Backend>,
+    query: storage::container_logs::ContainerLogQuery,
+) -> Result<Vec<storage::container_logs::ContainerLogRecord>, String> {
+    let storage = backend.storage.as_ref().ok_or_else(|| "SQLite storage is unavailable".to_string())?;
+    storage.query_container_logs(&query).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn container_log_targets(
+    backend: State<'_, Backend>,
+) -> Result<Vec<storage::container_logs::ContainerLogTarget>, String> {
+    let storage = backend.storage.as_ref().ok_or_else(|| "SQLite storage is unavailable".to_string())?;
+    storage.list_log_targets().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn container_logs_clear(backend: State<'_, Backend>) -> Result<usize, String> {
+    let storage = backend.storage.as_ref().ok_or_else(|| "SQLite storage is unavailable".to_string())?;
+    storage.clear_container_logs().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn container_logs_cleanup(backend: State<'_, Backend>, now_ms: i64) -> Result<usize, String> {
+    const DEFAULT_MAX_AGE_DAYS: i64 = 30;
+    const DEFAULT_MAX_PAYLOAD_BYTES: i64 = 500 * 1024 * 1024;
+    let storage = backend.storage.as_ref().ok_or_else(|| "SQLite storage is unavailable".to_string())?;
+    storage
+        .enforce_log_retention(now_ms, DEFAULT_MAX_AGE_DAYS, DEFAULT_MAX_PAYLOAD_BYTES)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn storage_stats(backend: State<'_, Backend>) -> Result<storage::StorageStats, String> {
     match backend.storage.as_ref() {
         Some(storage) => storage.stats().map_err(|error| error.to_string()),
@@ -273,6 +315,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             wslc_invoke, image_search, pull_start, pull_list, pull_cancel, pull_clear_history,
             audit_query, audit_clear, storage_stats,
+            container_logs_append, container_logs_query, container_log_targets,
+            container_logs_clear, container_logs_cleanup,
             wslc_probe, ensure_host_directory, autostart_enabled, autostart_set,
             workspace::workspace_default_root, workspace::workspace_ensure, workspace::workspace_pick_root,
             workspace::workspace_pick_descendant, workspace::workspace_open,
