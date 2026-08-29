@@ -10,6 +10,7 @@ const cubeLogsPanel = await readFile(new URL("../src/components/cube-logs-panel.
 const containers = await readFile(new URL("../src/components/views/containers-view.tsx", import.meta.url), "utf8");
 const images = await readFile(new URL("../src/components/views/images-view.tsx", import.meta.url), "utf8");
 const groups = await readFile(new URL("../src/components/views/groups-view.tsx", import.meta.url), "utf8");
+const runDialog = await readFile(new URL("../src/components/run-dialog.tsx", import.meta.url), "utf8");
 
 test("operation state records meaningful lifecycle labels instead of booleans", () => {
   assert.match(store, /type OperationStatus\s*=\s*"starting"\s*\|\s*"stopping"\s*\|\s*"restarting"\s*\|\s*"removing"/);
@@ -21,6 +22,13 @@ test("container actions render the exact operation status and disable conflictin
   assert.match(containers, /status=\{operations\[`container:\$\{c\.name\}`\]\}/);
   assert.match(containers, /Starting…|Stopping…|Restarting…/);
   assert.match(containers, /disabled=\{Boolean\(status\)\}/);
+});
+
+test("run dialog shows the full generated command and lets users copy it", () => {
+  assert.match(runDialog, /Command preview/);
+  assert.match(runDialog, /navigator\.clipboard\.writeText\(preview\)/);
+  assert.match(runDialog, /whitespace-pre-wrap/);
+  assert.doesNotMatch(runDialog, /truncate font-mono text-\[11px\] text-subtle/);
 });
 
 test("image pulling is not tracked by generic operations", () => {
