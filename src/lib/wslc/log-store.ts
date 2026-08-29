@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { invokeWslcHost } from "@/lib/tauri";
 import { useWslc } from "./store";
+import { clearOperationLogs, loadOperationLogs } from "./operation-log";
 import { mergeAggregatedLogs, parseContainerLogs } from "./logs";
 import type { AggregatedLogLine } from "./types";
 
@@ -53,8 +54,33 @@ async function readContainerLogs(name: string): Promise<LogRead> {
   return { ok: fallback.ok, output: fallback.output, timestamped: false };
 }
 
+function operationDiagnosticLines(): AggregatedLogLine[] {
+  const runtime = useWslc.getState();
+  return loadOperationLogs().map((entry) => {
+    const container = entry.containerName
+      ? runtime.containers.find((item) => item.name === entry.containerName)
+      : undefined;
+    const cube = container?.groupId
+      ? runtime.groups.find((group) => group.id === container.groupId)
+      : entry.containerName
+        ? runtime.groups.find((group) => group.specs.some((spec) => spec.name === entry.containerName))
+        : undefined;
+    const containerName = entry.containerName || "Quay";
+    return {
+      id: `operation:${entry.id}`,
+      ts: entry.ts,
+      stream: "stderr" as const,
+      text: `${entry.command}\n${entry.text}`,
+      containerId: container?.id || `operation:${containerName}`,
+      containerName,
+      cubeId: cube?.id,
+      cubeName: cube?.name,
+    };
+  });
+}
+
 export const useLogs = create<LogState>((set, get) => ({
-  aggregatedLogs: [],
+  aggregatedLogs: operationDiagnosticLines(),
   logCubeFilter: null,
   logContainerFilter: null,
   openLogs: (input) => {
@@ -103,7 +129,10 @@ export const useLogs = create<LogState>((set, get) => ({
           });
         }));
         if (generation !== clearGeneration) return;
-        const incoming = settled.flatMap((result) => result.status === "fulfilled" ? result.value : []);
+        const incoming = [
+          ...operationDiagnosticLines().filter((line) => line.ts > clearWatermark),
+          ...settled.flatMap((result) => result.status === "fulfilled" ? result.value : []),
+        ];
         if (incoming.length) set({ aggregatedLogs: mergeAggregatedLogs(get().aggregatedLogs, incoming) });
       } finally {
         logsRefreshInFlight = null;
@@ -114,6 +143,7 @@ export const useLogs = create<LogState>((set, get) => ({
   clearLogs: () => {
     clearGeneration += 1;
     clearedAt = Date.now();
+    clearOperationLogs();
     for (const container of useWslc.getState().containers) {
       if (container.status === "running" && !fallbackTails.has(container.id)) fallbackNeedsBaseline.add(container.id);
     }
