@@ -78,19 +78,19 @@ test("catalog presets cannot bypass trusted required-secret validation", () => {
   assert.deepEqual(runtimeEnvModule.missingRequiredEnv(effectiveEnv, postgres.image), ["POSTGRES_PASSWORD"]);
 });
 
-test("catalog quick-pick and manual image selection share one runtime env source of truth", () => {
+test("catalog presets and manual image selection share one runtime env source of truth", () => {
   assert.ok(catalogModule, "catalog module must load");
   assert.ok(runtimeEnvModule, "runtime environment helper must load");
   for (const image of ["postgres:16", "ngrok/ngrok:latest", "ghcr.io/dhhieu113pro/local-coding-mcp:latest"]) {
     const preset = catalogModule.catalogPresets.find((item) => item.image === image);
     assert.ok(preset, `preset must exist for ${image}`);
     const presetSpec = catalogModule.specFromPreset(preset);
-    const quickPick = runtimeEnvModule.applyRuntimeEnvDefaults(presetSpec.env, image);
+    const presetDefaults = runtimeEnvModule.applyRuntimeEnvDefaults(presetSpec.env, image);
     const manual = runtimeEnvModule.applyRuntimeEnvDefaults("", image);
-    assert.equal(quickPick, manual, `${image} quick-pick env must match manual image defaults`);
+    assert.equal(presetDefaults, manual, `${image} preset env must match manual image defaults`);
   }
   assert.doesNotMatch(catalogSource, /POSTGRES_PASSWORD=quay/);
-  assert.match(cubeDialog, /applyRuntimeEnvDefaults\(presetSpec\.env, preset\.image\)/);
+  assert.match(cubeDialog, /suggestedImages=\{catalogSuggestions\}/);
 });
 
 test("automatic environment merge preserves existing user values", () => {
@@ -143,7 +143,7 @@ test("known required environment variables block submission until populated", ()
   assert.deepEqual(runtimeEnvModule.missingRequiredEnv("NGROK_AUTHTOKEN=token-value", "ngrok/ngrok:latest"), []);
   assert.match(runDialog, /disabled=\{busy \|\| imageDownloading \|\| !spec\.image\.trim\(\) \|\| missing\.length > 0 \|\| invalidPorts\}/);
   assert.match(runDialog, /if \(busy \|\| imageDownloading \|\| missing\.length \|\| invalidPorts\) return/);
-  assert.match(cubeDialog, /disabled=\{imageDownloading \|\| missing\.length > 0 \|\| invalidPorts\}/);
+  assert.match(cubeDialog, /disabled=\{imageDownloading \|\| !spec\.image\.trim\(\) \|\| missing\.length > 0 \|\| invalidPorts\}/);
   assert.match(cubeDialog, /if \(imageDownloading\) return/);
   assert.match(cubeDialog, /if \(missing\.length\)/);
   assert.match(cubeDialog, /if \(invalidPorts\) return/);
