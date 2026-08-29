@@ -20,7 +20,7 @@ test("fallback log dedupe is session and sequence aware instead of text-only", (
   assert.match(logStore, /fallbackSessionId/);
   assert.match(logStore, /fallbackSequences/);
   assert.match(logStore, /newFallbackTail\(previousTail, currentTail\)/);
-  assert.match(logStore, /dedupeKey:/);
+  assert.match(logStore, /dedupeKey\s*[,}]/);
   assert.match(logStore, /sequence/);
 });
 
