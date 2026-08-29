@@ -147,8 +147,16 @@ export async function captureContainerLogs(container: Pick<Container, "id" | "na
 }
 
 export async function drainContainerLogs(containerName: string): Promise<void> {
-  const container = useWslc.getState().containers.find((item) => item.name === containerName);
-  if (!container) return;
+  const runtime = useWslc.getState();
+  const existing = runtime.containers.find((item) => item.name === containerName);
+  const group = existing?.groupId
+    ? runtime.groups.find((item) => item.id === existing.groupId)
+    : runtime.groups.find((item) => item.specs.some((spec) => spec.name === containerName));
+  const container = existing ?? {
+    id: `history:${containerName}`,
+    name: containerName,
+    groupId: group?.id,
+  };
   try { await captureContainerLogs(container); }
   catch { /* best-effort lifecycle drain */ }
 }
@@ -184,8 +192,9 @@ export const useLogs = create<LogState>((set, get) => ({
             listContainerLogTargets(),
           ]);
           if (generation !== clearGeneration) return;
+          const visiblePersisted = persisted.filter((record) => record.capturedTs > clearedAt);
           set({
-            aggregatedLogs: mergeAggregatedLogs(persisted.map(toPersistedLine), incoming),
+            aggregatedLogs: mergeAggregatedLogs(visiblePersisted.map(toPersistedLine), incoming),
             logTargets: targets,
           });
         } catch {
