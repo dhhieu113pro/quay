@@ -27,7 +27,7 @@ test("image picker supports local images, Docker Hub, GHCR, and explicit downloa
 test("image picker exposes pull progress and selects the image after completion", () => {
   assert.match(picker, /PullProgress/);
   assert.match(picker, /queued|pulling|cancelling/);
-  assert.match(picker, /status === ["']completed["']/);
+  assert.match(picker, /pendingJob\.status\s*!==\s*["']completed["']/);
   assert.match(picker, /onSelect/);
   assert.match(picker, /onBusyChange/);
 });
@@ -37,6 +37,12 @@ test("container actions wait for an image download to finish", () => {
   assert.match(runDialog, /disabled=\{[^}]*imageDownloading/);
   assert.match(cubeDialog, /imageDownloading/);
   assert.match(cubeDialog, /disabled=\{[^}]*imageDownloading/);
+});
+
+test("cube presets use the same picker download path instead of bypassing it", () => {
+  assert.match(picker, /suggestedImages/);
+  assert.match(cubeDialog, /suggestedImages=/);
+  assert.doesNotMatch(cubeDialog, /applyImage\(preset\.image\)/);
 });
 
 test("downloads icon badge renders the number of active downloads", () => {
