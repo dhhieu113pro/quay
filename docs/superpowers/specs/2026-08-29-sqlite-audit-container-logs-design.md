@@ -159,6 +159,7 @@ CREATE TABLE container_log_lines (
     captured_ts INTEGER NOT NULL,
     stream TEXT NOT NULL,
     text TEXT NOT NULL,
+    byte_size INTEGER NOT NULL,
     dedupe_key TEXT NOT NULL UNIQUE
 );
 
@@ -173,6 +174,8 @@ CREATE INDEX ix_container_logs_cube
 `stream` is `stdout`, `stderr`, or `unknown` when WSLC cannot provide a trustworthy stream distinction.
 
 `source_ts` is the timestamp emitted by WSLC/container log output when available. `captured_ts` is when Quay persisted the line.
+
+`byte_size` stores the UTF-8 byte length of the persisted row payload used for deterministic retention accounting. The 500 MB budget applies to accumulated container-log payload bytes, not the entire SQLite file, so indefinite audit retention cannot accidentally force audit deletion.
 
 `container_name` is intentionally stored independently from the current runtime inventory so historical records remain queryable after a container is removed.
 
@@ -228,7 +231,7 @@ Expose focused Tauri commands. Exact names may follow current repository convent
 - request retention cleanup;
 - clear container logs after explicit user confirmation;
 - clear audit history after explicit user confirmation;
-- return storage statistics such as database size and row counts.
+- return storage statistics such as database size, retained log payload bytes, and row counts.
 
 Frontend commands should not accept arbitrary SQL.
 
@@ -301,17 +304,18 @@ Use clear status distinction, but do not rely on color alone.
 Default retention:
 
 - keep 30 days;
-- enforce a global container-log storage budget of 500 MB.
+- enforce a global container-log payload budget of 500 MB.
 
 Both values should be represented as configuration constants/settings so a later UI can expose them without redesigning persistence.
 
 Cleanup policy:
 
 1. delete rows older than the configured age;
-2. if estimated DB/log storage still exceeds the configured budget, delete oldest container-log rows in bounded batches until under budget;
-3. run cleanup at startup and periodically after successful log batches, not for every inserted line;
-4. checkpoint WAL when useful;
-5. do not run `VACUUM` on every cleanup because it is expensive. A manual maintenance action or infrequent threshold-based vacuum may be added later.
+2. calculate retained container-log payload bytes from `SUM(byte_size)`;
+3. if retained payload still exceeds the configured budget, delete oldest container-log rows in bounded batches until under budget;
+4. run cleanup at startup and periodically after successful log batches, not for every inserted line;
+5. checkpoint WAL when useful;
+6. do not run `VACUUM` on every cleanup because it is expensive. A manual maintenance action or infrequent threshold-based vacuum may be added later.
 
 ### Audit
 
@@ -321,13 +325,15 @@ They are deleted only by an explicit user clear action. A future export/retentio
 
 ## Migration from Existing Operation Logs
 
+The current legacy `quay.operationLogs` entries are only written by the failed lifecycle diagnostic path, including optional captured tail output after a failed start/restart. They therefore represent failure diagnostics rather than general successful operations.
+
 On first startup after SQLite support is introduced:
 
-1. frontend/native bridge reads the existing `quay.operationLogs` localStorage entries once;
-2. transform each valid legacy entry into an audit event with category `legacy`, status `error` or `done` only when the existing data proves it; otherwise use a neutral migration message without fabricating an outcome;
-3. preserve timestamp, container name, sanitized command, and text;
-4. write a migration marker in SQLite so import is idempotent;
-5. after successful import, delete the legacy localStorage key.
+1. the frontend reads the existing `quay.operationLogs` localStorage entries once and sends validated rows to a dedicated native import command;
+2. transform each valid legacy entry into an audit event with category `legacy`, action `diagnostic.import`, and status `error`;
+3. preserve timestamp, container name, sanitized command, and diagnostic text;
+4. import all rows and write a migration marker in the same SQLite transaction so the import is idempotent;
+5. only after the native command confirms the transaction committed does the frontend delete the legacy localStorage key.
 
 If migration fails, leave localStorage untouched and retry on a later startup.
 
@@ -372,7 +378,7 @@ Use temporary SQLite databases to verify:
 - identical repeated application lines are not incorrectly collapsed when sequence context differs;
 - stopped/removed container history remains queryable;
 - 30-day cleanup;
-- size-budget cleanup ordering;
+- 500 MB payload-budget cleanup ordering using deterministic `byte_size` accounting;
 - legacy import idempotency;
 - failed migration leaves source data eligible for retry;
 - paging/filter queries.
@@ -432,8 +438,8 @@ The feature is complete when:
 5. Quay performs best-effort lifecycle drains around stop/restart/remove.
 6. Logs remain available after a container stops, is removed, and after Quay restarts.
 7. Logs and Audit are separate views and separate persistence/query concepts.
-8. Container-log retention defaults to 30 days and a 500 MB global budget.
+8. Container-log retention defaults to 30 days and a 500 MB global payload budget.
 9. Audit history has no automatic retention in the first release.
-10. Existing `quay.operationLogs` entries are migrated without deleting source data before a successful transaction.
+10. Existing `quay.operationLogs` failure diagnostics are migrated atomically without deleting source data before a successful transaction.
 11. SQLite/storage failures do not prevent requested WSLC operations.
 12. Automated tests cover persistence, deduplication, retention, migration, audit lifecycle, and the stopped-container regression.
