@@ -3,8 +3,11 @@
 //! Close hides to tray; Quit actually exits.
 
 mod docker_hub;
+mod pull_audit;
 mod pull_manager;
 mod storage;
+#[cfg(windows)]
+mod wslc_audit;
 #[cfg(windows)]
 mod wslc_executor;
 #[cfg(windows)]
@@ -45,12 +48,18 @@ impl Backend {
 
 #[cfg(windows)]
 #[derive(Clone)]
-struct TauriPullSink(AppHandle);
+struct TauriPullSink {
+    app: AppHandle,
+    storage: Option<storage::Storage>,
+}
 
 #[cfg(windows)]
 impl pull_manager::PullEventSink for TauriPullSink {
     fn emit(&self, job: &pull_manager::PullJob) {
-        let _ = self.0.emit("quay://pull-job-updated", job.clone());
+        if let Some(storage) = self.storage.as_ref() {
+            pull_audit::record_pull_job(storage, job);
+        }
+        let _ = self.app.emit("quay://pull-job-updated", job.clone());
     }
 }
 
@@ -67,7 +76,7 @@ fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
     let quit = MenuItem::with_id(app, "quit", "Quit Quay", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show, &quit])?;
     let mut tray = TrayIconBuilder::with_id("main")
-        .menu(&menu)
+        .menu(menu)
         .show_menu_on_left_click(false)
         .tooltip("Quay")
         .on_menu_event(|app, event| match event.id.as_ref() {
@@ -90,7 +99,8 @@ async fn wslc_invoke(backend: State<'_, Backend>, payload: Value) -> Result<Valu
     #[cfg(windows)] {
         let executor = backend.executor.clone();
         let host = backend.host.clone();
-        tauri::async_runtime::spawn_blocking(move || wslc_runtime::invoke(&executor, &host, payload))
+        let storage = backend.storage.clone();
+        tauri::async_runtime::spawn_blocking(move || wslc_runtime::invoke(&executor, &host, storage.as_ref(), payload))
             .await
             .map_err(|e| format!("WSLC executor task failed: {e}"))?
     }
@@ -299,7 +309,10 @@ pub fn run() {
                 let pull_manager = pull_manager::PullManager::new(
                     history_path,
                     Arc::new(pull_manager::SystemPullExecutor),
-                    Arc::new(TauriPullSink(app.handle().clone())),
+                    Arc::new(TauriPullSink {
+                        app: app.handle().clone(),
+                        storage: storage.clone(),
+                    }),
                     2,
                 );
                 app.manage(Backend::new(pull_manager, storage));
