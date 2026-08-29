@@ -49,6 +49,7 @@ export function ImagePicker({
   suggestedImages = [],
   onSelect,
   onBusyChange,
+  onReadyChange,
   disabled = false,
   inputId,
   placeholder = "Search local images, Docker Hub, or ghcr.io/...",
@@ -60,6 +61,7 @@ export function ImagePicker({
   suggestedImages?: SuggestedImage[];
   onSelect: (reference: string) => void;
   onBusyChange?: (busy: boolean) => void;
+  onReadyChange?: (ready: boolean) => void;
   disabled?: boolean;
   inputId?: string;
   placeholder?: string;
@@ -81,6 +83,7 @@ export function ImagePicker({
   const pendingJob = pendingPullId ? pulls.find((job) => job.id === pendingPullId) : undefined;
   const pullActive = Boolean(pendingJob && ACTIVE_PULL_STATUSES.includes(pendingJob.status as (typeof ACTIVE_PULL_STATUSES)[number]));
   const imageDownloading = startingPull || pullActive;
+  const imageReady = Boolean(value.trim()) && query.trim() === value.trim() && !imageDownloading;
 
   useEffect(() => {
     setQuery(value);
@@ -90,7 +93,14 @@ export function ImagePicker({
     onBusyChange?.(imageDownloading);
   }, [imageDownloading, onBusyChange]);
 
-  useEffect(() => () => onBusyChange?.(false), [onBusyChange]);
+  useEffect(() => {
+    onReadyChange?.(imageReady);
+  }, [imageReady, onReadyChange]);
+
+  useEffect(() => () => {
+    onBusyChange?.(false);
+    onReadyChange?.(false);
+  }, [onBusyChange, onReadyChange]);
 
   useEffect(() => {
     if (!pendingJob || pendingJob.status !== "completed") return;
@@ -130,8 +140,10 @@ export function ImagePicker({
     const localSet = new Set(normalizedLocalImages);
     const seen = new Set<string>();
     return suggestedImages.flatMap((suggestion) => {
-      const reference = withDefaultTag(suggestion.reference.trim());
-      if (!reference || localSet.has(reference) || seen.has(reference)) return [];
+      const rawReference = suggestion.reference.trim();
+      if (!rawReference) return [];
+      const reference = withDefaultTag(rawReference);
+      if (localSet.has(reference) || seen.has(reference)) return [];
       const searchable = `${suggestion.label ?? ""} ${reference} ${suggestion.description ?? ""}`.toLowerCase();
       if (needle && !searchable.includes(needle)) return [];
       seen.add(reference);
