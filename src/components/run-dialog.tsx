@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { EnvEditor, MountEditor, joinEnvLines, joinMountLines, parseEnvLines as editableEnvRows, parseMountLines, type KvPair, type MountRow } from "@/components/kv-editor";
+import { ImagePicker } from "@/components/image-picker";
 import { PortBindingEditor } from "@/components/port-binding-editor";
 import { openWorkspacePath, pickWorkspaceDescendant } from "@/lib/tauri";
 import { DEFAULT_WORKSPACE_TARGET, defaultStandaloneWorkspacePath, isGeneratedContainerWorkspacePath, relativeWorkspacePath, resolveWorkspacePath } from "@/lib/workspace";
@@ -35,6 +36,8 @@ export function RunDialog() {
   const [envRows, setEnvRows] = useState<KvPair[]>(() => editableEnvRows(defaultSpec.env));
   const [mountRows, setMountRows] = useState<MountRow[]>(() => parseMountLines(defaultSpec.mounts));
   const [nameTouched, setNameTouched] = useState(false);
+  const [imageDownloading, setImageDownloading] = useState(false);
+  const [imageReady, setImageReady] = useState(false);
   const pulledImages = useMemo(() => Array.from(new Set(images.map((image) => `${image.repository}:${image.tag}`))).sort(), [images]);
 
   function applySpec(next: RunSpec) {
@@ -42,7 +45,7 @@ export function RunDialog() {
     specRef.current = standalone;
     setSpec(standalone); setEnvRows(editableEnvRows(standalone.env)); setMountRows(parseMountLines(standalone.mounts));
   }
-  useEffect(() => { if (open) { inspectRequest.current += 1; setImageInspect(null); setImageVolumeSources({}); setNameTouched(false); applySpec(defaultSpec); } }, [open]);
+  useEffect(() => { if (open) { inspectRequest.current += 1; setImageInspect(null); setImageVolumeSources({}); setNameTouched(false); setImageDownloading(false); setImageReady(false); applySpec(defaultSpec); } }, [open]);
   function patch(p: Partial<RunSpec>) { setSpec((s) => { const next = { ...s, ...p, groupId: undefined }; specRef.current = next; return next; }); }
 
   function applyImage(image: string) {
@@ -83,11 +86,11 @@ export function RunDialog() {
 
   return <Dialog open={open} onOpenChange={(next) => { if (!busy) setRunOpen(next); }}>
     <DialogContent className="flex max-h-[90dvh] max-w-2xl flex-col gap-0 overflow-hidden p-0">
-      <DialogHeader className="border-b border-border px-5 py-4"><DialogTitle>Run Container</DialogTitle><DialogDescription>Run one standalone container. Pulled image metadata and trusted rules fill safe runtime defaults automatically.</DialogDescription></DialogHeader>
-      <form className="flex min-h-0 flex-1 flex-col" onSubmit={(event) => { event.preventDefault(); if (busy || missing.length || invalidPorts) return; runContainer(submittedSpec); toast(`Creating ${spec.name || spec.image}`); }}>
+      <DialogHeader className="border-b border-border px-5 py-4"><DialogTitle>Run Container</DialogTitle><DialogDescription>Run one standalone container. Search local images or download from Docker Hub and GHCR before creating.</DialogDescription></DialogHeader>
+      <form className="flex min-h-0 flex-1 flex-col" onSubmit={(event) => { event.preventDefault(); if (busy || imageDownloading || !imageReady || missing.length || invalidPorts) return; runContainer(submittedSpec); toast(`Creating ${spec.name || spec.image}`); }}>
         <fieldset disabled={busy} className="contents">
           <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto px-5 py-4">
-            <div className="grid gap-1.5"><Label htmlFor="image">Image</Label><Input id="image" list="pulled-image-catalog" value={spec.image} onChange={(event) => applyImage(event.target.value)} placeholder={pulledImages.length ? "Select or type a pulled image" : "repository/image:tag"} required className="font-mono text-xs" /><datalist id="pulled-image-catalog">{pulledImages.map((image) => <option key={image} value={image} />)}</datalist></div>
+            <div className="grid gap-1.5"><Label htmlFor="image">Image</Label><ImagePicker inputId="image" value={spec.image} localImages={pulledImages} onSelect={applyImage} onBusyChange={setImageDownloading} onReadyChange={setImageReady} disabled={busy} required /></div>
             <div className="grid gap-1.5"><Label htmlFor="name">Name</Label><Input id="name" placeholder="web" value={spec.name} onChange={(event) => { setNameTouched(true); const name = event.target.value; const generated = isGeneratedContainerWorkspacePath(spec.workspacePath, undefined, spec.name || "container"); patch({ name, workspacePath: generated ? defaultStandaloneWorkspacePath(name || "container") : spec.workspacePath }); }} /></div>
             <PortBindingEditor value={spec.ports} onChange={(ports) => patch({ ports })} />
             <div className="grid gap-1.5"><Label htmlFor="cmd">Command</Label><Input id="cmd" placeholder="optional override" value={spec.command} onChange={(event) => patch({ command: event.target.value })} /></div>
@@ -107,7 +110,7 @@ export function RunDialog() {
             {missing.length ? <p className="text-xs text-destructive">Fill required environment: {missing.join(", ")}</p> : null}
             <MountEditor rows={mountRows} onChange={(rows) => { setMountRows(rows); patch({ mounts: joinMountLines(rows) }); }} />
           </div>
-          <div className="grid gap-3 border-t border-border px-5 py-3"><div className="flex flex-wrap items-center gap-5"><label className="flex items-center gap-2 text-sm"><Switch checked={spec.gpu} onCheckedChange={(gpu) => patch({ gpu })} />GPU</label><label className="flex items-center gap-2 text-sm"><Switch checked={spec.detach} onCheckedChange={(detach) => patch({ detach })} />Detach</label><label className="flex items-center gap-2 text-sm"><Switch checked={spec.remove} onCheckedChange={(remove) => patch({ remove })} />Auto-remove</label></div><p className="truncate font-mono text-[11px] text-subtle">{preview}</p><div className="flex justify-end gap-2"><Button type="button" variant="ghost" onClick={() => setRunOpen(false)} disabled={busy}>Cancel</Button><Button type="submit" disabled={busy || !spec.image.trim() || missing.length > 0 || invalidPorts}>{busy ? <LoaderCircle className="size-4 animate-spin" /> : null}{busy ? "Creating…" : "Create & start"}</Button></div></div>
+          <div className="grid gap-3 border-t border-border px-5 py-3"><div className="flex flex-wrap items-center gap-5"><label className="flex items-center gap-2 text-sm"><Switch checked={spec.gpu} onCheckedChange={(gpu) => patch({ gpu })} />GPU</label><label className="flex items-center gap-2 text-sm"><Switch checked={spec.detach} onCheckedChange={(detach) => patch({ detach })} />Detach</label><label className="flex items-center gap-2 text-sm"><Switch checked={spec.remove} onCheckedChange={(remove) => patch({ remove })} />Auto-remove</label></div><p className="truncate font-mono text-[11px] text-subtle">{preview}</p><div className="flex justify-end gap-2"><Button type="button" variant="ghost" onClick={() => setRunOpen(false)} disabled={busy}>Cancel</Button><Button type="submit" disabled={busy || imageDownloading || !imageReady || !spec.image.trim() || missing.length > 0 || invalidPorts}>{busy ? <LoaderCircle className="size-4 animate-spin" /> : imageDownloading ? <LoaderCircle className="size-4 animate-spin" /> : null}{busy ? "Creating…" : imageDownloading ? "Waiting for image…" : "Create & start"}</Button></div></div>
         </fieldset>
       </form>
     </DialogContent>
