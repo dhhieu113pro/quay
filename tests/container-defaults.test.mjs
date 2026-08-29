@@ -40,7 +40,7 @@ test("container image defaults derive a safe name and reuse trusted catalog pres
 
 test("standalone Run Container applies image defaults without overwriting a custom name", () => {
   assert.match(runDialog, /applyImageDefaults/);
-  assert.match(runDialog, /onChange=\{\(event\) => applyImage/);
+  assert.match(runDialog, /onSelect=\{applyImage\}/);
   assert.match(runDialog, /nameTouched/);
 });
 
@@ -51,7 +51,7 @@ test("standalone and Cube dialogs seed an editable environment row when none exi
 
 test("Cube container image changes use the same runnable defaults helper", () => {
   assert.match(cubeDialog, /applyImageDefaults/);
-  assert.match(cubeDialog, /onChange=\{\(event\) => applyImage/);
+  assert.match(cubeDialog, /onSelect=\{applyImage\}/);
 });
 
 test("trusted runtime environment rules cover common images", () => {
@@ -141,9 +141,10 @@ test("known required environment variables block submission until populated", ()
   assert.ok(runtimeEnvModule, "runtime environment helper must load");
   assert.deepEqual(runtimeEnvModule.missingRequiredEnv("NGROK_AUTHTOKEN=", "ngrok/ngrok:latest"), ["NGROK_AUTHTOKEN"]);
   assert.deepEqual(runtimeEnvModule.missingRequiredEnv("NGROK_AUTHTOKEN=token-value", "ngrok/ngrok:latest"), []);
-  assert.match(runDialog, /disabled=\{busy \|\| !spec\.image\.trim\(\) \|\| missing\.length > 0 \|\| invalidPorts\}/);
-  assert.match(runDialog, /if \(busy \|\| missing\.length \|\| invalidPorts\) return/);
-  assert.match(cubeDialog, /disabled=\{missing\.length > 0 \|\| invalidPorts\}/);
+  assert.match(runDialog, /disabled=\{busy \|\| imageDownloading \|\| !spec\.image\.trim\(\) \|\| missing\.length > 0 \|\| invalidPorts\}/);
+  assert.match(runDialog, /if \(busy \|\| imageDownloading \|\| missing\.length \|\| invalidPorts\) return/);
+  assert.match(cubeDialog, /disabled=\{imageDownloading \|\| missing\.length > 0 \|\| invalidPorts\}/);
+  assert.match(cubeDialog, /if \(imageDownloading\) return/);
   assert.match(cubeDialog, /if \(missing\.length\)/);
   assert.match(cubeDialog, /if \(invalidPorts\) return/);
 });
