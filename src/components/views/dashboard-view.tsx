@@ -249,8 +249,8 @@ export function DashboardView() {
           </div>
         </section>
 
-        <div className="grid gap-4 lg:grid-cols-2">
-          <section className="rounded-xl border border-border bg-card">
+        <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+          <section className="min-w-0 rounded-xl border border-border bg-card">
             <div className="flex items-center justify-between px-4 py-3">
               <h2 className="text-sm font-medium">Standalone containers</h2>
               <button
@@ -294,7 +294,7 @@ export function DashboardView() {
             )}
           </section>
 
-          <section className="rounded-xl border border-border bg-card">
+          <section className="min-w-0 rounded-xl border border-border bg-card">
             <div className="flex items-center justify-between px-4 py-3">
               <h2 className="text-sm font-medium">CLI activity</h2>
               <button
@@ -307,9 +307,9 @@ export function DashboardView() {
             </div>
             <ul className="divide-y divide-border">
               {calls.slice(0, 5).map((c) => (
-                <li key={c.id} className="px-4 py-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="font-mono text-xs text-accent">{c.method}</p>
+                <li key={c.id} className="min-w-0 px-4 py-3">
+                  <div className="flex min-w-0 items-center justify-between gap-2">
+                    <p className="min-w-0 flex-1 break-all font-mono text-xs text-accent">{c.method}</p>
                     <span className={c.ok ? "text-ok text-xs" : "text-destructive text-xs"}>
                       {c.ok ? "ok" : "err"}
                     </span>
