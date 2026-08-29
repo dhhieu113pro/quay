@@ -36,7 +36,7 @@ pub struct ContainerLogRecord {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", default)]
 pub struct ContainerLogQuery {
     pub container_name: Option<String>,
     pub cube_id: Option<String>,
