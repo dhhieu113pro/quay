@@ -9,7 +9,7 @@ fn terminal_duration(job: &PullJob) -> Option<i64> {
 }
 
 pub fn record_pull_job(storage: &Storage, job: &PullJob) {
-    let (status, phase, message, error, duration_ms) = match job.status {
+    let (status, phase, message, error, duration_ms) = match &job.status {
         PullJobStatus::Queued => (AuditStatus::Doing, "doing", "Image pull queued", None, None),
         PullJobStatus::Completed => (AuditStatus::Done, "terminal", "Image pull completed", None, terminal_duration(job)),
         PullJobStatus::Cancelled => (AuditStatus::Done, "terminal", "Image pull cancelled", None, terminal_duration(job)),
