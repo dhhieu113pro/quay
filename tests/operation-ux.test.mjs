@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const store = await readFile(new URL("../src/lib/wslc/store.ts", import.meta.url), "utf8");
+const logStore = await readFile(new URL("../src/lib/wslc/log-store.ts", import.meta.url), "utf8");
 const containers = await readFile(new URL("../src/components/views/containers-view.tsx", import.meta.url), "utf8");
 const images = await readFile(new URL("../src/components/views/images-view.tsx", import.meta.url), "utf8");
 const groups = await readFile(new URL("../src/components/views/groups-view.tsx", import.meta.url), "utf8");
@@ -28,4 +29,24 @@ test("image pulling is not tracked by generic operations", () => {
 test("cube actions show starting and stopping states", () => {
   assert.match(groups, /operations\[`cube:\$\{[^}]+\}`\]/);
   assert.match(groups, /Starting…|Stopping…/);
+});
+
+test("failed container starts keep a per-container error and capture stopped-container logs", () => {
+  assert.match(store, /operationErrors:\s*Record<string,\s*string>/);
+  assert.match(store, /captureContainerStartFailure/);
+  assert.match(store, /\["container",\s*"logs",\s*"--tail",\s*"200",\s*name\]/);
+  assert.match(store, /appendOperationLog/);
+});
+
+test("cube members expose failed starts and a direct path to logs", () => {
+  assert.match(groups, /operationErrors\[`container:\$\{member\.name\}`\]/);
+  assert.match(groups, /Start failed/);
+  assert.match(groups, /View logs/);
+});
+
+test("operation diagnostics persist across Quay restarts", () => {
+  assert.match(logStore, /quay\.operationLogs/);
+  assert.match(logStore, /localStorage\.getItem/);
+  assert.match(logStore, /localStorage\.setItem/);
+  assert.match(logStore, /redact/i);
 });
