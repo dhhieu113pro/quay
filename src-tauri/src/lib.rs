@@ -76,7 +76,7 @@ fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
     let quit = MenuItem::with_id(app, "quit", "Quit Quay", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show, &quit])?;
     let mut tray = TrayIconBuilder::with_id("main")
-        .menu(menu)
+        .menu(&menu)
         .show_menu_on_left_click(false)
         .tooltip("Quay")
         .on_menu_event(|app, event| match event.id.as_ref() {
@@ -212,6 +212,15 @@ fn container_logs_cleanup(backend: State<'_, Backend>, now_ms: i64) -> Result<us
 }
 
 #[tauri::command]
+fn legacy_operation_logs_import(
+    backend: State<'_, Backend>,
+    entries: Vec<storage::legacy::LegacyOperationLog>,
+) -> Result<storage::legacy::LegacyImportResult, String> {
+    let storage = backend.storage.as_ref().ok_or_else(|| "SQLite storage is unavailable".to_string())?;
+    storage.import_legacy_operation_logs(&entries).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn storage_stats(backend: State<'_, Backend>) -> Result<storage::StorageStats, String> {
     match backend.storage.as_ref() {
         Some(storage) => storage.stats().map_err(|error| error.to_string()),
@@ -327,7 +336,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             wslc_invoke, image_search, pull_start, pull_list, pull_cancel, pull_clear_history,
-            audit_query, audit_clear, storage_stats,
+            audit_query, audit_clear, storage_stats, legacy_operation_logs_import,
             container_logs_append, container_logs_query, container_log_targets,
             container_logs_clear, container_logs_cleanup,
             wslc_probe, ensure_host_directory, autostart_enabled, autostart_set,
