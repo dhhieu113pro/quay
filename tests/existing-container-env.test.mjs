@@ -13,6 +13,13 @@ test("existing container inspector exposes an Environment editor with recreation
   assert.match(inspect, /Save & recreate/);
 });
 
+test("existing container inspector lets users edit host ports and recreate safely", () => {
+  assert.match(inspect, /PortBindingEditor/);
+  assert.match(inspect, /Port changes require container recreation/);
+  assert.match(inspect, /hasPublishedHostPortErrors/);
+  assert.match(inspect, /updated ports/);
+});
+
 test("existing container environment is loaded from container inspect data", () => {
   const parsed = editorModule.parseExistingContainerInspect({
     Name: "/demo",
