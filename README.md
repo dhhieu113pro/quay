@@ -55,7 +55,9 @@ There is **no C# sidecar**, no `Quay.Host`, no custom `Quay` WSLC session, and n
 
 Windows x64 and ARM64. WSL **2.9.3+** and `wslc.exe` must be available to Quay.
 
-**[Download the latest installer](https://github.com/dhhieu113pro/quay/releases/latest)**
+**[Get Quay from the Microsoft Store](https://apps.microsoft.com/detail/9p3j0z16sg3f?ocid=webpdpshare)**
+
+**[Download the latest installer from GitHub](https://github.com/dhhieu113pro/quay/releases/latest)**
 
 | File | Machine |
 | --- | --- |
