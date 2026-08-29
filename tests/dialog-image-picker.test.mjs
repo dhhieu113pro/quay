@@ -32,6 +32,15 @@ test("image picker exposes pull progress and selects the image after completion"
   assert.match(picker, /onBusyChange/);
 });
 
+test("editing search invalidates image readiness until a valid image is selected", () => {
+  assert.match(picker, /onReadyChange/);
+  assert.match(picker, /query\.trim\(\)\s*===\s*value\.trim\(\)/);
+  assert.match(runDialog, /imageReady/);
+  assert.match(runDialog, /disabled=\{[^}]*!imageReady/);
+  assert.match(cubeDialog, /imageReady/);
+  assert.match(cubeDialog, /disabled=\{[^}]*!imageReady/);
+});
+
 test("container actions wait for an image download to finish", () => {
   assert.match(runDialog, /imageDownloading/);
   assert.match(runDialog, /disabled=\{[^}]*imageDownloading/);
