@@ -37,9 +37,11 @@ fn mutation_classifier_covers_supported_state_changes_but_skips_queries() {
         (strings(&["container", "restart", "api"]), "container", "restart", Some("api")),
         (strings(&["container", "rm", "api"]), "container", "remove", Some("api")),
         (strings(&["run", "--name", "alpha-api", "nginx:latest"]), "container", "run", Some("alpha-api")),
+        (strings(&["exec", "api", "sh", "-lc", "echo ok"]), "container", "exec", Some("api")),
         (strings(&["image", "rm", "nginx:latest"]), "image", "remove", Some("nginx:latest")),
         (strings(&["volume", "create", "cache"]), "volume", "create", Some("cache")),
-        (strings(&["session", "terminate", "default"]), "session", "terminate", Some("default")),
+        (strings(&["system", "session", "start"]), "session", "start", Some("default")),
+        (strings(&["system", "session", "terminate"]), "session", "terminate", Some("default")),
     ];
 
     for (args, category, action, target) in cases {
