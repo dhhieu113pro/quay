@@ -34,6 +34,13 @@ test("container stop restart and removal drain logs around destructive lifecycle
   assert.match(tauri, /"rm"/);
 });
 
+test("failed run and start commands keep the stopped container tail in sqlite history", () => {
+  assert.match(tauri, /failedLifecycleContainer/);
+  assert.match(tauri, /!result\.ok/);
+  assert.match(tauri, /failureContainerName/);
+  assert.match(logStore, /history:\$\{containerName\}/);
+});
+
 test("clear removes sqlite container history without clearing audit history", () => {
   assert.match(logStore, /clearContainerLogs/);
   assert.doesNotMatch(logStore, /clearAudit/);
