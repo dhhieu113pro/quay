@@ -4,6 +4,7 @@
 
 mod docker_hub;
 mod pull_manager;
+mod storage;
 #[cfg(windows)]
 mod wslc_executor;
 #[cfg(windows)]
@@ -18,6 +19,7 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
 
 pub struct Backend {
+    storage: Option<storage::Storage>,
     #[cfg(windows)]
     executor: wslc_executor::WslcExecutor,
     #[cfg(windows)]
@@ -28,8 +30,9 @@ pub struct Backend {
 
 impl Backend {
     #[cfg(windows)]
-    fn new(pull_manager: pull_manager::PullManager) -> Self {
+    fn new(pull_manager: pull_manager::PullManager, storage: Option<storage::Storage>) -> Self {
         Self {
+            storage,
             executor: wslc_executor::WslcExecutor::new(),
             host: Arc::new(Mutex::new(wslc_runtime::HostSampler::default())),
             pull_manager,
@@ -37,7 +40,7 @@ impl Backend {
     }
 
     #[cfg(not(windows))]
-    fn new() -> Self { Self {} }
+    fn new(storage: Option<storage::Storage>) -> Self { Self { storage } }
 }
 
 #[cfg(windows)]
@@ -216,6 +219,15 @@ pub fn run() {
             show_main(app);
         }))
         .setup(|app| {
+            let database_path = app.path().app_data_dir()?.join("quay.db");
+            let storage = match storage::Storage::open(database_path) {
+                Ok(storage) => Some(storage),
+                Err(error) => {
+                    eprintln!("storage: {error}");
+                    None
+                }
+            };
+
             #[cfg(windows)]
             {
                 let history_path = app.path().app_data_dir()?.join("pull-jobs.json");
@@ -225,10 +237,10 @@ pub fn run() {
                     Arc::new(TauriPullSink(app.handle().clone())),
                     2,
                 );
-                app.manage(Backend::new(pull_manager));
+                app.manage(Backend::new(pull_manager, storage));
             }
             #[cfg(not(windows))]
-            app.manage(Backend::new());
+            app.manage(Backend::new(storage));
             if let Err(err) = setup_tray(app.handle()) { eprintln!("tray: {err}"); }
             Ok(())
         })
