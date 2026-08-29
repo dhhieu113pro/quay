@@ -6,6 +6,12 @@ import { cn } from "@/lib/utils";
 import { useWslc } from "@/lib/wslc/store";
 import type { ImageSearchResult } from "@/lib/wslc/types";
 
+export type SuggestedImage = {
+  reference: string;
+  label?: string;
+  description?: string;
+};
+
 type PickerSuggestion = {
   name: string;
   reference: string;
@@ -33,9 +39,14 @@ function dockerReference(result: ImageSearchResult) {
   return `${result.name}:latest`;
 }
 
+function sourceForReference(reference: string): PickerSuggestion["source"] {
+  return isGhcrReference(reference) ? "ghcr" : "docker-hub";
+}
+
 export function ImagePicker({
   value,
   localImages,
+  suggestedImages = [],
   onSelect,
   onBusyChange,
   disabled = false,
@@ -46,6 +57,7 @@ export function ImagePicker({
 }: {
   value: string;
   localImages: string[];
+  suggestedImages?: SuggestedImage[];
   onSelect: (reference: string) => void;
   onBusyChange?: (busy: boolean) => void;
   disabled?: boolean;
@@ -105,14 +117,32 @@ export function ImagePicker({
     [localImages],
   );
 
-  const localResults = useMemo(() => {
+  const localResults = useMemo((): PickerSuggestion[] => {
     const needle = query.trim().toLowerCase();
-    if (!needle) return normalizedLocalImages.slice(0, 8);
     return normalizedLocalImages
-      .filter((image) => image.toLowerCase().includes(needle))
+      .filter((image) => !needle || image.toLowerCase().includes(needle))
       .slice(0, 8)
-      .map((image): PickerSuggestion => ({ name: image, reference: image, source: "local", description: "Available locally" }));
+      .map((image) => ({ name: image, reference: image, source: "local", description: "Available locally" }));
   }, [normalizedLocalImages, query]);
+
+  const suggestedResults = useMemo((): PickerSuggestion[] => {
+    const needle = query.trim().toLowerCase();
+    const localSet = new Set(normalizedLocalImages);
+    const seen = new Set<string>();
+    return suggestedImages.flatMap((suggestion) => {
+      const reference = withDefaultTag(suggestion.reference.trim());
+      if (!reference || localSet.has(reference) || seen.has(reference)) return [];
+      const searchable = `${suggestion.label ?? ""} ${reference} ${suggestion.description ?? ""}`.toLowerCase();
+      if (needle && !searchable.includes(needle)) return [];
+      seen.add(reference);
+      return [{
+        name: suggestion.label?.trim() || reference,
+        reference,
+        description: suggestion.description ? `${reference} · ${suggestion.description}` : reference,
+        source: sourceForReference(reference),
+      }];
+    });
+  }, [normalizedLocalImages, query, suggestedImages]);
 
   useEffect(() => {
     const id = ++requestId.current;
@@ -123,18 +153,20 @@ export function ImagePicker({
       return;
     }
 
+    if (normalizedLocalImages.includes(searchValue)) {
+      setRemoteResults([]);
+      setSearchError(null);
+      return;
+    }
+
     if (isGhcrReference(searchValue)) {
       const reference = withDefaultTag(searchValue);
-      if (normalizedLocalImages.includes(reference) || normalizedLocalImages.includes(searchValue)) {
-        setRemoteResults([]);
-      } else {
-        setRemoteResults([{
-          name: searchValue,
-          reference,
-          description: "GitHub Container Registry reference",
-          source: "ghcr",
-        }]);
-      }
+      setRemoteResults(normalizedLocalImages.includes(reference) ? [] : [{
+        name: searchValue,
+        reference,
+        description: "GitHub Container Registry reference",
+        source: "ghcr",
+      }]);
       setSearchError(null);
       setOpen(true);
       return;
@@ -169,11 +201,13 @@ export function ImagePicker({
   }, [query, disabled, normalizedLocalImages]);
 
   const suggestions = useMemo(() => {
-    const locals: PickerSuggestion[] = localResults.map((item) => typeof item === "string"
-      ? { name: item, reference: item, source: "local" as const, description: "Available locally" }
-      : item);
-    return [...locals, ...remoteResults];
-  }, [localResults, remoteResults]);
+    const seen = new Set<string>();
+    return [...localResults, ...suggestedResults, ...remoteResults].filter((result) => {
+      if (seen.has(result.reference)) return false;
+      seen.add(result.reference);
+      return true;
+    });
+  }, [localResults, suggestedResults, remoteResults]);
 
   const selectLocal = (result: PickerSuggestion) => {
     if (disabled || imageDownloading) return;
@@ -268,7 +302,7 @@ export function ImagePicker({
       ) : failed && pendingJob ? (
         <div className="mt-2 flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2">
           <div className="min-w-0"><p className="truncate text-xs font-medium text-destructive">Download {pendingJob.status}</p><p className="truncate text-[11px] text-muted-foreground">{pendingJob.error || pendingJob.message || pendingJob.reference}</p></div>
-          <button type="button" className="shrink-0 text-xs font-medium text-foreground hover:underline" onClick={() => void download({ name: pendingJob.reference, reference: pendingJob.reference, source: isGhcrReference(pendingJob.reference) ? "ghcr" : "docker-hub" })}>Retry</button>
+          <button type="button" className="shrink-0 text-xs font-medium text-foreground hover:underline" onClick={() => void download({ name: pendingJob.reference, reference: pendingJob.reference, source: sourceForReference(pendingJob.reference) })}>Retry</button>
         </div>
       ) : null}
 
