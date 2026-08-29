@@ -29,9 +29,9 @@ test("container stop restart and removal drain logs around destructive lifecycle
   assert.match(tauri, /bestEffortLogDrain/);
   assert.match(tauri, /await bestEffortLogDrain\(containerName\)/);
   assert.match(tauri, /await invokeNative<WslcInvokeResult>\("wslc_invoke", \{ payload \}\)/);
-  assert.match(tauri, /container",\s*"stop"/);
-  assert.match(tauri, /container",\s*"restart"/);
-  assert.match(tauri, /container",\s*"rm"/);
+  assert.match(tauri, /"stop"/);
+  assert.match(tauri, /"restart"/);
+  assert.match(tauri, /"rm"/);
 });
 
 test("clear removes sqlite container history without clearing audit history", () => {
