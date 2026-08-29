@@ -1,4 +1,5 @@
 pub mod audit;
+pub mod container_logs;
 pub mod schema;
 
 use rusqlite::Connection;
