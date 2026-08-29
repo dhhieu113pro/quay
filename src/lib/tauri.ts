@@ -1,4 +1,5 @@
 import type { ImageSearchResult, PullJob } from "@/lib/wslc/types";
+import { appendOperationLog, redactOperationText } from "@/lib/wslc/operation-log";
 
 export function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -70,9 +71,68 @@ export async function onPullJobUpdated(handler: (job: PullJob) => void): Promise
   return listen<PullJob>("quay://pull-job-updated", (event) => handler(event.payload));
 }
 
+function cliArgs(payload: Record<string, unknown>) {
+  return payload.cmd === "run_cli" && Array.isArray(payload.args)
+    ? payload.args.map((arg) => String(arg))
+    : [];
+}
+
+function lifecycleContainerName(args: string[]) {
+  if (args[0] === "container" && (args[1] === "start" || args[1] === "restart")) return args.at(-1) ?? "";
+  if (args[0] !== "run") return "";
+  const nameIndex = args.indexOf("--name");
+  return nameIndex >= 0 ? args[nameIndex + 1] ?? "" : "";
+}
+
+function lifecycleFailure(args: string[]) {
+  return args[0] === "run" || (args[0] === "container" && (args[1] === "start" || args[1] === "restart"));
+}
+
+function diagnosticText(result: WslcInvokeResult, args: string[]) {
+  const parts = [result.error, result.stderr, result.output]
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value));
+  if (typeof result.exitCode === "number") parts.push(`exit code ${result.exitCode}`);
+  return parts.join("\n") || `wslc ${args.join(" ")} failed`;
+}
+
+async function captureLifecycleFailure(args: string[], result: WslcInvokeResult) {
+  if (!lifecycleFailure(args)) return;
+  const containerName = lifecycleContainerName(args);
+  const command = redactOperationText(`wslc ${args.join(" ")}`);
+  appendOperationLog({
+    containerName: containerName || undefined,
+    command,
+    text: diagnosticText(result, args),
+  });
+
+  if (!containerName || !isTauri()) return;
+  try {
+    const logs = await invokeNative<WslcInvokeResult>("wslc_invoke", {
+      payload: { cmd: "run_cli", args: ["container", "logs", "--tail", "200", containerName] },
+    });
+    const tail = [logs.output, logs.stderr]
+      .map((value) => value?.trim())
+      .filter((value): value is string => Boolean(value))
+      .join("\n");
+    if (tail) {
+      appendOperationLog({
+        containerName,
+        command: `wslc container logs --tail 200 ${containerName}`,
+        text: tail,
+      });
+    }
+  } catch {
+    // The original start error is already persisted. Missing tail logs are non-fatal.
+  }
+}
+
 export async function invokeWslcHost(payload: Record<string, unknown>): Promise<WslcInvokeResult> {
   if (!isTauri()) return { ok: true, output: "browser lab" };
-  return invokeNative<WslcInvokeResult>("wslc_invoke", { payload });
+  const result = await invokeNative<WslcInvokeResult>("wslc_invoke", { payload });
+  const args = cliArgs(payload);
+  if (!result.ok && args.length) await captureLifecycleFailure(args, result);
+  return result;
 }
 
 export async function probeWslc(): Promise<WslcProbe> {

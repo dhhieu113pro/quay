@@ -55,7 +55,7 @@ export function CubeLogsPanel({ cubeId, cubeName, onClose }: { cubeId: string; c
       <div className="flex items-center gap-3 border-b border-border px-4 py-3">
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-sm font-semibold">{cubeName} logs</h2>
-          <p className="text-xs text-muted-foreground">All running members · sorted by time</p>
+          <p className="text-xs text-muted-foreground">All members · live output + persisted start failures</p>
         </div>
         <Button type="button" variant="ghost" size="icon-sm" aria-label="Close Cube logs" onClick={onClose}>
           <X className="size-4" />
@@ -75,7 +75,7 @@ export function CubeLogsPanel({ cubeId, cubeName, onClose }: { cubeId: string; c
         >
           {visible.length === 0 ? (
             <div className="grid h-full min-h-48 place-items-center px-4 text-center text-muted-foreground">
-              No running-member logs for {cubeName} yet.
+              No logs for {cubeName} yet.
             </div>
           ) : (
             <div className="min-w-0 space-y-0.5">
