@@ -3,6 +3,7 @@ import { Copy, LoaderCircle, Play, RotateCcw, Square, Trash2, X } from "lucide-r
 import { toast } from "sonner";
 import { CloneContainerDialog } from "@/components/clone-container-dialog";
 import { EnvEditor, joinEnvLines, parseEnvLines as editableEnvRows, type KvPair } from "@/components/kv-editor";
+import { PortBindingEditor } from "@/components/port-binding-editor";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,6 +13,7 @@ import { formatUptime } from "@/lib/utils";
 import { loadExistingContainerConfig, recreateContainerWithEnv } from "@/lib/wslc/existing-container-env-client";
 import type { ExistingContainerConfig } from "@/lib/wslc/existing-container-env";
 import { withoutEnvKeys } from "@/lib/wslc/groups";
+import { hasPublishedHostPortErrors } from "@/lib/wslc/image-inspect-defaults";
 import { execInContainer } from "@/lib/wslc/terminal";
 import { useWslc } from "@/lib/wslc/store";
 import type { Container } from "@/lib/wslc/types";
@@ -88,11 +90,11 @@ export function ContainerInspect({
           <TabsContent value="inspect" className="min-h-0 flex-1 overflow-y-auto">
             <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-xs">
               <Row k="Status" v={container.status} /><Row k="Image" v={container.image} /><Row k="Command" v={container.command.join(" ") || "—"} mono /><Row k="User" v={container.user || "—"} /><Row k="Workdir" v={container.workdir || "/"} mono />
-              <Row k="Ports" v={container.ports.length ? container.ports.map((p) => `${p.host}:${p.container}/${p.protocol}`).join(", ") : "none"} mono />
               <Row k="Mounts" v={container.mounts.length ? container.mounts.map((m) => `${m.source} → ${m.destination} (${m.mode})`).join("\n") : "not reported by container list"} mono />
               <Row k="Uptime" v={container.status === "running" ? formatUptime(container.startedAt, now) : "—"} />
               {container.exitCode !== undefined ? <Row k="Exit" v={String(container.exitCode)} /> : null}
             </dl>
+            {tab === "inspect" ? <PortBindingsPane container={container} onSaved={async () => { await tick(); onClose(); }} /> : null}
             <p className="mt-4 text-[11px] leading-relaxed text-subtle">Quay only shows fields returned by the current WSLC list data here. Resource usage is intentionally omitted unless WSLC reports it directly.</p>
           </TabsContent>
         </Tabs>
@@ -100,6 +102,54 @@ export function ContainerInspect({
       <CloneContainerDialog container={container} open={cloneOpen} onOpenChange={setCloneOpen} />
     </>
   );
+}
+
+function PortBindingsPane({ container, onSaved }: { container: Container; onSaved: () => Promise<void> }) {
+  const [config, setConfig] = useState<ExistingContainerConfig | null>(null);
+  const [ports, setPorts] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true); setError(null);
+    void loadExistingContainerConfig(container.name)
+      .then((loaded) => {
+        if (!active) return;
+        setConfig(loaded);
+        setPorts(loaded.ports);
+      })
+      .catch((reason) => { if (active) setError(reason instanceof Error ? reason.message : String(reason)); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [container.name]);
+
+  async function save() {
+    if (!config || saving || hasPublishedHostPortErrors(ports) || ports === config.ports) return;
+    setSaving(true); setError(null);
+    try {
+      await recreateContainerWithEnv({ ...config, ports }, config.env, container.status === "running");
+      toast.success(`Recreated ${container.name} with updated ports`);
+      await onSaved();
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : String(reason);
+      setError(message); toast.error(message);
+    } finally { setSaving(false); }
+  }
+
+  if (loading) return <div className="mt-4 flex items-center text-xs text-subtle"><LoaderCircle className="mr-2 size-3.5 animate-spin" />Loading port bindings…</div>;
+  if (!config) return <p className="mt-4 text-xs text-destructive">{error || "Could not inspect container port bindings."}</p>;
+  if (!config.ports.trim()) return <div className="mt-4 rounded-md border border-border bg-elevated/20 p-3 text-xs text-subtle">Ports: none published.</div>;
+
+  const invalidPorts = hasPublishedHostPortErrors(ports);
+  const unchanged = ports === config.ports;
+  return <div className="mt-4 grid gap-3 border-t border-border pt-4">
+    <div className="rounded-md border border-border bg-elevated/30 p-3 text-xs text-subtle">Port changes require container recreation. Only the outside/host port is editable; the container port and protocol stay unchanged. {container.status === "running" ? "Quay will stop it, recreate it, and leave the replacement running." : "Quay will recreate it and keep the replacement stopped."}</div>
+    <PortBindingEditor value={ports} onChange={setPorts} />
+    {error ? <p className="text-xs text-destructive">{error}</p> : null}
+    <div className="flex justify-end"><Button onClick={() => void save()} disabled={saving || invalidPorts || unchanged}>{saving ? <LoaderCircle className="size-4 animate-spin" /> : null}{saving ? "Recreating…" : "Save & recreate"}</Button></div>
+  </div>;
 }
 
 function EnvironmentPane({ container, inheritedEnv, onSaved }: { container: Container; inheritedEnv: string; onSaved: () => Promise<void> }) {
