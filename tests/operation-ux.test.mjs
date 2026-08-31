@@ -82,3 +82,17 @@ test("dashboard CLI activity cannot force horizontal page overflow", () => {
     /className="min-w-0 flex-1 break-all font-mono text-xs text-accent"/,
   );
 });
+
+test("image deletion invokes WSLC with the immutable image id", () => {
+  assert.match(
+    store,
+    /removeImage:\s*\(id\)\s*=>\s*\{[\s\S]*?execute\(\["image",\s*"rm",\s*image\.id\]\)/,
+  );
+});
+
+test("container deletion invokes WSLC with the immutable container id", () => {
+  assert.match(
+    store,
+    /deleteContainer:\s*\(id\)\s*=>\s*\{[\s\S]*?execute\(\["container",\s*"rm",\s*container\.id\]\)/,
+  );
+});
