@@ -407,7 +407,7 @@ export const useWslc = create<WslcState>((set, get) => {
       const image = get().images.find((item) => item.id === id);
       if (!image) return;
       const ref = `${image.repository}:${image.tag}`;
-      void runOperation(`image:${ref}`, "removing", async () => { await execute(["image", "rm", ref]); await refreshAfterMutation(); });
+      void runOperation(`image:${ref}`, "removing", async () => { await execute(["image", "rm", image.id]); await refreshAfterMutation(); });
     },
     runContainer: (spec) => {
       void runOperation(`container:${spec.name || spec.image}`, "starting", async () => {
@@ -436,7 +436,7 @@ export const useWslc = create<WslcState>((set, get) => {
       const container = get().containers.find((item) => item.id === id);
       if (!container) return;
       void runOperation(`container:${container.name}`, "removing", async () => {
-        assignContainer(container.name); await execute(["container", "rm", container.name]); await refreshAfterMutation();
+        assignContainer(container.name); await execute(["container", "rm", container.id]); await refreshAfterMutation();
       });
     },
     appendExec: (id, command) => {
