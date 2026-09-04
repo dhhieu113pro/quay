@@ -2,7 +2,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { publishedHostPortErrors, publishedPortRows, sanitizePublishedHostPortInput, updatePublishedHostPort } from "@/lib/wslc/image-inspect-defaults";
 
-export function PortBindingEditor({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+export function PortBindingEditor({ value, onChange, disabled = false }: { value: string; onChange: (value: string) => void; disabled?: boolean }) {
   const rows = publishedPortRows(value);
   const errors = publishedHostPortErrors(value);
   if (!rows.length) return null;
@@ -33,6 +33,7 @@ export function PortBindingEditor({ value, onChange }: { value: string; onChange
                   aria-label={`Host port for container port ${row.containerPort}`}
                   aria-invalid={Boolean(error)}
                   aria-describedby={error ? `host-port-error-${index}` : undefined}
+                  disabled={disabled}
                   className="font-mono text-xs"
                 />
                 {error ? <p id={`host-port-error-${index}`} className="text-[11px] text-destructive">{error}</p> : null}
