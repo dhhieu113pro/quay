@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const inspect = readFileSync(new URL("../src/components/container-inspect.tsx", import.meta.url), "utf8");
+const portEditor = readFileSync(new URL("../src/components/port-binding-editor.tsx", import.meta.url), "utf8");
 const editorUrl = new URL("../src/lib/wslc/existing-container-env.ts", import.meta.url);
 const editor = readFileSync(editorUrl, "utf8");
 const editorModule = await import(editorUrl);
@@ -11,6 +12,17 @@ test("existing container inspector exposes an Environment editor with recreation
   assert.match(inspect, /TabsTrigger value="environment"/);
   assert.match(inspect, /Environment changes require container recreation/);
   assert.match(inspect, /Save & recreate/);
+});
+
+test("existing container ports live in a dedicated tab and only stopped containers can edit them", () => {
+  assert.match(inspect, /TabsTrigger value="ports">Ports<\/TabsTrigger>/);
+  assert.match(inspect, /TabsContent value="ports"/);
+  assert.match(inspect, /tab === "ports" \? <PortBindingsPane/);
+  assert.doesNotMatch(inspect, /tab === "inspect" \? <PortBindingsPane/);
+  assert.match(inspect, /Stop the container to edit port bindings/);
+  assert.match(inspect, /disabled=\{container\.status === "running"\}/);
+  assert.match(portEditor, /disabled = false/);
+  assert.match(portEditor, /disabled=\{disabled\}/);
 });
 
 test("existing container inspector lets users edit host ports and recreate safely", () => {
