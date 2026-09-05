@@ -125,6 +125,9 @@ impl QuayOperations {
     #[cfg(windows)]
     pub fn pull_manager(&self) -> &PullManager { &self.pull_manager }
 
+    #[cfg(windows)]
+    pub(crate) fn storage(&self) -> Option<&Storage> { self.storage.as_ref() }
+
     pub fn query_audit_json(&self, arguments: &Value) -> Result<Value, OperationError> {
         #[cfg(windows)]
         {
