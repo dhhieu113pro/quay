@@ -1,8 +1,10 @@
 use crate::mcp::config::McpConfig;
 use crate::mcp::confirmation::{ConfirmationBroker, ConfirmationDecision, ConfirmationRequest};
+use crate::mcp::cubes::CubeRegistry;
 use crate::mcp::server::McpRuntime;
 use crate::operations::{OperationError, QuayOperations};
 use serde::Serialize;
+use serde_json::Value;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -37,11 +39,19 @@ impl McpState {
                 McpConfig::default()
             }
         };
-        let event_app = app.clone();
+        let confirmation_app = app.clone();
         let confirmations = ConfirmationBroker::with_notifier(
             Duration::from_secs(60),
             Arc::new(move |request| {
-                let _ = event_app.emit("mcp://confirmation-requested", request);
+                let _ = confirmation_app.emit("mcp://confirmation-requested", request);
+            }),
+        );
+        let cube_app = app.clone();
+        let cube_registry = CubeRegistry::global();
+        cube_registry.initialize(
+            config_path.with_file_name("mcp-cubes.json"),
+            Arc::new(move |cubes| {
+                let _ = cube_app.emit("mcp://cubes-changed", cubes);
             }),
         );
         Self {
@@ -77,111 +87,62 @@ impl McpState {
         }
     }
 
-    async fn emit_status(&self) {
-        let _ = self.app.emit("mcp://status-changed", self.status().await);
-    }
+    async fn emit_status(&self) { let _ = self.app.emit("mcp://status-changed", self.status().await); }
 
     async fn replace_runtime(&self, runtime: Option<McpRuntime>) {
-        let old = {
-            let mut guard = self.runtime.lock().await;
-            std::mem::replace(&mut *guard, runtime)
-        };
+        let old = { let mut guard = self.runtime.lock().await; std::mem::replace(&mut *guard, runtime) };
         if let Some(mut old) = old { old.shutdown().await; }
     }
 
     pub async fn shutdown(&self) { self.replace_runtime(None).await; }
-
-    pub fn cancel_now(&self) {
-        if let Ok(runtime) = self.runtime.try_lock() {
-            if let Some(runtime) = runtime.as_ref() { runtime.cancel(); }
-        }
-    }
+    pub fn cancel_now(&self) { if let Ok(runtime) = self.runtime.try_lock() { if let Some(runtime) = runtime.as_ref() { runtime.cancel(); } } }
 
     pub async fn set_enabled(&self, enabled: bool) -> Result<McpStatus, OperationError> {
         let current = self.config();
         if current.enabled == enabled { return Ok(self.status().await); }
-
         if enabled {
-            let mut next = current.clone();
-            next.enabled = true;
-            next.validate()?;
+            let mut next = current.clone(); next.enabled = true; next.validate()?;
             let runtime = McpRuntime::start(&next, self.operations.clone(), self.confirmations.clone()).await?;
-            next.save(&self.config_path)?;
-            *self.config.lock().unwrap() = next;
-            self.replace_runtime(Some(runtime)).await;
+            next.save(&self.config_path)?; *self.config.lock().unwrap() = next; self.replace_runtime(Some(runtime)).await;
         } else {
-            let mut next = current;
-            next.enabled = false;
-            next.save(&self.config_path)?;
-            *self.config.lock().unwrap() = next;
-            self.replace_runtime(None).await;
+            let mut next = current; next.enabled = false; next.save(&self.config_path)?; *self.config.lock().unwrap() = next; self.replace_runtime(None).await;
         }
-        self.emit_status().await;
-        Ok(self.status().await)
+        self.emit_status().await; Ok(self.status().await)
     }
 
     pub async fn set_port(&self, port: u16) -> Result<McpStatus, OperationError> {
         let current = self.config();
-        let mut next = current.clone();
-        next.port = port;
-        next.validate()?;
+        let mut next = current.clone(); next.port = port; next.validate()?;
         if next.port == current.port { return Ok(self.status().await); }
-
         if next.enabled {
             let runtime = McpRuntime::start(&next, self.operations.clone(), self.confirmations.clone()).await?;
-            next.save(&self.config_path)?;
-            *self.config.lock().unwrap() = next;
-            self.replace_runtime(Some(runtime)).await;
-        } else {
-            next.save(&self.config_path)?;
-            *self.config.lock().unwrap() = next;
-        }
-        self.emit_status().await;
-        Ok(self.status().await)
+            next.save(&self.config_path)?; *self.config.lock().unwrap() = next; self.replace_runtime(Some(runtime)).await;
+        } else { next.save(&self.config_path)?; *self.config.lock().unwrap() = next; }
+        self.emit_status().await; Ok(self.status().await)
     }
 
     pub fn resolve_confirmation(&self, id: &str, approve: bool) -> Result<(), OperationError> {
-        self.confirmations.resolve(
-            id,
-            if approve { ConfirmationDecision::Approve } else { ConfirmationDecision::Reject },
-        )
+        self.confirmations.resolve(id, if approve { ConfirmationDecision::Approve } else { ConfirmationDecision::Reject })
     }
-
     pub fn pending_confirmations(&self) -> Vec<ConfirmationRequest> { self.confirmations.pending() }
+    pub fn sync_cubes(&self, cubes: Vec<Value>) -> Result<(), OperationError> { self.operations.cube_registry().replace_from_ui(cubes) }
 }
 
 #[tauri::command]
-pub async fn mcp_get_status(state: State<'_, McpState>) -> Result<McpStatus, String> {
-    Ok(state.status().await)
-}
-
+pub async fn mcp_get_status(state: State<'_, McpState>) -> Result<McpStatus, String> { Ok(state.status().await) }
 #[tauri::command]
-pub async fn mcp_set_enabled(state: State<'_, McpState>, enabled: bool) -> Result<McpStatus, String> {
-    state.set_enabled(enabled).await.map_err(|error| error.to_string())
-}
-
+pub async fn mcp_set_enabled(state: State<'_, McpState>, enabled: bool) -> Result<McpStatus, String> { state.set_enabled(enabled).await.map_err(|error| error.to_string()) }
 #[tauri::command]
-pub async fn mcp_set_port(state: State<'_, McpState>, port: u16) -> Result<McpStatus, String> {
-    state.set_port(port).await.map_err(|error| error.to_string())
-}
-
+pub async fn mcp_set_port(state: State<'_, McpState>, port: u16) -> Result<McpStatus, String> { state.set_port(port).await.map_err(|error| error.to_string()) }
 #[tauri::command]
-pub fn mcp_confirm(state: State<'_, McpState>, id: String, approve: bool) -> Result<(), String> {
-    state.resolve_confirmation(&id, approve).map_err(|error| error.to_string())
-}
-
+pub fn mcp_confirm(state: State<'_, McpState>, id: String, approve: bool) -> Result<(), String> { state.resolve_confirmation(&id, approve).map_err(|error| error.to_string()) }
 #[tauri::command]
-pub fn mcp_pending_confirmations(state: State<'_, McpState>) -> Vec<ConfirmationRequest> {
-    state.pending_confirmations()
-}
+pub fn mcp_pending_confirmations(state: State<'_, McpState>) -> Vec<ConfirmationRequest> { state.pending_confirmations() }
+#[tauri::command]
+pub fn mcp_sync_cubes(state: State<'_, McpState>, cubes: Vec<Value>) -> Result<(), String> { state.sync_cubes(cubes).map_err(|error| error.to_string()) }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn status_shape_keeps_configured_endpoint() {
-        let config = McpConfig::default();
-        assert_eq!(config.endpoint(), "http://127.0.0.1:47831/mcp");
-    }
+    #[test] fn status_shape_keeps_configured_endpoint() { let config = McpConfig::default(); assert_eq!(config.endpoint(), "http://127.0.0.1:47831/mcp"); }
 }
