@@ -58,11 +58,11 @@ pub struct QuayOperations {
 
 impl QuayOperations {
     #[cfg(windows)]
-    pub fn new(executor: WslcExecutor, host: Arc<Mutex<HostSampler>>, pull_manager: PullManager, storage: Option<Storage>, cubes: CubeRegistry) -> Self {
-        Self { cubes, executor, host, pull_manager, storage }
+    pub fn new(executor: WslcExecutor, host: Arc<Mutex<HostSampler>>, pull_manager: PullManager, storage: Option<Storage>) -> Self {
+        Self { cubes: CubeRegistry::global(), executor, host, pull_manager, storage }
     }
     #[cfg(not(windows))]
-    pub fn new(cubes: CubeRegistry) -> Self { Self { cubes } }
+    pub fn new() -> Self { Self { cubes: CubeRegistry::global() } }
 
     pub fn invoke(&self, payload: Value) -> Result<Value, OperationError> {
         let cmd = payload.get("cmd").and_then(Value::as_str).filter(|value| !value.trim().is_empty()).ok_or_else(|| OperationError::invalid_input("missing cmd"))?;
@@ -74,7 +74,6 @@ impl QuayOperations {
     pub fn pull_start(&self, reference: &str) -> Result<crate::pull_manager::PullJob, OperationError> { self.pull_manager.start(reference).map_err(OperationError::backend_failure) }
     #[cfg(windows)] pub fn pull_manager(&self) -> &PullManager { &self.pull_manager }
     #[cfg(windows)] pub(crate) fn storage(&self) -> Option<&Storage> { self.storage.as_ref() }
-
     pub fn cube_registry(&self) -> &CubeRegistry { &self.cubes }
 
     pub fn query_audit_json(&self, arguments: &Value) -> Result<Value, OperationError> {
