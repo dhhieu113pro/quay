@@ -262,6 +262,7 @@ fn ensure_host_directory(path: String) -> Result<bool, String> {
 }
 
 const AUTOSTART_VALUE: &str = "Quay";
+const WINDOWS_SIGN_IN_ARG: &str = "--windows-sign-in";
 #[cfg(windows)] fn run_key() -> &'static str { r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run" }
 
 #[tauri::command]
@@ -281,7 +282,7 @@ fn autostart_enabled() -> bool {
 fn autostart_set(enabled: bool) -> Result<bool, String> {
     #[cfg(windows)] {
         let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-        let quoted = format!("\"{}\"", exe.display());
+        let quoted = format!("\"{}\" {}", exe.display(), WINDOWS_SIGN_IN_ARG);
         let mut cmd = Command::new("reg");
         if enabled { cmd.args(["add", run_key(), "/v", AUTOSTART_VALUE, "/t", "REG_SZ", "/d", &quoted, "/f"]); }
         else { cmd.args(["delete", run_key(), "/v", AUTOSTART_VALUE, "/f"]); }
@@ -294,6 +295,11 @@ fn autostart_set(enabled: bool) -> Result<bool, String> {
         Ok(enabled)
     }
     #[cfg(not(windows))] { let _ = enabled; Err("Windows sign-in start is only available on Windows".into()) }
+}
+
+#[tauri::command]
+fn windows_sign_in_launch() -> bool {
+    std::env::args().any(|arg| arg == WINDOWS_SIGN_IN_ARG)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -339,7 +345,7 @@ pub fn run() {
             audit_query, audit_clear, storage_stats, legacy_operation_logs_import,
             container_logs_append, container_logs_query, container_log_targets,
             container_logs_clear, container_logs_cleanup,
-            wslc_probe, ensure_host_directory, autostart_enabled, autostart_set,
+            wslc_probe, ensure_host_directory, autostart_enabled, autostart_set, windows_sign_in_launch,
             workspace::workspace_default_root, workspace::workspace_ensure, workspace::workspace_pick_root,
             workspace::workspace_pick_descendant, workspace::workspace_open,
             workspace::workspace_move_root, workspace::workspace_move_entry
