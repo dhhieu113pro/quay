@@ -29,11 +29,14 @@ struct PendingConfirmation {
     sender: oneshot::Sender<ConfirmationDecision>,
 }
 
+type ConfirmationNotifier = Arc<dyn Fn(ConfirmationRequest) + Send + Sync>;
+
 #[derive(Clone)]
 pub struct ConfirmationBroker {
     pending: Arc<Mutex<HashMap<String, PendingConfirmation>>>,
     timeout: Duration,
     sequence: Arc<AtomicU64>,
+    notifier: ConfirmationNotifier,
 }
 
 impl Default for ConfirmationBroker {
@@ -42,10 +45,15 @@ impl Default for ConfirmationBroker {
 
 impl ConfirmationBroker {
     pub fn with_timeout(timeout: Duration) -> Self {
+        Self::with_notifier(timeout, Arc::new(|_| {}))
+    }
+
+    pub fn with_notifier(timeout: Duration, notifier: ConfirmationNotifier) -> Self {
         Self {
             pending: Arc::new(Mutex::new(HashMap::new())),
             timeout,
             sequence: Arc::new(AtomicU64::new(1)),
+            notifier,
         }
     }
 
@@ -81,7 +89,11 @@ impl ConfirmationBroker {
             expires_at_ms,
         };
         let (sender, receiver) = oneshot::channel();
-        self.pending.lock().unwrap().insert(id.clone(), PendingConfirmation { request, sender });
+        self.pending.lock().unwrap().insert(
+            id.clone(),
+            PendingConfirmation { request: request.clone(), sender },
+        );
+        (self.notifier)(request);
 
         let result = tokio::time::timeout(self.timeout, receiver).await;
         self.pending.lock().unwrap().remove(&id);
@@ -145,5 +157,24 @@ mod tests {
         let request = broker.pending().remove(0);
         broker.resolve(&request.id, ConfirmationDecision::Reject).unwrap();
         assert_eq!(waiter.await.unwrap().unwrap_err().code(), "rejected");
+    }
+
+    #[tokio::test]
+    async fn notifier_receives_new_request() {
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let sink = seen.clone();
+        let broker = ConfirmationBroker::with_notifier(
+            Duration::from_secs(1),
+            Arc::new(move |request| sink.lock().unwrap().push(request.tool)),
+        );
+        let waiter = {
+            let broker = broker.clone();
+            tokio::spawn(async move { broker.request("quay.container.delete", json!({"id":"abc"})).await })
+        };
+        tokio::task::yield_now().await;
+        assert_eq!(seen.lock().unwrap().as_slice(), ["quay.container.delete"]);
+        let request = broker.pending().remove(0);
+        broker.resolve(&request.id, ConfirmationDecision::Reject).unwrap();
+        let _ = waiter.await;
     }
 }
