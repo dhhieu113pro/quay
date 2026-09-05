@@ -370,7 +370,7 @@ pub fn run() {
             wslc_probe, ensure_host_directory, autostart_enabled, autostart_set, windows_sign_in_launch,
             mcp::commands::mcp_get_status, mcp::commands::mcp_set_enabled,
             mcp::commands::mcp_set_port, mcp::commands::mcp_confirm,
-            mcp::commands::mcp_pending_confirmations,
+            mcp::commands::mcp_pending_confirmations, mcp::commands::mcp_sync_cubes,
             workspace::workspace_default_root, workspace::workspace_ensure, workspace::workspace_pick_root,
             workspace::workspace_pick_descendant, workspace::workspace_open,
             workspace::workspace_move_root, workspace::workspace_move_entry
