@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { FolderOpen, LoaderCircle } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Copy, FolderOpen, LoaderCircle, Server } from "lucide-react";
 import { toast } from "sonner";
 import { AppearanceToggle } from "@/components/appearance-toggle";
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { GettingStartedView } from "@/components/views/getting-started-view";
+import { mcpGetStatus, mcpSetEnabled, mcpSetPort, onMcpStatusChanged, type McpStatus } from "@/lib/mcp";
 import { openWorkspacePath, pickWorkspaceRoot } from "@/lib/tauri";
 import { useWslc } from "@/lib/wslc/store";
 
@@ -23,8 +24,33 @@ export function SessionView() {
   const [pendingRoot, setPendingRoot] = useState<string | null>(null);
   const [changingRoot, setChangingRoot] = useState(false);
   const [showGettingStarted, setShowGettingStarted] = useState(false);
+  const [mcpStatus, setMcpStatus] = useState<McpStatus | null>(null);
+  const [mcpPort, setMcpPort] = useState("47831");
+  const [mcpBusy, setMcpBusy] = useState(false);
   const sessionBusy = Boolean(operations.session);
   const running = containers.filter((container) => container.status === "running").length;
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void mcpGetStatus().then((status) => {
+      if (disposed) return;
+      setMcpStatus(status);
+      setMcpPort(String(status.port));
+    });
+    void onMcpStatusChanged((status) => {
+      if (disposed) return;
+      setMcpStatus(status);
+      setMcpPort(String(status.port));
+    }).then((dispose) => {
+      if (disposed) dispose();
+      else unlisten = dispose;
+    });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
 
   async function applyRoot(mode: "move" | "keep") {
     if (!pendingRoot) return;
@@ -37,6 +63,38 @@ export function SessionView() {
       toast.error("Could not change the Quay workspace");
     } finally {
       setChangingRoot(false);
+    }
+  }
+
+  async function toggleMcp(enabled: boolean) {
+    setMcpBusy(true);
+    try {
+      const status = await mcpSetEnabled(enabled);
+      setMcpStatus(status);
+      toast(enabled ? "Quay MCP server enabled" : "Quay MCP server disabled");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not change MCP server state");
+    } finally {
+      setMcpBusy(false);
+    }
+  }
+
+  async function saveMcpPort() {
+    const port = Number.parseInt(mcpPort, 10);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      toast.error("MCP port must be between 1 and 65535");
+      return;
+    }
+    setMcpBusy(true);
+    try {
+      const status = await mcpSetPort(port);
+      setMcpStatus(status);
+      setMcpPort(String(status.port));
+      toast("MCP port updated");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not update MCP port");
+    } finally {
+      setMcpBusy(false);
     }
   }
 
@@ -80,6 +138,43 @@ export function SessionView() {
       </section>
 
       <section className="rounded-xl border border-border bg-card p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex gap-3">
+            <div className="mt-0.5 rounded-lg border border-border bg-muted/30 p-2"><Server className="size-4" /></div>
+            <div>
+              <h2 className="text-sm font-medium">MCP server</h2>
+              <p className="mt-1 text-sm text-muted-foreground">Let MCP-capable LLMs and agents inspect and control Quay through structured tools.</p>
+              <p className="mt-1 text-xs text-subtle">Localhost only · no raw shell tool · destructive actions always require approval.</p>
+            </div>
+          </div>
+          <label className="flex items-center gap-2 text-sm">
+            <span>{mcpStatus?.running ? "Running" : mcpStatus?.enabled ? "Starting" : "Off"}</span>
+            <Switch checked={mcpStatus?.enabled ?? false} disabled={mcpBusy || !mcpStatus} onCheckedChange={(on) => void toggleMcp(on)} />
+          </label>
+        </div>
+        <div className="mt-4 grid gap-3">
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Input value={mcpStatus?.endpoint ?? "http://127.0.0.1:47831/mcp"} readOnly className="min-w-0 flex-1 font-mono text-xs" aria-label="Quay MCP endpoint" />
+            <Button type="button" variant="secondary" onClick={() => void navigator.clipboard.writeText(mcpStatus?.endpoint ?? "http://127.0.0.1:47831/mcp").then(() => toast("Copied MCP endpoint"))}>
+              <Copy className="size-4" /> Copy endpoint
+            </Button>
+          </div>
+          <div className="flex items-end gap-2">
+            <label className="grid flex-1 gap-1 text-xs text-muted-foreground">
+              Port
+              <Input value={mcpPort} inputMode="numeric" disabled={mcpBusy} onChange={(event) => setMcpPort(event.target.value)} onBlur={() => { if (mcpStatus && mcpPort !== String(mcpStatus.port)) void saveMcpPort(); }} />
+            </label>
+            <Button type="button" variant="secondary" disabled={mcpBusy || !mcpStatus || mcpPort === String(mcpStatus.port)} onClick={() => void saveMcpPort()}>Apply</Button>
+          </div>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-subtle">
+            <span>Protocol: MCP 2026-07-28</span>
+            <span>{mcpStatus?.pendingConfirmations ?? 0} pending approvals</span>
+            <span>Containers · Images · Cubes · Audit</span>
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-border bg-card p-4">
         <h2 className="text-sm font-medium">Windows sign-in</h2>
         <p className="mt-1 text-sm text-muted-foreground">Open Quay when you sign in to Windows.</p>
         <label className="mt-3 flex items-center gap-2 text-sm">
@@ -90,50 +185,34 @@ export function SessionView() {
 
       <section className="rounded-xl border border-border bg-card p-4">
         <h2 className="text-sm font-medium">Workspace</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Root folder for all Quay-managed Cube and standalone container workspaces.
-        </p>
+        <p className="mt-1 text-sm text-muted-foreground">Root folder for all Quay-managed Cube and standalone container workspaces.</p>
         <div className="mt-3 flex flex-col gap-2 sm:flex-row">
           <Input value={workspaceRoot} readOnly className="min-w-0 flex-1 font-mono text-xs" aria-label="Quay workspace root" />
           <Button type="button" variant="secondary" onClick={() => void (async () => {
             const selected = await pickWorkspaceRoot(workspaceRoot);
             if (selected && selected.toLowerCase() !== workspaceRoot.toLowerCase()) setPendingRoot(selected);
-          })()}>
-            Choose folder
-          </Button>
-          <Button type="button" variant="ghost" onClick={() => void openWorkspacePath(workspaceRoot)}>
-            <FolderOpen className="size-4" /> Open folder
-          </Button>
+          })()}>Choose folder</Button>
+          <Button type="button" variant="ghost" onClick={() => void openWorkspacePath(workspaceRoot)}><FolderOpen className="size-4" /> Open folder</Button>
         </div>
         <p className="mt-2 text-xs text-subtle">Cube and container folders are stored as relative paths so this root can be moved later.</p>
       </section>
 
       <section className="rounded-xl border border-border bg-card p-4">
         <h2 className="text-sm font-medium">Appearance</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Auto follows sunrise and sunset at this location. Light and dark lock the palette. Closing the window hides Quay in the tray; quit from the tray menu.
-        </p>
+        <p className="mt-1 text-sm text-muted-foreground">Auto follows sunrise and sunset at this location. Light and dark lock the palette. Closing the window hides Quay in the tray; quit from the tray menu.</p>
         <div className="mt-3"><AppearanceToggle /></div>
       </section>
 
       <section className="rounded-xl border border-border bg-card p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-medium">Getting Started</h2>
-            <p className="mt-1 text-sm text-muted-foreground">Review the essential workspace, WSLC, and startup preferences again.</p>
-          </div>
+          <div><h2 className="text-sm font-medium">Getting Started</h2><p className="mt-1 text-sm text-muted-foreground">Review the essential workspace, WSLC, and startup preferences again.</p></div>
           <Button type="button" variant="secondary" onClick={() => setShowGettingStarted(true)}>Run Getting Started again</Button>
         </div>
       </section>
 
       <Dialog open={Boolean(pendingRoot)} onOpenChange={(open) => { if (!open && !changingRoot) setPendingRoot(null); }}>
         <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Change Quay workspace?</DialogTitle>
-            <DialogDescription>
-              New root: <span className="font-mono text-foreground">{pendingRoot}</span>. Choose whether Quay should move its managed cubes and containers. Keep existing data leaves files under <span className="font-mono text-foreground">{workspaceRoot}</span>.
-            </DialogDescription>
-          </DialogHeader>
+          <DialogHeader><DialogTitle>Change Quay workspace?</DialogTitle><DialogDescription>New root: <span className="font-mono text-foreground">{pendingRoot}</span>. Choose whether Quay should move its managed cubes and containers. Keep existing data leaves files under <span className="font-mono text-foreground">{workspaceRoot}</span>.</DialogDescription></DialogHeader>
           <div className="grid gap-2 sm:grid-cols-3">
             <Button disabled={changingRoot} onClick={() => void applyRoot("move")}>Move existing data</Button>
             <Button disabled={changingRoot} variant="secondary" onClick={() => void applyRoot("keep")}>Keep existing data</Button>
