@@ -18,10 +18,12 @@ test("Windows startup registration marks launches that came from sign-in", () =>
 });
 
 test("legacy Quay startup registrations are rewritten when enabled", () => {
-  const match = tauri.match(/export async function getLaunchAtSignIn\(\): Promise<boolean> \{([\s\S]*?)\n\}\n\nexport async function setLaunchAtSignIn/);
-  assert.ok(match, "getLaunchAtSignIn function body should be present");
-  assert.match(match[1], /autostart_enabled/);
-  assert.match(match[1], /autostart_set/);
+  const start = tauri.indexOf("export async function getLaunchAtSignIn");
+  const end = tauri.indexOf("export async function setLaunchAtSignIn", start);
+  assert.ok(start >= 0 && end > start, "getLaunchAtSignIn function body should be present");
+  const body = tauri.slice(start, end);
+  assert.match(body, /autostart_enabled/);
+  assert.match(body, /autostart_set/);
 });
 
 test("manual Quay launches do not run sign-in auto-start targets", () => {
