@@ -49,6 +49,20 @@ test("existing container environment is loaded from container inspect data", () 
   assert.match(inspect, /loadExistingContainerConfig/);
 });
 
+test("existing container ports are loaded from the WSLC inspect Ports map", () => {
+  const parsed = editorModule.parseExistingContainerInspect({
+    Name: "/rabbitmq",
+    Config: { Image: "rabbitmq:management" },
+    HostConfig: { NetworkMode: "bridge" },
+    Ports: {
+      "15671/tcp": [{ HostIp: "127.0.0.1", HostPort: "15671" }],
+      "15672/tcp": [{ HostIp: "127.0.0.1", HostPort: "15672" }],
+      "5672/tcp": [{ HostIp: "127.0.0.1", HostPort: "5672" }],
+    },
+  });
+  assert.equal(parsed.ports, "15671:15671,15672:15672,5672:5672");
+});
+
 test("running container env save stops, removes, recreates, and remains running", async () => {
   const calls = [];
   const config = { name: "demo", image: "demo:latest", command: "", ports: "", env: "OLD=1", mounts: "", workdir: "/", gpu: false };
