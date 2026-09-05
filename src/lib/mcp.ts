@@ -1,4 +1,5 @@
 import { isTauri } from "@/lib/tauri";
+import type { ContainerGroup } from "@/lib/wslc/types";
 
 export type McpStatus = {
   enabled: boolean;
@@ -36,27 +37,17 @@ export async function mcpGetStatus(): Promise<McpStatus> {
   if (!isTauri()) return FALLBACK_STATUS;
   return invokeMcp<McpStatus>("mcp_get_status");
 }
-
-export function mcpSetEnabled(enabled: boolean): Promise<McpStatus> {
-  return invokeMcp<McpStatus>("mcp_set_enabled", { enabled });
-}
-
-export function mcpSetPort(port: number): Promise<McpStatus> {
-  return invokeMcp<McpStatus>("mcp_set_port", { port });
-}
-
-export function mcpConfirm(id: string, approve: boolean): Promise<void> {
-  return invokeMcp<void>("mcp_confirm", { id, approve });
-}
+export function mcpSetEnabled(enabled: boolean): Promise<McpStatus> { return invokeMcp<McpStatus>("mcp_set_enabled", { enabled }); }
+export function mcpSetPort(port: number): Promise<McpStatus> { return invokeMcp<McpStatus>("mcp_set_port", { port }); }
+export function mcpConfirm(id: string, approve: boolean): Promise<void> { return invokeMcp<void>("mcp_confirm", { id, approve }); }
+export function mcpSyncCubes(cubes: ContainerGroup[]): Promise<void> { return invokeMcp<void>("mcp_sync_cubes", { cubes }); }
 
 export async function mcpPendingConfirmations(): Promise<McpConfirmationRequest[]> {
   if (!isTauri()) return [];
   return invokeMcp<McpConfirmationRequest[]>("mcp_pending_confirmations");
 }
 
-export async function onMcpConfirmationRequested(
-  handler: (request: McpConfirmationRequest) => void,
-): Promise<() => void> {
+export async function onMcpConfirmationRequested(handler: (request: McpConfirmationRequest) => void): Promise<() => void> {
   if (!isTauri()) return () => {};
   const { listen } = await import("@tauri-apps/api/event");
   return listen<McpConfirmationRequest>("mcp://confirmation-requested", (event) => handler(event.payload));
@@ -66,4 +57,10 @@ export async function onMcpStatusChanged(handler: (status: McpStatus) => void): 
   if (!isTauri()) return () => {};
   const { listen } = await import("@tauri-apps/api/event");
   return listen<McpStatus>("mcp://status-changed", (event) => handler(event.payload));
+}
+
+export async function onMcpCubesChanged(handler: (cubes: ContainerGroup[]) => void): Promise<() => void> {
+  if (!isTauri()) return () => {};
+  const { listen } = await import("@tauri-apps/api/event");
+  return listen<ContainerGroup[]>("mcp://cubes-changed", (event) => handler(event.payload));
 }
