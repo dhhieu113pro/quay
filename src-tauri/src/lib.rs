@@ -308,7 +308,8 @@ pub fn run() {
             show_main(app);
         }))
         .setup(|app| {
-            let database_path = app.path().app_data_dir()?.join("quay.db");
+            let app_data_dir = app.path().app_data_dir()?;
+            let database_path = app_data_dir.join("quay.db");
             let storage = match storage::Storage::open(database_path) {
                 Ok(storage) => Some(storage),
                 Err(error) => {
@@ -318,8 +319,8 @@ pub fn run() {
             };
 
             #[cfg(windows)]
-            {
-                let history_path = app.path().app_data_dir()?.join("pull-jobs.json");
+            let operations = {
+                let history_path = app_data_dir.join("pull-jobs.json");
                 let pull_manager = pull_manager::PullManager::new(
                     history_path,
                     Arc::new(pull_manager::SystemPullExecutor),
@@ -329,10 +330,32 @@ pub fn run() {
                     }),
                     2,
                 );
-                app.manage(Backend::new(pull_manager, storage));
-            }
+                let backend = Backend::new(pull_manager, storage);
+                let operations = backend.operations.clone();
+                app.manage(backend);
+                operations
+            };
             #[cfg(not(windows))]
-            app.manage(Backend::new(storage));
+            let operations = {
+                let backend = Backend::new(storage);
+                let operations = backend.operations.clone();
+                app.manage(backend);
+                operations
+            };
+
+            app.manage(mcp::commands::McpState::new(
+                app_data_dir.join("mcp.json"),
+                operations,
+                app.handle().clone(),
+            ));
+            let mcp_app = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let state = mcp_app.state::<mcp::commands::McpState>();
+                if let Err(error) = state.start_initial().await {
+                    eprintln!("mcp startup: {error}");
+                }
+            });
+
             if let Err(err) = setup_tray(app.handle()) { eprintln!("tray: {err}"); }
             Ok(())
         })
@@ -345,6 +368,9 @@ pub fn run() {
             container_logs_append, container_logs_query, container_log_targets,
             container_logs_clear, container_logs_cleanup,
             wslc_probe, ensure_host_directory, autostart_enabled, autostart_set, windows_sign_in_launch,
+            mcp::commands::mcp_get_status, mcp::commands::mcp_set_enabled,
+            mcp::commands::mcp_set_port, mcp::commands::mcp_confirm,
+            mcp::commands::mcp_pending_confirmations,
             workspace::workspace_default_root, workspace::workspace_ensure, workspace::workspace_pick_root,
             workspace::workspace_pick_descendant, workspace::workspace_open,
             workspace::workspace_move_root, workspace::workspace_move_entry
@@ -354,6 +380,12 @@ pub fn run() {
 
     app.run(|app, event| {
         if matches!(event, tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit) {
+            let mcp_state = app.state::<mcp::commands::McpState>();
+            mcp_state.cancel_now();
+            let mcp_app = app.clone();
+            tauri::async_runtime::spawn(async move {
+                mcp_app.state::<mcp::commands::McpState>().shutdown().await;
+            });
             #[cfg(windows)]
             {
                 let backend = app.state::<Backend>();
