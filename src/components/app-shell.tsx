@@ -83,7 +83,7 @@ export function AppShell() {
       const selected = loadContainerAutoStart();
       const cubeNames = new Set(state.groups.flatMap((cube) => cube.specs.map((spec) => spec.name).filter(Boolean)));
       for (const container of state.containers) {
-        if (container.status === "running" || container.groupId || cubeNames.has(container.name) || !selected[container.name]) continue;
+        if (container.status === "running" || container.groupId || cubeNames.has(container.name) || selected[container.name] !== true) continue;
         state.startContainer(container.id);
       }
     })();
