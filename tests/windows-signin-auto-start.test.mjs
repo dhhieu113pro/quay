@@ -17,8 +17,8 @@ test("Windows startup registration marks launches that came from sign-in", () =>
   assert.match(tauri, /startedAtWindowsSignIn/);
 });
 
-test("legacy Quay startup registrations are rewritten to the sign-in command", () => {
-  assert.match(nativeLib, /fn\s+autostart_enabled\([\s\S]*?autostart_set\(true\)/);
+test("legacy Quay startup registrations are rewritten when enabled", () => {
+  assert.match(tauri, /getLaunchAtSignIn\([\s\S]*?autostart_enabled[\s\S]*?autostart_set/);
 });
 
 test("manual Quay launches do not run sign-in auto-start targets", () => {
