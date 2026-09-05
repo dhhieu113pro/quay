@@ -229,6 +229,12 @@ export async function setLaunchAtSignIn(enabled: boolean): Promise<boolean> {
   return Boolean(await invokeNative<boolean>("autostart_set", { enabled }));
 }
 
+export async function startedAtWindowsSignIn(): Promise<boolean> {
+  if (!isTauri()) return false;
+  try { return Boolean(await invokeNative<boolean>("windows_sign_in_launch")); }
+  catch { return false; }
+}
+
 function loadLaunchFallback() {
   try { return localStorage.getItem("quay.launchAtSignIn") === "1"; }
   catch { return false; }
