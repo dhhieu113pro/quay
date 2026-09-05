@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { moveWorkspaceEntry, openWorkspacePath } from "@/lib/tauri";
 import { defaultCubeWorkspacePath, isGeneratedCubeWorkspacePath, resolveWorkspacePath } from "@/lib/workspace";
 import { cubeCanConfigure, cubeCanStart, cubeNetworkName, effectiveSpec, slugGroupName, specConfigured, syncGroupEnv } from "@/lib/wslc/groups";
@@ -55,6 +56,7 @@ export function CubesView() {
   const operations = useWslc((s) => s.operations);
   const saveGroup = useWslc((s) => s.saveGroup);
   const deleteGroup = useWslc((s) => s.deleteGroup);
+  const setGroupAutoStart = useWslc((s) => s.setGroupAutoStart);
   const startGroup = useWslc((s) => s.startGroup);
   const stopGroup = useWslc((s) => s.stopGroup);
   const startGroupContainer = useWslc((s) => s.startGroupContainer);
@@ -113,9 +115,13 @@ export function CubesView() {
                     else if (member.container) startContainer(member.container.id);
                   }}>{memberBusy ? <LoaderCircle className="size-3.5 animate-spin" /> : running ? <Square className="size-3.5" /> : <Play className="size-3.5" />}</Button></li>;
               })}</ul>
-              <div className="flex flex-wrap gap-2 p-4">
+              <div className="flex flex-wrap items-center gap-2 p-4">
                 <Button size="sm" disabled={!count.total || busy || (count.running === 0 && !canStart)} onClick={() => count.running ? stopGroup(cube.id) : startGroup(cube.id)}>{busy ? <LoaderCircle className="size-3.5 animate-spin" /> : count.running ? <Square className="size-3.5" /> : <Play className="size-3.5" />}{cubeStatus === "starting" ? "Starting…" : cubeStatus === "stopping" ? "Stopping…" : count.running ? "Stop Cube" : "Start Cube"}</Button>
                 <Button size="icon-sm" variant="ghost" aria-label={`Logs for ${cube.name}`} title={`Logs for ${cube.name}`} onClick={() => setLogCubeId(cube.id)}><FileText className="size-3.5" /></Button>
+                <label className="flex items-center gap-2 text-xs text-muted-foreground" title="Start at Windows sign-in">
+                  <Switch checked={cube.autoStart} disabled={cube.builtIn} onCheckedChange={(enabled) => setGroupAutoStart(cube.id, enabled)} aria-label={`Start ${cube.name} at Windows sign-in`} />
+                  <span className="hidden xl:inline">Start at sign-in</span>
+                </label>
                 <Button size="sm" variant="outline" disabled={!canConfigure} onClick={() => setContainerEditor({ cube })}><Plus className="size-3.5" />Add Container</Button>
                 <Button size="sm" variant="ghost" onClick={() => setCloning(cube)}><Copy className="size-3.5" />Clone Cube</Button>
                 <Button size="sm" variant="ghost" disabled={!canConfigure} onClick={() => setEditing(syncGroupEnv(cube))}><Pencil className="size-3.5" />Configure</Button>
