@@ -12,7 +12,8 @@ use crate::wslc_runtime::HostSampler;
 #[cfg(windows)]
 use std::sync::{Arc, Mutex};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum OperationKind {
     ReadOnly,
     StateChanging,
@@ -123,6 +124,27 @@ impl QuayOperations {
 
     #[cfg(windows)]
     pub fn pull_manager(&self) -> &PullManager { &self.pull_manager }
+
+    pub fn query_audit_json(&self, arguments: &Value) -> Result<Value, OperationError> {
+        #[cfg(windows)]
+        {
+            let storage = self.storage.as_ref().ok_or_else(|| OperationError::runtime_unavailable("SQLite storage is unavailable"))?;
+            let mut query = crate::storage::audit::AuditQuery::default();
+            if let Some(limit) = arguments.get("limit").and_then(Value::as_u64) {
+                query.limit = (limit as usize).clamp(1, 1000);
+            }
+            if let Some(operation) = arguments.get("operation").and_then(Value::as_str).map(str::trim).filter(|value| !value.is_empty()) {
+                query.search = Some(operation.to_string());
+            }
+            let events = storage.query_audit(&query).map_err(|error| OperationError::backend_failure(error.to_string()))?;
+            serde_json::to_value(events).map_err(|error| OperationError::backend_failure(error.to_string()))
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = arguments;
+            Err(OperationError::runtime_unavailable("Quay audit storage is unavailable on this platform"))
+        }
+    }
 }
 
 fn normalize_backend_error(cmd: &str, message: String) -> OperationError {
