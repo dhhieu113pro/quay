@@ -219,14 +219,26 @@ export async function moveWorkspaceEntry(root: string, fromRelative: string, toR
 
 export async function getLaunchAtSignIn(): Promise<boolean> {
   if (!isTauri()) return loadLaunchFallback();
-  try { return Boolean(await invokeNative<boolean>("autostart_enabled")); }
-  catch { return loadLaunchFallback(); }
+  try {
+    const enabled = Boolean(await invokeNative<boolean>("autostart_enabled"));
+    if (enabled) {
+      try { await invokeNative<boolean>("autostart_set", { enabled: true }); }
+      catch { /* preserve enabled state if the migration rewrite fails */ }
+    }
+    return enabled;
+  } catch { return loadLaunchFallback(); }
 }
 
 export async function setLaunchAtSignIn(enabled: boolean): Promise<boolean> {
   saveLaunchFallback(enabled);
   if (!isTauri()) return enabled;
   return Boolean(await invokeNative<boolean>("autostart_set", { enabled }));
+}
+
+export async function startedAtWindowsSignIn(): Promise<boolean> {
+  if (!isTauri()) return false;
+  try { return Boolean(await invokeNative<boolean>("windows_sign_in_launch")); }
+  catch { return false; }
 }
 
 function loadLaunchFallback() {

@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import {
   Box,
   Boxes,
@@ -28,11 +28,12 @@ import { ImagesView } from "@/components/views/images-view";
 import { LogsView } from "@/components/views/logs-view";
 import { SessionView } from "@/components/views/session-view";
 import { TerminalView } from "@/components/views/terminal-view";
+import { startedAtWindowsSignIn, onPullJobUpdated, windowAction } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
+import { loadContainerAutoStart } from "@/lib/wslc/container-autostart";
 import { openLogs } from "@/lib/wslc/log-store";
 import { useWslc } from "@/lib/wslc/store";
 import type { ViewId } from "@/lib/wslc/types";
-import { onPullJobUpdated, windowAction } from "@/lib/tauri";
 
 const QUAY_VERSION = packageJson.version;
 
@@ -60,6 +61,7 @@ export function AppShell() {
   const clearError = useWslc((s) => s.clearError);
   const syncPullJobs = useWslc((s) => s.syncPullJobs);
   const applyPullJobUpdate = useWslc((s) => s.applyPullJobUpdate);
+  const signInAutoStartHandled = useRef(false);
   const gated = gate === "checking" || gate === "missing";
   const changeView = (next: ViewId) => {
     if (next === "logs") openLogs();
@@ -69,6 +71,23 @@ export function AppShell() {
   useEffect(() => {
     void retryProbe();
   }, [retryProbe]);
+
+  useEffect(() => {
+    if (gate !== "ready" || signInAutoStartHandled.current) return;
+    signInAutoStartHandled.current = true;
+    void (async () => {
+      if (!(await startedAtWindowsSignIn())) return;
+      await tick();
+      const state = useWslc.getState();
+      state.startAutoGroups();
+      const selected = loadContainerAutoStart();
+      const cubeNames = new Set(state.groups.flatMap((cube) => cube.specs.map((spec) => spec.name).filter(Boolean)));
+      for (const container of state.containers) {
+        if (container.status === "running" || container.groupId || cubeNames.has(container.name) || selected[container.name] !== true) continue;
+        state.startContainer(container.id);
+      }
+    })();
+  }, [gate, tick]);
 
   useEffect(() => {
     let disposed = false;

@@ -4,8 +4,10 @@ import { ContainerInspect } from "@/components/container-inspect";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { StatusPill } from "@/components/status-pill";
 import { cn, formatUptime } from "@/lib/utils";
+import { loadContainerAutoStart, setContainerAutoStart } from "@/lib/wslc/container-autostart";
 import { useWslc, type OperationStatus } from "@/lib/wslc/store";
 import type { Container } from "@/lib/wslc/types";
 
@@ -23,6 +25,7 @@ export function ContainersView() {
   const now = useWslc((s) => s.now);
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<"all" | "running" | "exited">("all");
+  const [autoStart, setAutoStart] = useState(() => loadContainerAutoStart());
 
   const cubeNames = useMemo(
     () => new Set(cubes.flatMap((cube) => cube.specs.map((spec) => spec.name).filter(Boolean))),
@@ -94,9 +97,11 @@ export function ContainersView() {
                   selected={selectedId === c.id && inspectOpen}
                   now={now}
                   status={operations[`container:${c.name}`]}
+                  autoStart={Boolean(autoStart[c.name])}
                   onSelect={selectContainer}
                   onStart={startContainer}
                   onStop={stopContainer}
+                  onAutoStart={(name, enabled) => setAutoStart(setContainerAutoStart(name, enabled))}
                 />
               ))}
             </ul>
@@ -128,17 +133,21 @@ function ContainerRow({
   selected,
   now,
   status,
+  autoStart,
   onSelect,
   onStart,
   onStop,
+  onAutoStart,
 }: {
   c: Container;
   selected: boolean;
   now: number;
   status?: OperationStatus;
+  autoStart: boolean;
   onSelect: (id: string) => void;
   onStart: (id: string) => void;
   onStop: (id: string) => void;
+  onAutoStart: (name: string, enabled: boolean) => void;
 }) {
   const running = c.status === "running";
   const statusLabel = operationLabel(status);
@@ -163,6 +172,14 @@ function ContainerRow({
             {running ? formatUptime(c.startedAt, now) : "exited"}
           </p>
         </button>
+        <label className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground" title="Start at Windows sign-in">
+          <Switch
+            checked={autoStart}
+            onCheckedChange={(enabled) => onAutoStart(c.name, enabled)}
+            aria-label={`Start ${c.name} at Windows sign-in`}
+          />
+          <span className="hidden xl:inline">Start at sign-in</span>
+        </label>
         <Button
           type="button"
           variant="ghost"
