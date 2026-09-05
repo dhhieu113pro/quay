@@ -98,9 +98,7 @@ impl ServerHandler for QuayMcpServer {
         self.execute(request).await
     }
 
-    fn get_tool(&self, name: &str) -> Option<Tool> {
-        Self::rmcp_tool(name).ok()
-    }
+    fn get_tool(&self, name: &str) -> Option<Tool> { Self::rmcp_tool(name).ok() }
 }
 
 fn operation_result(result: Result<Value, OperationError>) -> CallToolResult {
@@ -147,21 +145,16 @@ impl McpRuntime {
                 .with_graceful_shutdown(shutdown.cancelled_owned())
                 .await;
         });
-        Ok(Self {
-            endpoint: config.endpoint(),
-            cancellation,
-            task: Some(task),
-        })
+        Ok(Self { endpoint: config.endpoint(), cancellation, task: Some(task) })
     }
 
     pub fn endpoint(&self) -> &str { &self.endpoint }
     pub fn is_running(&self) -> bool { self.task.as_ref().is_some_and(|task| !task.is_finished()) }
+    pub fn cancel(&self) { self.cancellation.cancel(); }
 
     pub async fn shutdown(&mut self) {
-        self.cancellation.cancel();
-        if let Some(task) = self.task.take() {
-            let _ = task.await;
-        }
+        self.cancel();
+        if let Some(task) = self.task.take() { let _ = task.await; }
     }
 }
 
