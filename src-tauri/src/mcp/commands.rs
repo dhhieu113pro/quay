@@ -91,6 +91,12 @@ impl McpState {
 
     pub async fn shutdown(&self) { self.replace_runtime(None).await; }
 
+    pub fn cancel_now(&self) {
+        if let Ok(runtime) = self.runtime.try_lock() {
+            if let Some(runtime) = runtime.as_ref() { runtime.cancel(); }
+        }
+    }
+
     pub async fn set_enabled(&self, enabled: bool) -> Result<McpStatus, OperationError> {
         let current = self.config();
         if current.enabled == enabled { return Ok(self.status().await); }
