@@ -18,6 +18,7 @@ import { AppearanceToggle } from "@/components/appearance-toggle";
 import { DownloadsButton } from "@/components/downloads-button";
 import { ImageSearch } from "@/components/image-search";
 import { Mark } from "@/components/mark";
+import { McpConfirmationDialog } from "@/components/mcp-confirmation-dialog";
 import { RunDialog } from "@/components/run-dialog";
 import { SetupScreen } from "@/components/setup-screen";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -167,6 +168,7 @@ export function AppShell() {
         <RunDialog />
           </>
         )}
+        <McpConfirmationDialog />
         <ThemedToaster />
         </div>
       </TooltipProvider>
@@ -200,45 +202,22 @@ function Titlebar() {
       <Mark className="size-6" />
       <div className="ml-2 min-w-0 shrink-0">
         <p className="truncate text-sm font-medium leading-none">Quay</p>
-        <p className="mt-0.5 hidden truncate text-xs text-subtle sm:block">
-          WSL container manager
-        </p>
+        <p className="mt-0.5 hidden truncate text-xs text-subtle sm:block">WSL container manager</p>
       </div>
       <div className="flex min-w-0 flex-1 justify-center px-4">
         <ImageSearch disabled={gated} className="w-full max-w-xl" />
       </div>
       <div className="flex shrink-0 items-center gap-2">
-        <span
-          className={cn(
-            "hidden items-center gap-1.5 rounded-full px-2 py-1 text-xs sm:inline-flex",
-            live ? "bg-ok/15 text-ok" : gated ? "bg-warn/15 text-warn" : "bg-elevated text-muted-foreground",
-          )}
-        >
-          <span
-            className={cn(
-              "size-1.5 rounded-full",
-              live ? "bg-ok" : gated ? "bg-warn" : "bg-subtle",
-            )}
-          />
+        <span className={cn("hidden items-center gap-1.5 rounded-full px-2 py-1 text-xs sm:inline-flex", live ? "bg-ok/15 text-ok" : gated ? "bg-warn/15 text-warn" : "bg-elevated text-muted-foreground")}>
+          <span className={cn("size-1.5 rounded-full", live ? "bg-ok" : gated ? "bg-warn" : "bg-subtle")} />
           {gated ? "wslc missing" : live ? "session up" : "session down"}
         </span>
         {!gated ? <DownloadsButton /> : null}
         <AppearanceToggle compact />
         <div className="hidden md:flex">
-          <CaptionBtn label="Minimize" onClick={() => void windowAction("minimize")}>
-            <Minus className="size-3.5" />
-          </CaptionBtn>
-          <CaptionBtn label="Maximize" onClick={() => void windowAction("toggleMaximize")}>
-            <Square className="size-3" />
-          </CaptionBtn>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <CaptionBtn label="Hide to tray" danger onClick={() => void windowAction("close")}>
-                <X className="size-3.5" />
-              </CaptionBtn>
-            </TooltipTrigger>
-            <TooltipContent>Hide to tray</TooltipContent>
-          </Tooltip>
+          <CaptionBtn label="Minimize" onClick={() => void windowAction("minimize")}><Minus className="size-3.5" /></CaptionBtn>
+          <CaptionBtn label="Maximize" onClick={() => void windowAction("toggleMaximize")}><Square className="size-3" /></CaptionBtn>
+          <Tooltip><TooltipTrigger asChild><CaptionBtn label="Hide to tray" danger onClick={() => void windowAction("close")}><X className="size-3.5" /></CaptionBtn></TooltipTrigger><TooltipContent>Hide to tray</TooltipContent></Tooltip>
         </div>
       </div>
     </header>
@@ -262,9 +241,7 @@ function StatusBar() {
   return (
     <footer className="hidden h-8 shrink-0 items-center gap-4 border-t border-border bg-card px-3 font-mono text-xs text-muted-foreground md:flex">
       <span className="text-foreground">Quay v{QUAY_VERSION}</span>
-      <span className={session.running ? "text-ok" : "text-warn"}>
-        {session.running ? "WSLC" : "DOWN"} {wslcVersionLabel(session.version)}
-      </span>
+      <span className={session.running ? "text-ok" : "text-warn"}>{session.running ? "WSLC" : "DOWN"} {wslcVersionLabel(session.version)}</span>
       <span>{running} running</span>
       <span className="ml-auto truncate text-subtle">{last ? last.method : "idle"}</span>
     </footer>
