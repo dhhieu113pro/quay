@@ -3,6 +3,7 @@
 //! Close hides to tray; Quit actually exits.
 
 mod docker_hub;
+mod mcp;
 mod operations;
 mod pull_audit;
 mod pull_manager;
