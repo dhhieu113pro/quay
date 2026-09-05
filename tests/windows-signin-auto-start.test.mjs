@@ -17,6 +17,11 @@ test("Windows startup registration marks launches that came from sign-in", () =>
   assert.match(tauri, /startedAtWindowsSignIn/);
 });
 
+test("legacy Quay startup registrations are upgraded to the sign-in command", () => {
+  assert.match(nativeLib, /fn\s+autostart_registration_needs_upgrade/);
+  assert.match(nativeLib, /fn\s+autostart_enabled\([\s\S]*?autostart_registration_needs_upgrade[\s\S]*?autostart_set\(true\)/);
+});
+
 test("manual Quay launches do not run sign-in auto-start targets", () => {
   assert.match(appShell, /if\s*\(!\(await startedAtWindowsSignIn\(\)\)\)\s*return;/);
 });
@@ -30,6 +35,10 @@ test("standalone container auto-start preferences are persisted by container nam
   assert.match(containerAutoStart, /localStorage/);
   assert.match(containerAutoStart, /setContainerAutoStart/);
   assert.match(containerAutoStart, /\[name\]/);
+});
+
+test("standalone auto-start requires an explicit true preference", () => {
+  assert.match(appShell, /selected\[container\.name\]\s*!==\s*true/);
 });
 
 test("sign-in auto-start skips already-running standalone containers and Cube members", () => {
