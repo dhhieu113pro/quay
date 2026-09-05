@@ -3,6 +3,7 @@
 //! Close hides to tray; Quit actually exits.
 
 mod docker_hub;
+mod operations;
 mod pull_audit;
 mod pull_manager;
 mod storage;
@@ -23,6 +24,7 @@ use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
 
 pub struct Backend {
     storage: Option<storage::Storage>,
+    operations: operations::QuayOperations,
     #[cfg(windows)]
     executor: wslc_executor::WslcExecutor,
     #[cfg(windows)]
@@ -34,16 +36,21 @@ pub struct Backend {
 impl Backend {
     #[cfg(windows)]
     fn new(pull_manager: pull_manager::PullManager, storage: Option<storage::Storage>) -> Self {
-        Self {
-            storage,
-            executor: wslc_executor::WslcExecutor::new(),
-            host: Arc::new(Mutex::new(wslc_runtime::HostSampler::default())),
-            pull_manager,
-        }
+        let executor = wslc_executor::WslcExecutor::new();
+        let host = Arc::new(Mutex::new(wslc_runtime::HostSampler::default()));
+        let operations = operations::QuayOperations::new(
+            executor.clone(),
+            host.clone(),
+            pull_manager.clone(),
+            storage.clone(),
+        );
+        Self { storage, operations, executor, host, pull_manager }
     }
 
     #[cfg(not(windows))]
-    fn new(storage: Option<storage::Storage>) -> Self { Self { storage } }
+    fn new(storage: Option<storage::Storage>) -> Self {
+        Self { storage, operations: operations::QuayOperations::new() }
+    }
 }
 
 #[cfg(windows)]
@@ -96,19 +103,10 @@ fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
 
 #[tauri::command]
 async fn wslc_invoke(backend: State<'_, Backend>, payload: Value) -> Result<Value, String> {
-    #[cfg(windows)] {
-        let executor = backend.executor.clone();
-        let host = backend.host.clone();
-        let storage = backend.storage.clone();
-        tauri::async_runtime::spawn_blocking(move || wslc_runtime::invoke(&executor, &host, storage.as_ref(), payload))
-            .await
-            .map_err(|e| format!("WSLC executor task failed: {e}"))?
-    }
-    #[cfg(not(windows))] {
-        let _ = backend;
-        let _ = payload;
-        Err("WSLC is only available on Windows".into())
-    }
+    let operations = backend.operations.clone();
+    tauri::async_runtime::spawn_blocking(move || operations.invoke(payload).map_err(|error| error.to_string()))
+        .await
+        .map_err(|e| format!("WSLC executor task failed: {e}"))?
 }
 
 #[tauri::command]
