@@ -1,3 +1,4 @@
+use crate::mcp::audit;
 use crate::mcp::config::McpConfig;
 use crate::mcp::confirmation::ConfirmationBroker;
 use crate::mcp::tools::{dispatch_destructive_after_approval, dispatch_tool, tool_catalog, tool_spec};
@@ -13,6 +14,7 @@ use rmcp::transport::streamable_http_server::{
 use rmcp::{ErrorData as McpError, RoleServer, ServerHandler};
 use serde_json::Value;
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
@@ -45,24 +47,60 @@ impl QuayMcpServer {
         let name = request.name.to_string();
         let arguments = Value::Object(request.arguments.unwrap_or_default());
         let spec = tool_spec(&name).ok_or_else(|| McpError::invalid_params(format!("unknown tool: {name}"), None))?;
+        let started = Instant::now();
 
         if spec.kind == OperationKind::Destructive {
             if let Err(error) = self.confirmations.request(&name, arguments.clone()).await {
+                audit::record(
+                    &self.operations,
+                    &name,
+                    spec.kind,
+                    &arguments,
+                    false,
+                    Some(error.message()),
+                    true,
+                    Some(error.code()),
+                    started.elapsed().as_millis() as i64,
+                );
                 return Ok(CallToolResult::structured_error(operation_error_value(&error)).into());
             }
             let operations = self.operations.clone();
+            let dispatch_name = name.clone();
+            let dispatch_arguments = arguments.clone();
             let result = tokio::task::spawn_blocking(move || {
-                dispatch_destructive_after_approval(&operations, &name, arguments)
+                dispatch_destructive_after_approval(&operations, &dispatch_name, dispatch_arguments)
             })
             .await
             .map_err(|error| McpError::internal_error(format!("MCP worker failed: {error}"), None))?;
+            audit_result(
+                &self.operations,
+                &name,
+                spec.kind,
+                &arguments,
+                &result,
+                true,
+                Some("approved"),
+                started.elapsed().as_millis() as i64,
+            );
             return Ok(operation_result(result).into());
         }
 
         let operations = self.operations.clone();
-        let result = tokio::task::spawn_blocking(move || dispatch_tool(&operations, &name, arguments))
+        let dispatch_name = name.clone();
+        let dispatch_arguments = arguments.clone();
+        let result = tokio::task::spawn_blocking(move || dispatch_tool(&operations, &dispatch_name, dispatch_arguments))
             .await
             .map_err(|error| McpError::internal_error(format!("MCP worker failed: {error}"), None))?;
+        audit_result(
+            &self.operations,
+            &name,
+            spec.kind,
+            &arguments,
+            &result,
+            false,
+            None,
+            started.elapsed().as_millis() as i64,
+        );
         Ok(operation_result(result).into())
     }
 }
@@ -99,6 +137,29 @@ impl ServerHandler for QuayMcpServer {
     }
 
     fn get_tool(&self, name: &str) -> Option<Tool> { Self::rmcp_tool(name).ok() }
+}
+
+fn audit_result(
+    operations: &QuayOperations,
+    name: &str,
+    kind: OperationKind,
+    arguments: &Value,
+    result: &Result<Value, OperationError>,
+    confirmation_required: bool,
+    confirmation_outcome: Option<&str>,
+    duration_ms: i64,
+) {
+    audit::record(
+        operations,
+        name,
+        kind,
+        arguments,
+        result.is_ok(),
+        result.as_ref().err().map(|error| error.message()),
+        confirmation_required,
+        confirmation_outcome,
+        duration_ms,
+    );
 }
 
 fn operation_result(result: Result<Value, OperationError>) -> CallToolResult {
