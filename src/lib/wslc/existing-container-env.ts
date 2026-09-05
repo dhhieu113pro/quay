@@ -37,13 +37,14 @@ export function parseExistingContainerInspect(input: string | unknown): Existing
   const Entrypoint = Array.isArray(Config.Entrypoint) ? Config.Entrypoint.map(text).filter(Boolean) : [];
 
   const portLines: string[] = [];
-  const bindings = record(HostConfig.PortBindings ?? HostConfig.portBindings);
+  const bindings = record(root.Ports ?? root.ports ?? HostConfig.PortBindings ?? HostConfig.portBindings);
   for (const [containerPort, rawBindings] of Object.entries(bindings)) {
     const [port, protocol = "tcp"] = containerPort.split("/");
     for (const rawBinding of Array.isArray(rawBindings) ? rawBindings : []) {
       const binding = record(rawBinding);
+      const hostIp = text(binding.HostIp ?? binding.hostIp).trim();
       const hostPort = text(binding.HostPort ?? binding.hostPort).trim();
-      if (hostPort) portLines.push(`${hostPort}:${port}${protocol === "udp" ? "/udp" : ""}`);
+      if (hostPort) portLines.push(`${hostIp ? `${hostIp}:` : ""}${hostPort}:${port}${protocol === "udp" ? "/udp" : ""}`);
     }
   }
 
