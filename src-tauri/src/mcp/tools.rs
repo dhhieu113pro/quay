@@ -98,7 +98,8 @@ pub fn dispatch_tool(operations: &QuayOperations, name: &str, arguments: Value) 
         "quay.container.inspect" => run_cli(operations, vec!["container", "inspect", required_string(&arguments, "id")?]),
         "quay.container.logs" => {
             let tail = arguments.get("tail").and_then(Value::as_u64).unwrap_or(200).clamp(1, 10_000);
-            run_cli(operations, vec!["container", "logs", "--tail", &tail.to_string(), required_string(&arguments, "id")?])
+            let tail = tail.to_string();
+            run_cli(operations, vec!["container", "logs", "--tail", tail.as_str(), required_string(&arguments, "id")?])
         }
         "quay.container.start" => run_cli(operations, vec!["container", "start", required_string(&arguments, "id")?]),
         "quay.container.stop" => run_cli(operations, vec!["container", "stop", required_string(&arguments, "id")?]),
@@ -137,7 +138,7 @@ pub fn dispatch_destructive_after_approval(operations: &QuayOperations, name: &s
     }
 }
 
-fn run_cli(operations: &QuayOperations, args: Vec<&str>) -> Result<Value, OperationError> {
+fn run_cli<T: Serialize>(operations: &QuayOperations, args: T) -> Result<Value, OperationError> {
     operations.invoke(json!({"cmd":"run_cli","args":args}))
 }
 
@@ -197,8 +198,7 @@ fn clone_container(operations: &QuayOperations, arguments: &Value) -> Result<Val
     let name = required_string(arguments, "name")?;
     let inspected = run_cli(operations, vec!["container", "inspect", id])?;
     let config = inspected_config(&inspected)?;
-    let mut args = existing_run_args(&config, Some(name), None, None)?;
-    args.insert(1, "-d".into());
+    let args = existing_run_args(&config, Some(name), None, None)?;
     operations.invoke(json!({"cmd":"run_cli","args":args}))
 }
 
@@ -210,14 +210,14 @@ fn recreate_container(operations: &QuayOperations, arguments: &Value, mode: Recr
     if matches!(mode, RecreateMode::Ports) && was_running {
         return Err(OperationError::conflict("stop the container before updating ports"));
     }
-    if was_running { run_cli(operations, vec!["container", "stop", &config.name])?; }
-    run_cli(operations, vec!["container", "rm", &config.name])?;
+    if was_running { run_cli(operations, vec!["container", "stop", config.name.as_str()])?; }
+    run_cli(operations, vec!["container", "rm", config.name.as_str()])?;
 
     let ports = if matches!(mode, RecreateMode::Ports) { Some(string_array(arguments, "ports")?) } else { None };
     let env = if matches!(mode, RecreateMode::Environment) { Some(env_pairs(arguments)?) } else { None };
     let args = existing_run_args(&config, None, ports.as_deref(), env.as_deref())?;
     let created = operations.invoke(json!({"cmd":"run_cli","args":args}))?;
-    if !was_running { run_cli(operations, vec!["container", "stop", &config.name])?; }
+    if !was_running { run_cli(operations, vec!["container", "stop", config.name.as_str()])?; }
     Ok(created)
 }
 
@@ -246,11 +246,12 @@ fn inspected_config(result: &Value) -> Result<ExistingConfig, OperationError> {
     let output = result.get("output").and_then(Value::as_str).ok_or_else(|| OperationError::backend_failure("container inspect returned no JSON output"))?;
     let parsed: Value = serde_json::from_str(output).map_err(|error| OperationError::backend_failure(format!("invalid container inspect JSON: {error}")))?;
     let root = parsed.as_array().and_then(|values| values.first()).unwrap_or(&parsed);
+    let root_object = root.as_object().unwrap_or_else(empty_object);
     let config = object_any(root, &["Config", "config"]);
     let host_config = object_any(root, &["HostConfig", "hostConfig"]);
     let state = object_any(root, &["State", "state"]);
-    let name = string_any(root, &["Name", "name"]).unwrap_or_default().trim_start_matches('/').to_string();
-    let image = string_any(config, &["Image", "image"]).or_else(|| string_any(root, &["Image", "image"])).unwrap_or_default().to_string();
+    let name = string_any(root_object, &["Name", "name"]).unwrap_or_default().trim_start_matches('/').to_string();
+    let image = string_any(config, &["Image", "image"]).or_else(|| string_any(root_object, &["Image", "image"])).unwrap_or_default().to_string();
     if name.is_empty() || image.is_empty() { return Err(OperationError::backend_failure("container inspect did not include name/image")); }
     let mut command = array_strings(config, &["Entrypoint", "entrypoint"]);
     command.extend(array_strings(config, &["Cmd", "cmd"]));
@@ -276,7 +277,7 @@ fn existing_run_args(config: &ExistingConfig, name: Option<&str>, ports: Option<
 }
 
 fn object_any<'a>(value: &'a Value, names: &[&str]) -> &'a Map<String, Value> {
-    names.iter().find_map(|name| value.get(*name).and_then(Value::as_object)).unwrap_or_else(|| empty_object())
+    names.iter().find_map(|name| value.get(*name).and_then(Value::as_object)).unwrap_or_else(empty_object)
 }
 
 fn empty_object() -> &'static Map<String, Value> {
