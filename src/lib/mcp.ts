@@ -1,6 +1,8 @@
 import { isTauri } from "@/lib/tauri";
 import type { ContainerGroup } from "@/lib/wslc/types";
 
+const GROUPS_KEY = "quay.groups.v1";
+
 export type McpStatus = {
   enabled: boolean;
   running: boolean;
@@ -41,6 +43,11 @@ export function mcpSetEnabled(enabled: boolean): Promise<McpStatus> { return inv
 export function mcpSetPort(port: number): Promise<McpStatus> { return invokeMcp<McpStatus>("mcp_set_port", { port }); }
 export function mcpConfirm(id: string, approve: boolean): Promise<void> { return invokeMcp<void>("mcp_confirm", { id, approve }); }
 export function mcpSyncCubes(cubes: ContainerGroup[]): Promise<void> { return invokeMcp<void>("mcp_sync_cubes", { cubes }); }
+
+export function applyMcpCubes(cubes: ContainerGroup[]) {
+  if (typeof localStorage === "undefined") return;
+  localStorage.setItem(GROUPS_KEY, JSON.stringify(cubes.filter((cube) => !cube.builtIn)));
+}
 
 export async function mcpPendingConfirmations(): Promise<McpConfirmationRequest[]> {
   if (!isTauri()) return [];
