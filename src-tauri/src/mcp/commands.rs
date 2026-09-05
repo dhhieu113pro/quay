@@ -89,11 +89,11 @@ impl McpState {
         if let Some(mut old) = old { old.shutdown().await; }
     }
 
+    pub async fn shutdown(&self) { self.replace_runtime(None).await; }
+
     pub async fn set_enabled(&self, enabled: bool) -> Result<McpStatus, OperationError> {
         let current = self.config();
-        if current.enabled == enabled {
-            return Ok(self.status().await);
-        }
+        if current.enabled == enabled { return Ok(self.status().await); }
 
         if enabled {
             let mut next = current.clone();
@@ -142,10 +142,6 @@ impl McpState {
     }
 
     pub fn pending_confirmations(&self) -> Vec<ConfirmationRequest> { self.confirmations.pending() }
-
-    pub fn cancel_now(&self) {
-        if let Some(runtime) = self.runtime.blocking_lock().as_ref() { runtime.cancel(); }
-    }
 }
 
 #[tauri::command]
