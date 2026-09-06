@@ -32,6 +32,12 @@ export function McpConfirmationDialog() {
     };
   }, []);
 
+  async function showNextPending() {
+    setRequest(null);
+    const pending = await mcpPendingConfirmations();
+    if (pending.length > 0) setRequest(pending[0]);
+  }
+
   async function resolve(approve: boolean) {
     if (!request || resolving) return;
     setResolving(true);
@@ -39,11 +45,14 @@ export function McpConfirmationDialog() {
     try {
       await mcpConfirm(id, approve);
       toast(approve ? "Approved MCP action" : "Rejected MCP action");
-      setRequest(null);
-      const pending = await mcpPendingConfirmations();
-      if (pending.length > 0) setRequest(pending[0]);
+      await showNextPending();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not resolve MCP action");
+      try {
+        await showNextPending();
+      } catch {
+        setRequest(null);
+      }
     } finally {
       setResolving(false);
     }
