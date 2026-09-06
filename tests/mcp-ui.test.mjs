@@ -20,8 +20,10 @@ test("settings exposes local MCP controls without raw exec capability", async ()
 test("app shell mounts one-shot MCP confirmation dialog", async () => {
   const shell = await source("src/components/app-shell.tsx");
   const dialog = await source("src/components/mcp-confirmation-dialog.tsx");
+  const bridge = await source("src/lib/mcp.ts");
   assert.match(shell, /<McpConfirmationDialog \/>/);
-  assert.match(dialog, /mcp:\/\/confirmation-requested/);
+  assert.match(dialog, /onMcpConfirmationRequested/);
+  assert.match(bridge, /mcp:\/\/confirmation-requested/);
   assert.match(dialog, /mcpConfirm/);
   assert.match(dialog, /Approve once/);
   assert.match(dialog, /Reject/);
