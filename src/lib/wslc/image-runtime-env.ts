@@ -42,6 +42,11 @@ export function runtimeEnvForImage(image: string): RuntimeEnvVariable[] {
       return [{ key: "MARIADB_ROOT_PASSWORD", value: "", source: "Required", required: true }];
     case "docker.io/ngrok/ngrok":
       return [{ key: "NGROK_AUTHTOKEN", value: "", source: "Required", required: true }];
+    case "ghcr.io/dhhieu113pro/ai-router":
+      return [
+        { key: "AIROUTER_ADMIN_KEY", value: "", source: "Required", required: true },
+        { key: "AIROUTER_API_KEY", value: "", source: "Image default" },
+      ];
     case "ghcr.io/dhhieu113pro/local-coding-mcp":
       return [
         { key: "ASPNETCORE_URLS", value: "http://0.0.0.0:5000", source: "Image default" },
