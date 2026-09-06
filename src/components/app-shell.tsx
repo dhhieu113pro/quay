@@ -18,6 +18,7 @@ import { AppearanceToggle } from "@/components/appearance-toggle";
 import { DownloadsButton } from "@/components/downloads-button";
 import { ImageSearch } from "@/components/image-search";
 import { Mark } from "@/components/mark";
+import { McpConfirmationDialog } from "@/components/mcp-confirmation-dialog";
 import { RunDialog } from "@/components/run-dialog";
 import { SetupScreen } from "@/components/setup-screen";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -28,9 +29,11 @@ import { ImagesView } from "@/components/views/images-view";
 import { LogsView } from "@/components/views/logs-view";
 import { SessionView } from "@/components/views/session-view";
 import { TerminalView } from "@/components/views/terminal-view";
+import { applyMcpCubes, mcpSyncCubes, onMcpCubesChanged } from "@/lib/mcp";
 import { startedAtWindowsSignIn, onPullJobUpdated, windowAction } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { loadContainerAutoStart } from "@/lib/wslc/container-autostart";
+import { loadGroups } from "@/lib/wslc/groups";
 import { openLogs } from "@/lib/wslc/log-store";
 import { useWslc } from "@/lib/wslc/store";
 import type { ViewId } from "@/lib/wslc/types";
@@ -71,6 +74,28 @@ export function AppShell() {
   useEffect(() => {
     void retryProbe();
   }, [retryProbe]);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void mcpSyncCubes(useWslc.getState().groups).catch(() => {});
+    const unsubscribe = useWslc.subscribe((state, previous) => {
+      if (state.groups !== previous.groups) void mcpSyncCubes(state.groups).catch(() => {});
+    });
+    void onMcpCubesChanged((cubes) => {
+      if (disposed) return;
+      applyMcpCubes(cubes);
+      useWslc.setState({ groups: loadGroups() });
+    }).then((dispose) => {
+      if (disposed) dispose();
+      else unlisten = dispose;
+    });
+    return () => {
+      disposed = true;
+      unsubscribe();
+      unlisten?.();
+    };
+  }, []);
 
   useEffect(() => {
     if (gate !== "ready" || signInAutoStartHandled.current) return;
@@ -128,33 +153,15 @@ export function AppShell() {
           <>
         <div className="flex min-h-0 flex-1">
           <nav className="hidden w-52 shrink-0 flex-col border-r border-border bg-card md:flex">
-            <p className="px-4 pb-2 pt-4 text-xs uppercase tracking-widest text-subtle">
-              Workspace
-            </p>
+            <p className="px-4 pb-2 pt-4 text-xs uppercase tracking-widest text-subtle">Workspace</p>
             {NAV.map((item) => (
-              <NavBtn
-                key={item.id}
-                {...item}
-                active={view === item.id}
-                onClick={() => changeView(item.id)}
-              />
+              <NavBtn key={item.id} {...item} active={view === item.id} onClick={() => changeView(item.id)} />
             ))}
           </nav>
-          <main
-            className={cn(
-              "min-h-0 min-w-0 flex-1 pb-20 md:pb-0",
-              view === "containers" || view === "terminal" || view === "logs"
-                ? "flex overflow-hidden"
-                : "overflow-y-auto",
-            )}
-          >
+          <main className={cn("min-h-0 min-w-0 flex-1 pb-20 md:pb-0", view === "containers" || view === "terminal" || view === "logs" ? "flex overflow-hidden" : "overflow-y-auto")}>
             {view === "dashboard" ? <DashboardView /> : null}
             {view === "groups" ? <CubesView /> : null}
-            {view === "containers" ? (
-              <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
-                <ContainersView />
-              </div>
-            ) : null}
+            {view === "containers" ? <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col"><ContainersView /></div> : null}
             {view === "terminal" ? <TerminalView /> : null}
             {view === "logs" ? <LogsView /> : null}
             {view === "images" ? <ImagesView /> : null}
@@ -167,6 +174,7 @@ export function AppShell() {
         <RunDialog />
           </>
         )}
+        <McpConfirmationDialog />
         <ThemedToaster />
         </div>
       </TooltipProvider>
@@ -176,15 +184,7 @@ export function AppShell() {
 
 function ThemedToaster() {
   const { scheme } = useAppearance();
-  return (
-    <Toaster
-      theme={scheme}
-      position="bottom-right"
-      toastOptions={{
-        className: "!bg-card !text-foreground !border-border !font-sans text-sm",
-      }}
-    />
-  );
+  return <Toaster theme={scheme} position="bottom-right" toastOptions={{ className: "!bg-card !text-foreground !border-border !font-sans text-sm" }} />;
 }
 
 function Titlebar() {
@@ -193,52 +193,21 @@ function Titlebar() {
   const gated = gate === "checking" || gate === "missing";
   const live = session.running && !gated;
   return (
-    <header
-      data-tauri-drag-region
-      className="flex h-12 shrink-0 items-center border-b border-border bg-card pl-3 pr-1"
-    >
+    <header data-tauri-drag-region className="flex h-12 shrink-0 items-center border-b border-border bg-card pl-3 pr-1">
       <Mark className="size-6" />
-      <div className="ml-2 min-w-0 shrink-0">
-        <p className="truncate text-sm font-medium leading-none">Quay</p>
-        <p className="mt-0.5 hidden truncate text-xs text-subtle sm:block">
-          WSL container manager
-        </p>
-      </div>
-      <div className="flex min-w-0 flex-1 justify-center px-4">
-        <ImageSearch disabled={gated} className="w-full max-w-xl" />
-      </div>
+      <div className="ml-2 min-w-0 shrink-0"><p className="truncate text-sm font-medium leading-none">Quay</p><p className="mt-0.5 hidden truncate text-xs text-subtle sm:block">WSL container manager</p></div>
+      <div className="flex min-w-0 flex-1 justify-center px-4"><ImageSearch disabled={gated} className="w-full max-w-xl" /></div>
       <div className="flex shrink-0 items-center gap-2">
-        <span
-          className={cn(
-            "hidden items-center gap-1.5 rounded-full px-2 py-1 text-xs sm:inline-flex",
-            live ? "bg-ok/15 text-ok" : gated ? "bg-warn/15 text-warn" : "bg-elevated text-muted-foreground",
-          )}
-        >
-          <span
-            className={cn(
-              "size-1.5 rounded-full",
-              live ? "bg-ok" : gated ? "bg-warn" : "bg-subtle",
-            )}
-          />
+        <span className={cn("hidden items-center gap-1.5 rounded-full px-2 py-1 text-xs sm:inline-flex", live ? "bg-ok/15 text-ok" : gated ? "bg-warn/15 text-warn" : "bg-elevated text-muted-foreground")}>
+          <span className={cn("size-1.5 rounded-full", live ? "bg-ok" : gated ? "bg-warn" : "bg-subtle")} />
           {gated ? "wslc missing" : live ? "session up" : "session down"}
         </span>
         {!gated ? <DownloadsButton /> : null}
         <AppearanceToggle compact />
         <div className="hidden md:flex">
-          <CaptionBtn label="Minimize" onClick={() => void windowAction("minimize")}>
-            <Minus className="size-3.5" />
-          </CaptionBtn>
-          <CaptionBtn label="Maximize" onClick={() => void windowAction("toggleMaximize")}>
-            <Square className="size-3" />
-          </CaptionBtn>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <CaptionBtn label="Hide to tray" danger onClick={() => void windowAction("close")}>
-                <X className="size-3.5" />
-              </CaptionBtn>
-            </TooltipTrigger>
-            <TooltipContent>Hide to tray</TooltipContent>
-          </Tooltip>
+          <CaptionBtn label="Minimize" onClick={() => void windowAction("minimize")}><Minus className="size-3.5" /></CaptionBtn>
+          <CaptionBtn label="Maximize" onClick={() => void windowAction("toggleMaximize")}><Square className="size-3" /></CaptionBtn>
+          <Tooltip><TooltipTrigger asChild><CaptionBtn label="Hide to tray" danger onClick={() => void windowAction("close")}><X className="size-3.5" /></CaptionBtn></TooltipTrigger><TooltipContent>Hide to tray</TooltipContent></Tooltip>
         </div>
       </div>
     </header>
@@ -258,17 +227,7 @@ function StatusBar() {
   const containers = useWslc((s) => s.containers);
   const last = useWslc((s) => s.calls[0]);
   const running = containers.filter((c) => c.status === "running").length;
-
-  return (
-    <footer className="hidden h-8 shrink-0 items-center gap-4 border-t border-border bg-card px-3 font-mono text-xs text-muted-foreground md:flex">
-      <span className="text-foreground">Quay v{QUAY_VERSION}</span>
-      <span className={session.running ? "text-ok" : "text-warn"}>
-        {session.running ? "WSLC" : "DOWN"} {wslcVersionLabel(session.version)}
-      </span>
-      <span>{running} running</span>
-      <span className="ml-auto truncate text-subtle">{last ? last.method : "idle"}</span>
-    </footer>
-  );
+  return <footer className="hidden h-8 shrink-0 items-center gap-4 border-t border-border bg-card px-3 font-mono text-xs text-muted-foreground md:flex"><span className="text-foreground">Quay v{QUAY_VERSION}</span><span className={session.running ? "text-ok" : "text-warn"}>{session.running ? "WSLC" : "DOWN"} {wslcVersionLabel(session.version)}</span><span>{running} running</span><span className="ml-auto truncate text-subtle">{last ? last.method : "idle"}</span></footer>;
 }
 
 function MobileNav({ view, onChange }: { view: ViewId; onChange: (v: ViewId) => void }) {

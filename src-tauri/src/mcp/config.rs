@@ -1,0 +1,106 @@
+use crate::operations::OperationError;
+use serde::{Deserialize, Serialize};
+use std::fs;
+use std::io::Write;
+use std::net::{IpAddr, Ipv4Addr};
+use std::path::Path;
+
+pub const DEFAULT_MCP_PORT: u16 = 47_831;
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct McpConfig {
+    pub enabled: bool,
+    pub bind: IpAddr,
+    pub port: u16,
+}
+
+impl Default for McpConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            bind: IpAddr::V4(Ipv4Addr::LOCALHOST),
+            port: DEFAULT_MCP_PORT,
+        }
+    }
+}
+
+impl McpConfig {
+    pub fn validate(&self) -> Result<(), OperationError> {
+        if !self.bind.is_loopback() {
+            return Err(OperationError::invalid_input("MCP v1 only permits loopback bind addresses"));
+        }
+        if self.port == 0 {
+            return Err(OperationError::invalid_input("MCP port must be greater than zero"));
+        }
+        Ok(())
+    }
+
+    pub fn endpoint(&self) -> String {
+        let host = match self.bind {
+            IpAddr::V4(address) => address.to_string(),
+            IpAddr::V6(address) => format!("[{address}]"),
+        };
+        format!("http://{host}:{}/mcp", self.port)
+    }
+
+    pub fn load(path: &Path) -> Result<Self, OperationError> {
+        if !path.exists() {
+            return Ok(Self::default());
+        }
+        let raw = fs::read_to_string(path)
+            .map_err(|error| OperationError::backend_failure(format!("could not read MCP config: {error}")))?;
+        let config: Self = serde_json::from_str(&raw)
+            .map_err(|error| OperationError::invalid_input(format!("invalid MCP config: {error}")))?;
+        config.validate()?;
+        Ok(config)
+    }
+
+    pub fn save(&self, path: &Path) -> Result<(), OperationError> {
+        self.validate()?;
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|error| OperationError::backend_failure(format!("could not create MCP config directory: {error}")))?;
+        }
+        let temp_path = path.with_extension("json.tmp");
+        let body = serde_json::to_vec_pretty(self)
+            .map_err(|error| OperationError::backend_failure(format!("could not serialize MCP config: {error}")))?;
+        let mut file = fs::File::create(&temp_path)
+            .map_err(|error| OperationError::backend_failure(format!("could not create MCP config: {error}")))?;
+        file.write_all(&body)
+            .and_then(|_| file.sync_all())
+            .map_err(|error| OperationError::backend_failure(format!("could not write MCP config: {error}")))?;
+        fs::rename(&temp_path, path)
+            .map_err(|error| OperationError::backend_failure(format!("could not replace MCP config: {error}")))?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_config_is_disabled_and_loopback_only() {
+        let config = McpConfig::default();
+        assert!(!config.enabled);
+        assert_eq!(config.bind, IpAddr::V4(Ipv4Addr::LOCALHOST));
+        assert_eq!(config.endpoint(), "http://127.0.0.1:47831/mcp");
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn non_loopback_bind_is_rejected() {
+        let config = McpConfig {
+            enabled: true,
+            bind: "0.0.0.0".parse().unwrap(),
+            port: DEFAULT_MCP_PORT,
+        };
+        assert_eq!(config.validate().unwrap_err().code(), "invalid_input");
+    }
+
+    #[test]
+    fn zero_port_is_rejected() {
+        let config = McpConfig { port: 0, ..McpConfig::default() };
+        assert_eq!(config.validate().unwrap_err().code(), "invalid_input");
+    }
+}

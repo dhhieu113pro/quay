@@ -3,6 +3,8 @@
 //! Close hides to tray; Quit actually exits.
 
 mod docker_hub;
+mod mcp;
+mod operations;
 mod pull_audit;
 mod pull_manager;
 mod storage;
@@ -23,6 +25,7 @@ use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
 
 pub struct Backend {
     storage: Option<storage::Storage>,
+    operations: operations::QuayOperations,
     #[cfg(windows)]
     executor: wslc_executor::WslcExecutor,
     #[cfg(windows)]
@@ -34,16 +37,21 @@ pub struct Backend {
 impl Backend {
     #[cfg(windows)]
     fn new(pull_manager: pull_manager::PullManager, storage: Option<storage::Storage>) -> Self {
-        Self {
-            storage,
-            executor: wslc_executor::WslcExecutor::new(),
-            host: Arc::new(Mutex::new(wslc_runtime::HostSampler::default())),
-            pull_manager,
-        }
+        let executor = wslc_executor::WslcExecutor::new();
+        let host = Arc::new(Mutex::new(wslc_runtime::HostSampler::default()));
+        let operations = operations::QuayOperations::new(
+            executor.clone(),
+            host.clone(),
+            pull_manager.clone(),
+            storage.clone(),
+        );
+        Self { storage, operations, executor, host, pull_manager }
     }
 
     #[cfg(not(windows))]
-    fn new(storage: Option<storage::Storage>) -> Self { Self { storage } }
+    fn new(storage: Option<storage::Storage>) -> Self {
+        Self { storage, operations: operations::QuayOperations::new() }
+    }
 }
 
 #[cfg(windows)]
@@ -96,19 +104,10 @@ fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
 
 #[tauri::command]
 async fn wslc_invoke(backend: State<'_, Backend>, payload: Value) -> Result<Value, String> {
-    #[cfg(windows)] {
-        let executor = backend.executor.clone();
-        let host = backend.host.clone();
-        let storage = backend.storage.clone();
-        tauri::async_runtime::spawn_blocking(move || wslc_runtime::invoke(&executor, &host, storage.as_ref(), payload))
-            .await
-            .map_err(|e| format!("WSLC executor task failed: {e}"))?
-    }
-    #[cfg(not(windows))] {
-        let _ = backend;
-        let _ = payload;
-        Err("WSLC is only available on Windows".into())
-    }
+    let operations = backend.operations.clone();
+    tauri::async_runtime::spawn_blocking(move || operations.invoke(payload).map_err(|error| error.to_string()))
+        .await
+        .map_err(|e| format!("WSLC executor task failed: {e}"))?
 }
 
 #[tauri::command]
@@ -309,7 +308,8 @@ pub fn run() {
             show_main(app);
         }))
         .setup(|app| {
-            let database_path = app.path().app_data_dir()?.join("quay.db");
+            let app_data_dir = app.path().app_data_dir()?;
+            let database_path = app_data_dir.join("quay.db");
             let storage = match storage::Storage::open(database_path) {
                 Ok(storage) => Some(storage),
                 Err(error) => {
@@ -319,8 +319,8 @@ pub fn run() {
             };
 
             #[cfg(windows)]
-            {
-                let history_path = app.path().app_data_dir()?.join("pull-jobs.json");
+            let operations = {
+                let history_path = app_data_dir.join("pull-jobs.json");
                 let pull_manager = pull_manager::PullManager::new(
                     history_path,
                     Arc::new(pull_manager::SystemPullExecutor),
@@ -330,10 +330,32 @@ pub fn run() {
                     }),
                     2,
                 );
-                app.manage(Backend::new(pull_manager, storage));
-            }
+                let backend = Backend::new(pull_manager, storage);
+                let operations = backend.operations.clone();
+                app.manage(backend);
+                operations
+            };
             #[cfg(not(windows))]
-            app.manage(Backend::new(storage));
+            let operations = {
+                let backend = Backend::new(storage);
+                let operations = backend.operations.clone();
+                app.manage(backend);
+                operations
+            };
+
+            app.manage(mcp::commands::McpState::new(
+                app_data_dir.join("mcp.json"),
+                operations,
+                app.handle().clone(),
+            ));
+            let mcp_app = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let state = mcp_app.state::<mcp::commands::McpState>();
+                if let Err(error) = state.start_initial().await {
+                    eprintln!("mcp startup: {error}");
+                }
+            });
+
             if let Err(err) = setup_tray(app.handle()) { eprintln!("tray: {err}"); }
             Ok(())
         })
@@ -346,6 +368,9 @@ pub fn run() {
             container_logs_append, container_logs_query, container_log_targets,
             container_logs_clear, container_logs_cleanup,
             wslc_probe, ensure_host_directory, autostart_enabled, autostart_set, windows_sign_in_launch,
+            mcp::commands::mcp_get_status, mcp::commands::mcp_set_enabled,
+            mcp::commands::mcp_set_port, mcp::commands::mcp_confirm,
+            mcp::commands::mcp_pending_confirmations, mcp::commands::mcp_sync_cubes,
             workspace::workspace_default_root, workspace::workspace_ensure, workspace::workspace_pick_root,
             workspace::workspace_pick_descendant, workspace::workspace_open,
             workspace::workspace_move_root, workspace::workspace_move_entry
@@ -355,6 +380,12 @@ pub fn run() {
 
     app.run(|app, event| {
         if matches!(event, tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit) {
+            let mcp_state = app.state::<mcp::commands::McpState>();
+            mcp_state.cancel_now();
+            let mcp_app = app.clone();
+            tauri::async_runtime::spawn(async move {
+                mcp_app.state::<mcp::commands::McpState>().shutdown().await;
+            });
             #[cfg(windows)]
             {
                 let backend = app.state::<Backend>();
