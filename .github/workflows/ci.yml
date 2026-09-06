@@ -47,6 +47,9 @@ jobs:
       - name: Dialog image picker tests
         run: node --test tests/dialog-image-picker.test.mjs
 
+      - name: GitHub refollow env suggestion tests
+        run: node --test tests/github-refollow-env.test.mjs
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.rust_target }}
