@@ -280,7 +280,7 @@ fn object_any<'a>(value: &'a Value, names: &[&str]) -> &'a Map<String, Value> {
     names.iter().find_map(|name| value.get(*name).and_then(Value::as_object)).unwrap_or_else(empty_object)
 }
 
-fn empty_object() -> &'static Map<String, Value> {
+fn empty_object<'a>() -> &'a Map<String, Value> {
     static EMPTY: std::sync::OnceLock<Map<String, Value>> = std::sync::OnceLock::new();
     EMPTY.get_or_init(Map::new)
 }
