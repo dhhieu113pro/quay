@@ -1,6 +1,7 @@
 use crate::mcp::audit;
 use crate::mcp::config::McpConfig;
 use crate::mcp::confirmation::ConfirmationBroker;
+use crate::mcp::cube_tools;
 use crate::mcp::tools::{dispatch_destructive_after_approval, dispatch_tool, tool_catalog, tool_spec};
 use crate::operations::{OperationError, OperationKind, QuayOperations};
 use rmcp::model::{
@@ -68,7 +69,7 @@ impl QuayMcpServer {
             let dispatch_name = name.clone();
             let dispatch_arguments = arguments.clone();
             let result = tokio::task::spawn_blocking(move || {
-                dispatch_destructive_after_approval(&operations, &dispatch_name, dispatch_arguments)
+                dispatch_destructive(&operations, &dispatch_name, dispatch_arguments)
             })
             .await
             .map_err(|error| McpError::internal_error(format!("MCP worker failed: {error}"), None))?;
@@ -88,7 +89,7 @@ impl QuayMcpServer {
         let operations = self.operations.clone();
         let dispatch_name = name.clone();
         let dispatch_arguments = arguments.clone();
-        let result = tokio::task::spawn_blocking(move || dispatch_tool(&operations, &dispatch_name, dispatch_arguments))
+        let result = tokio::task::spawn_blocking(move || dispatch(&operations, &dispatch_name, dispatch_arguments))
             .await
             .map_err(|error| McpError::internal_error(format!("MCP worker failed: {error}"), None))?;
         audit_result(
@@ -102,6 +103,22 @@ impl QuayMcpServer {
             started.elapsed().as_millis() as i64,
         );
         Ok(operation_result(result).into())
+    }
+}
+
+fn dispatch(operations: &QuayOperations, name: &str, arguments: Value) -> Result<Value, OperationError> {
+    if name.starts_with("quay.cube.") {
+        cube_tools::dispatch(operations, name, arguments)
+    } else {
+        dispatch_tool(operations, name, arguments)
+    }
+}
+
+fn dispatch_destructive(operations: &QuayOperations, name: &str, arguments: Value) -> Result<Value, OperationError> {
+    if name.starts_with("quay.cube.") {
+        cube_tools::dispatch_destructive(operations, name, arguments)
+    } else {
+        dispatch_destructive_after_approval(operations, name, arguments)
     }
 }
 
@@ -233,5 +250,11 @@ mod tests {
     #[test]
     fn raw_exec_is_not_registered() {
         assert!(QuayMcpServer::rmcp_tool("quay.exec").is_err());
+    }
+
+    #[test]
+    fn cube_tools_use_cube_dispatch_path() {
+        assert!(tool_spec("quay.cube.list").is_some());
+        assert!(tool_spec("quay.cube.delete").is_some());
     }
 }
