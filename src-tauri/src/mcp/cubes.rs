@@ -1,3 +1,4 @@
+use crate::mcp::config::replace_file;
 use crate::operations::OperationError;
 use serde_json::Value;
 use std::fs;
@@ -76,7 +77,7 @@ impl CubeRegistry {
             let temp = path.with_extension("json.tmp");
             let mut file = fs::File::create(&temp).map_err(|error| OperationError::backend_failure(format!("could not create Cube registry: {error}")))?;
             file.write_all(&body).and_then(|_| file.sync_all()).map_err(|error| OperationError::backend_failure(format!("could not write Cube registry: {error}")))?;
-            fs::rename(&temp, &path).map_err(|error| OperationError::backend_failure(format!("could not replace Cube registry: {error}")))?;
+            replace_file(&temp, &path).map_err(|error| OperationError::backend_failure(format!("could not replace Cube registry: {error}")))?;
         }
         self.state.lock().unwrap().cubes = cubes.clone();
         if notify { notifier(cubes); }
