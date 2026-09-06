@@ -1,4 +1,4 @@
-export type RuntimeEnvSource = "Required" | "Image default";
+export type RuntimeEnvSource = "Required" | "Image default" | "Suggested";
 
 export interface RuntimeEnvVariable {
   key: string;
@@ -48,6 +48,14 @@ export function runtimeEnvForImage(image: string): RuntimeEnvVariable[] {
         { key: "ASPNETCORE_ENVIRONMENT", value: "Production", source: "Image default" },
         { key: "AllowedRoots__0", value: "/workspace", source: "Image default" },
         { key: "CommandTimeoutSeconds", value: "60", source: "Image default" },
+      ];
+    case "ghcr.io/dhhieu113pro/github-refollow":
+      return [
+        { key: "GITHUB_REFOLLOW_TOKEN", value: "", source: "Required", required: true },
+        { key: "GITHUB_REFOLLOW_API_KEY", value: "", source: "Suggested" },
+        { key: "GITHUB_REFOLLOW_DRY_RUN", value: "true", source: "Image default" },
+        { key: "GITHUB_REFOLLOW_DELAY_SECONDS", value: "2", source: "Image default" },
+        { key: "TZ", value: "Asia/Ho_Chi_Minh", source: "Image default" },
       ];
     default:
       return [];
