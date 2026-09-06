@@ -71,7 +71,11 @@ impl QuayOperations {
             .filter(|value| !value.trim().is_empty())
             .map(str::to_owned)
             .ok_or_else(|| OperationError::invalid_input("missing cmd"))?;
-        #[cfg(windows)] { crate::wslc_runtime::invoke(&self.executor, &self.host, self.storage.as_ref(), payload).map_err(|message| normalize_backend_error(&cmd, message)) }
+        #[cfg(windows)] {
+            let result = crate::wslc_runtime::invoke(&self.executor, &self.host, self.storage.as_ref(), payload)
+                .map_err(|message| normalize_backend_error(&cmd, message))?;
+            validate_invoke_result(&cmd, result)
+        }
         #[cfg(not(windows))] { let _ = cmd; Err(OperationError::runtime_unavailable("WSLC is only available on Windows")) }
     }
 
@@ -94,6 +98,18 @@ impl QuayOperations {
     }
 }
 
+fn validate_invoke_result(cmd: &str, result: Value) -> Result<Value, OperationError> {
+    if result.get("ok").and_then(Value::as_bool) != Some(false) { return Ok(result); }
+    let message = result.get("error").and_then(Value::as_str).map(str::trim).filter(|value| !value.is_empty())
+        .or_else(|| result.get("output").and_then(Value::as_str).map(str::trim).filter(|value| !value.is_empty()))
+        .map(str::to_owned)
+        .unwrap_or_else(|| {
+            let suffix = result.get("exitCode").and_then(Value::as_i64).map(|code| format!(" (exit code {code})")).unwrap_or_default();
+            format!("WSLC command failed{suffix}")
+        });
+    Err(normalize_backend_error(cmd, message))
+}
+
 fn normalize_backend_error(cmd: &str, message: String) -> OperationError {
     let lower = message.to_ascii_lowercase();
     if lower.contains("missing ") || lower.contains("must be") || lower.contains("unknown command") { OperationError::invalid_input(message) }
@@ -106,7 +122,10 @@ fn normalize_backend_error(cmd: &str, message: String) -> OperationError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
     #[test] fn operation_error_has_stable_code_and_message() { let error = OperationError::invalid_input("missing op"); assert_eq!(error.code(), "invalid_input"); assert_eq!(error.message(), "missing op"); }
     #[test] fn classify_operation_marks_delete_as_destructive() { assert_eq!(OperationKind::from_name("container.delete"), OperationKind::Destructive); assert_eq!(OperationKind::from_name("container.list"), OperationKind::ReadOnly); assert_eq!(OperationKind::from_name("container.start"), OperationKind::StateChanging); }
     #[test] fn normalizes_known_backend_errors() { assert_eq!(normalize_backend_error("run_cli", "missing args".into()).code(), "invalid_input"); assert_eq!(normalize_backend_error("run_cli", "container not found".into()).code(), "not_found"); assert_eq!(normalize_backend_error("run_cli", "already running".into()).code(), "conflict"); }
+    #[test] fn failed_cli_results_become_operation_errors() { let error = validate_invoke_result("run_cli", json!({"ok":false,"error":"container not found","exitCode":1})).unwrap_err(); assert_eq!(error.code(), "not_found"); }
+    #[test] fn successful_or_non_cli_results_are_preserved() { assert!(validate_invoke_result("run_cli", json!({"ok":true,"output":"done"})).is_ok()); assert!(validate_invoke_result("host_stats", json!({"cpuPercent":10.0})).is_ok()); }
 }
