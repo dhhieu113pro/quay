@@ -65,8 +65,13 @@ impl QuayOperations {
     pub fn new() -> Self { Self { cubes: CubeRegistry::global() } }
 
     pub fn invoke(&self, payload: Value) -> Result<Value, OperationError> {
-        let cmd = payload.get("cmd").and_then(Value::as_str).filter(|value| !value.trim().is_empty()).ok_or_else(|| OperationError::invalid_input("missing cmd"))?;
-        #[cfg(windows)] { crate::wslc_runtime::invoke(&self.executor, &self.host, self.storage.as_ref(), payload).map_err(|message| normalize_backend_error(cmd, message)) }
+        let cmd = payload
+            .get("cmd")
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .map(str::to_owned)
+            .ok_or_else(|| OperationError::invalid_input("missing cmd"))?;
+        #[cfg(windows)] { crate::wslc_runtime::invoke(&self.executor, &self.host, self.storage.as_ref(), payload).map_err(|message| normalize_backend_error(&cmd, message)) }
         #[cfg(not(windows))] { let _ = cmd; Err(OperationError::runtime_unavailable("WSLC is only available on Windows")) }
     }
 
